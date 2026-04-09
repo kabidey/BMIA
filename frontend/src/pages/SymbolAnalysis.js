@@ -115,9 +115,9 @@ export default function SymbolAnalysis() {
   const formatPrice = (p) => p ? p.toLocaleString('en-IN', { maximumFractionDigits: 2 }) : '--';
 
   return (
-    <div className="p-6 space-y-6 max-w-[1600px]" data-testid="symbol-analysis-page">
+    <div className="p-4 sm:p-6 space-y-6 max-w-[1600px]" data-testid="symbol-analysis-page">
       {/* Search Bar */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
         <form onSubmit={handleSearch} className="flex-1 flex gap-2">
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[hsl(var(--muted-foreground))]" />

@@ -738,6 +738,19 @@ async def _call_llm(api_key, provider_name, model_name, system_msg, user_text, s
         return {"error": f"{provider_name} failed: {str(e)}"}
 
 
+def _call_llm_in_thread(api_key, provider_name, model_name, system_msg, user_text, session_suffix=""):
+    """Run LLM call in its own event loop for true thread-based parallelism."""
+    import asyncio as _asyncio
+    loop = _asyncio.new_event_loop()
+    _asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(
+            _call_llm(api_key, provider_name, model_name, system_msg, user_text, session_suffix)
+        )
+    finally:
+        loop.close()
+
+
 async def generate_god_mode_signal(symbol: str, raw_data: dict, learning_context: dict = None):
     """
     GOD MODE: Send to ALL 3 LLMs in parallel, then synthesize consensus.
@@ -760,10 +773,10 @@ async def generate_god_mode_signal(symbol: str, raw_data: dict, learning_context
 
     user_text = f"Generate a trade signal for {clean_symbol} based on this comprehensive data:\n\n{full_context}\n\nReturn ONLY valid JSON."
 
-    # Stage 1: Parallel calls to all 3 LLMs
-    logger.info(f"GOD MODE: Sending {clean_symbol} to {len(models)} LLMs in parallel...")
+    # Stage 1: TRUE parallel calls to all 3 LLMs via thread pool
+    logger.info(f"GOD MODE: Sending {clean_symbol} to {len(models)} LLMs in TRUE parallel...")
     tasks = [
-        _call_llm(api_key, prov, model, SIGNAL_SCHEMA_PROMPT, user_text, clean_symbol)
+        asyncio.to_thread(_call_llm_in_thread, api_key, prov, model, SIGNAL_SCHEMA_PROMPT, user_text, clean_symbol)
         for prov, model in models
     ]
     results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -856,10 +869,10 @@ async def generate_god_mode_batch_ranking(stocks_data: list):
 
     user_text = f"Rank these {len(stocks_data)} stocks by investment attractiveness (prioritize BUY candidates):\n\n{batch_context}\n\nReturn ONLY valid JSON."
 
-    # Parallel ranking from all 3 LLMs
-    logger.info(f"GOD MODE BATCH: Sending {len(stocks_data)} stocks to {len(models)} LLMs...")
+    # TRUE parallel ranking from all 3 LLMs via thread pool
+    logger.info(f"GOD MODE BATCH: Sending {len(stocks_data)} stocks to {len(models)} LLMs in TRUE parallel...")
     tasks = [
-        _call_llm(api_key, prov, model, BATCH_RANKING_PROMPT, user_text, "batch")
+        asyncio.to_thread(_call_llm_in_thread, api_key, prov, model, BATCH_RANKING_PROMPT, user_text, "batch")
         for prov, model in models
     ]
     results = await asyncio.gather(*tasks, return_exceptions=True)

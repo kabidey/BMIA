@@ -42,7 +42,18 @@ async def save_signal(db, signal_data: dict, raw_analysis: dict = None):
         "detailed_reasoning": signal_data.get("detailed_reasoning", ""),
         "provider": signal_data.get("provider", "openai"),
         "model": signal_data.get("model", ""),
-        "status": "OPEN",  # OPEN, HIT_TARGET, HIT_STOP, EXPIRED, INVALIDATED
+        # God Mode fields
+        "god_mode": signal_data.get("god_mode", False),
+        "agreement_level": signal_data.get("agreement_level"),
+        "model_votes": signal_data.get("model_votes"),
+        "models_succeeded": signal_data.get("models_succeeded"),
+        "god_mode_consensus": {
+            "distilled_action": signal_data.get("action"),
+            "agreement_level": signal_data.get("agreement_level"),
+            "model_signals": signal_data.get("model_votes"),
+            "synthesized_rationale": signal_data.get("detailed_reasoning", ""),
+        } if signal_data.get("god_mode") else None,
+        "status": "OPEN",
         "entry_price": signal_data.get("entry", {}).get("price", 0),
         "current_price": signal_data.get("entry", {}).get("price", 0),
         "return_pct": 0.0,

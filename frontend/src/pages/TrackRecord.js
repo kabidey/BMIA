@@ -31,7 +31,7 @@ export default function TrackRecord() {
     return (
       <div className="p-6 space-y-6 max-w-[1600px]">
         <Skeleton className="h-10 w-64" />
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           {Array(4).fill(0).map((_, i) => <Skeleton key={i} className="h-24" />)}
         </div>
         <Skeleton className="h-64" />
@@ -64,7 +64,7 @@ export default function TrackRecord() {
   }));
 
   return (
-    <div className="p-6 space-y-6 max-w-[1600px]" data-testid="track-record-page">
+    <div className="p-4 sm:p-6 space-y-6 max-w-[1600px]" data-testid="track-record-page">
       <div>
         <h1 className="font-display text-3xl font-bold flex items-center gap-3">
           <Trophy className="w-8 h-8 text-[hsl(var(--warning))]" />

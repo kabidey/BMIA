@@ -18,7 +18,7 @@ function App() {
     <Router>
       <div className="flex min-h-screen bg-[hsl(var(--background))]" data-testid="app-root">
         <Sidebar />
-        <main className="flex-1 overflow-auto ml-16 lg:ml-56">
+        <main className="flex-1 overflow-auto ml-0 sm:ml-16 lg:ml-56 pt-14 sm:pt-0">
           <Routes>
             <Route path="/" element={<MarketOverview />} />
             <Route path="/analyze/:symbol" element={<SymbolAnalysis />} />

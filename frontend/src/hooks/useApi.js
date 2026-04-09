@@ -70,10 +70,40 @@ export function useApi() {
   }, [fetchApi]);
 
   // Signal APIs
-  const generateSignal = useCallback((symbol, provider = 'openai', godMode = false) => {
+  const generateSignal = useCallback(async (symbol, provider = 'openai', godMode = false) => {
+    if (godMode) {
+      // God Mode: background task with polling
+      const startRes = await fetchApi('/api/signals/generate', {
+        method: 'POST',
+        body: JSON.stringify({ symbol, provider, god_mode: true }),
+      });
+
+      if (!startRes.job_id) {
+        throw new Error(startRes.error || 'Failed to start god mode signal');
+      }
+
+      // Poll for results
+      const jobId = startRes.job_id;
+      let attempts = 0;
+      const maxAttempts = 90; // 3 minutes max
+      while (attempts < maxAttempts) {
+        await new Promise(r => setTimeout(r, 2000));
+        attempts++;
+        try {
+          const pollRes = await fetchApi(`/api/signals/generate-status/${jobId}`);
+          if (pollRes.status === 'complete') return pollRes;
+          if (pollRes.status === 'error') throw new Error(pollRes.error || 'Signal generation failed');
+        } catch (pollErr) {
+          if (pollErr.message && !pollErr.message.includes('fetch')) throw pollErr;
+          // Network hiccup, keep polling
+        }
+      }
+      throw new Error('God mode signal timed out');
+    }
+
     return fetchApi('/api/signals/generate', {
       method: 'POST',
-      body: JSON.stringify({ symbol, provider, god_mode: godMode }),
+      body: JSON.stringify({ symbol, provider, god_mode: false }),
     });
   }, [fetchApi]);
 

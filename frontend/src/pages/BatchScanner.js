@@ -111,6 +111,7 @@ function PipelineTracker({ pipeline, isRunning }) {
 export default function BatchScanner() {
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
   const [pipeline, setPipeline] = useState(null);
   const [scanMeta, setScanMeta] = useState(null);
   const [sortField, setSortField] = useState('rank');
@@ -120,42 +121,89 @@ export default function BatchScanner() {
   const runGodScan = async () => {
     setLoading(true);
     setResults([]);
+    setError(null);
     setPipeline({ stage: 'universe' });
 
-    // Simulate pipeline progress
-    const progressTimers = [
-      setTimeout(() => setPipeline(p => ({ ...p, stage: 'prefilter', universe_size: 2400 })), 3000),
-      setTimeout(() => setPipeline(p => ({ ...p, stage: 'shortlist', candidates: 80 })), 8000),
-      setTimeout(() => setPipeline(p => ({ ...p, stage: 'god_mode', shortlist_size: 15 })), 20000),
-    ];
-
     try {
-      const res = await fetch(`${BACKEND_URL}/api/batch/god-scan`, {
+      // Step 1: Start the scan (returns immediately with job_id)
+      const startRes = await fetch(`${BACKEND_URL}/api/batch/god-scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ market: 'NSE', max_candidates: 80, max_shortlist: 15, top_n: 15 }),
+        body: JSON.stringify({ market: 'NSE', max_candidates: 50, max_shortlist: 10, top_n: 10 }),
       });
-      const data = await res.json();
-      progressTimers.forEach(clearTimeout);
+      const startData = await startRes.json();
 
-      setResults(data.results || []);
-      setPipeline(data.pipeline || { stage: 'complete' });
-      setScanMeta({
-        god_mode: data.god_mode,
-        models_succeeded: data.models_succeeded || [],
-        total: data.total,
-        generated_at: data.generated_at,
-        pipeline: data.pipeline,
-      });
+      if (!startData.job_id) {
+        throw new Error(startData.error || 'Failed to start scan');
+      }
+
+      const jobId = startData.job_id;
+
+      // Step 2: Simulate pipeline stages while polling
+      const stages = ['universe', 'prefilter', 'shortlist', 'god_mode'];
+      let stageIdx = 0;
+      const stageTimer = setInterval(() => {
+        if (stageIdx < stages.length) {
+          const extra = {};
+          if (stageIdx === 1) extra.universe_size = 2400;
+          if (stageIdx === 2) extra.candidates = 50;
+          if (stageIdx === 3) extra.shortlist_size = 10;
+          setPipeline(p => ({ ...p, stage: stages[stageIdx], ...extra }));
+          stageIdx++;
+        }
+      }, 8000);
+
+      // Step 3: Poll for results
+      let attempts = 0;
+      const maxAttempts = 120; // 4 minutes max
+      while (attempts < maxAttempts) {
+        await new Promise(r => setTimeout(r, 2000));
+        attempts++;
+
+        try {
+          const pollRes = await fetch(`${BACKEND_URL}/api/batch/god-scan/${jobId}`);
+          const pollData = await pollRes.json();
+
+          if (pollData.status === 'complete') {
+            clearInterval(stageTimer);
+            setResults(pollData.results || []);
+            setPipeline(pollData.pipeline || { stage: 'complete' });
+            setScanMeta({
+              god_mode: pollData.god_mode,
+              models_succeeded: pollData.models_succeeded || [],
+              total: pollData.total,
+              generated_at: pollData.generated_at,
+              pipeline: pollData.pipeline,
+            });
+            setLoading(false);
+            return;
+          }
+
+          if (pollData.status === 'error') {
+            clearInterval(stageTimer);
+            setError(pollData.error || 'Scan failed');
+            setPipeline({ stage: 'complete' });
+            setLoading(false);
+            return;
+          }
+        } catch (pollErr) {
+          // Network hiccup, continue polling
+          console.warn('Poll failed, retrying...', pollErr);
+        }
+      }
+
+      clearInterval(stageTimer);
+      setError('Scan timed out after 4 minutes. Try again.');
+      setPipeline({ stage: 'complete' });
     } catch (e) {
       console.error('God scan error:', e);
-      progressTimers.forEach(clearTimeout);
+      setError(e.message || 'Failed to start scan');
       setPipeline({ stage: 'complete' });
     }
     setLoading(false);
   };
 
-  useEffect(() => { runGodScan(); }, []);
+  // Don't auto-scan on mount - let user trigger it
 
   const sorted = [...results].sort((a, b) => {
     const aVal = a[sortField] ?? 999;
@@ -184,7 +232,7 @@ export default function BatchScanner() {
   const highAgreement = results.filter(r => r.agreement_level === 'HIGH').length;
 
   return (
-    <div className="p-6 space-y-5 max-w-[1920px]" data-testid="batch-scanner-page">
+    <div className="p-4 sm:p-6 space-y-5 max-w-[1920px]" data-testid="batch-scanner-page">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
@@ -387,8 +435,24 @@ export default function BatchScanner() {
         </Card>
       )}
 
+      {/* Error State */}
+      {error && !loading && (
+        <Card className="bg-[hsl(var(--card))] border border-red-500/30">
+          <CardContent className="p-8 text-center">
+            <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-red-500/10 flex items-center justify-center">
+              <Sparkles className="w-6 h-6 text-red-400" />
+            </div>
+            <h3 className="font-display text-lg font-semibold mb-1 text-red-400" data-testid="scan-error-title">Scan Error</h3>
+            <p className="text-sm text-[hsl(var(--muted-foreground))] mb-4">{error}</p>
+            <button onClick={runGodScan} className="px-4 py-2 rounded-lg text-sm font-medium bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] hover:opacity-90" data-testid="retry-scan-btn">
+              Retry Scan
+            </button>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Empty State */}
-      {!loading && results.length === 0 && !pipeline && (
+      {!loading && results.length === 0 && !pipeline && !error && (
         <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
           <CardContent className="p-12 text-center">
             <Sparkles className="w-16 h-16 text-[hsl(var(--muted-foreground))] mx-auto mb-4 opacity-20" />

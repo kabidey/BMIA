@@ -91,7 +91,7 @@ export default function SignalDashboard() {
         </div>
 
         {/* Price levels */}
-        <div className="grid grid-cols-4 gap-3 mb-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
           <div>
             <p className="text-[10px] text-[hsl(var(--muted-foreground))] uppercase">Entry</p>
             <p className="font-mono text-sm font-bold tabular-nums">{formatPrice(signal.entry_price || signal.entry?.price)}</p>
@@ -145,7 +145,7 @@ export default function SignalDashboard() {
   };
 
   return (
-    <div className="p-6 space-y-6 max-w-[1600px]" data-testid="signal-dashboard-page">
+    <div className="p-4 sm:p-6 space-y-6 max-w-[1600px]" data-testid="signal-dashboard-page">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-display text-3xl font-bold flex items-center gap-3">

@@ -15,6 +15,8 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel
 from typing import Optional, List
 import numpy as np
+import asyncio
+import uuid
 
 from symbols import NIFTY_50, MCX_COMMODITIES, ALL_SYMBOLS, SECTORS, get_symbol_info, search_symbols
 from services.market_service import get_market_snapshot, get_ticker_info
@@ -37,6 +39,10 @@ logger = logging.getLogger(__name__)
 # MongoDB
 MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
 DB_NAME = os.environ.get("DB_NAME", "bmia_db")
+
+# In-memory job store for background god-scan tasks
+_god_scan_jobs = {}
+_signal_jobs = {}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -71,11 +77,6 @@ class ChatRequest(BaseModel):
 class BatchRequest(BaseModel):
     symbols: Optional[List[str]] = None
     sector: Optional[str] = None
-
-class GenerateSignalRequest(BaseModel):
-    symbol: str
-    provider: str = "openai"
-    period: str = "6mo"
 
 class BatchAIScanRequest(BaseModel):
     symbols: Optional[List[str]] = None
@@ -451,17 +452,69 @@ async def market_cockpit_slow():
 @app.post("/api/batch/god-scan")
 async def batch_god_scan(req: GodScanRequest):
     """
-    GOD MODE Full Market Scanner:
-    Scans 2400+ NSE stocks → Pre-filters → Shortlists → 3-LLM ensemble → Distilled BUY calls.
+    GOD MODE Full Market Scanner (Background Task):
+    Starts scan in background, returns job_id for polling.
     """
-    logger.info(f"GOD SCAN initiated: market={req.market}, candidates={req.max_candidates}, shortlist={req.max_shortlist}")
-    result = await god_mode_scan(
-        market=req.market,
-        max_candidates=req.max_candidates,
-        max_shortlist=req.max_shortlist,
-        top_n=req.top_n,
-    )
-    return result
+    job_id = str(uuid.uuid4())[:8]
+    logger.info(f"GOD SCAN job {job_id} initiated: market={req.market}, candidates={req.max_candidates}, shortlist={req.max_shortlist}")
+
+    _god_scan_jobs[job_id] = {
+        "status": "running",
+        "stage": "universe",
+        "progress": 0,
+        "result": None,
+        "error": None,
+        "started_at": datetime.now().isoformat(),
+    }
+
+    async def _run_scan():
+        try:
+            # Update progress stages
+            _god_scan_jobs[job_id]["stage"] = "universe"
+            _god_scan_jobs[job_id]["progress"] = 10
+
+            result = await god_mode_scan(
+                market=req.market,
+                max_candidates=req.max_candidates,
+                max_shortlist=req.max_shortlist,
+                top_n=req.top_n,
+            )
+            _god_scan_jobs[job_id]["status"] = "complete"
+            _god_scan_jobs[job_id]["stage"] = "complete"
+            _god_scan_jobs[job_id]["progress"] = 100
+            _god_scan_jobs[job_id]["result"] = result
+        except Exception as e:
+            logger.error(f"GOD SCAN job {job_id} failed: {e}")
+            _god_scan_jobs[job_id]["status"] = "error"
+            _god_scan_jobs[job_id]["error"] = str(e)
+
+    asyncio.create_task(_run_scan())
+    return {"job_id": job_id, "status": "started"}
+
+
+@app.get("/api/batch/god-scan/{job_id}")
+async def batch_god_scan_status(job_id: str):
+    """Poll god-scan job status."""
+    job = _god_scan_jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    response = {
+        "job_id": job_id,
+        "status": job["status"],
+        "stage": job.get("stage", "unknown"),
+        "progress": job.get("progress", 0),
+    }
+
+    if job["status"] == "complete" and job["result"]:
+        response.update(job["result"])
+        # Clean up after serving results
+        del _god_scan_jobs[job_id]
+    elif job["status"] == "error":
+        response["error"] = job.get("error", "Unknown error")
+        del _god_scan_jobs[job_id]
+
+    return response
 
 
 @app.post("/api/ai/chat")
@@ -504,16 +557,114 @@ async def analysis_history(limit: int = 20):
 
 @app.post("/api/signals/generate")
 async def generate_signal(req: GenerateSignalRequest):
-    """Generate an AI-driven trade signal with multi-input intelligence."""
+    """Generate an AI-driven trade signal. God Mode runs as background task with polling."""
     symbol = req.symbol
-    logger.info(f"Generating AI signal for {symbol}...")
+    logger.info(f"Generating AI signal for {symbol}, god_mode={req.god_mode}")
 
-    # 1. Gather ALL raw data
+    if req.god_mode:
+        # Background task pattern for God Mode (prevents proxy timeout)
+        job_id = str(uuid.uuid4())[:8]
+        _signal_jobs[job_id] = {"status": "running", "result": None, "error": None}
+
+        async def _run_signal():
+            try:
+                raw_data = _gather_raw_data(symbol)
+                if "error" in raw_data:
+                    _signal_jobs[job_id]["status"] = "error"
+                    _signal_jobs[job_id]["error"] = raw_data["error"]
+                    return
+
+                db = app.db
+                learning_ctx = await get_cached_learning_context(db)
+
+                from services.intelligence_engine import generate_god_mode_signal
+                signal_data = await generate_god_mode_signal(symbol, raw_data, learning_ctx)
+
+                if "error" in signal_data:
+                    _signal_jobs[job_id]["status"] = "error"
+                    _signal_jobs[job_id]["error"] = signal_data["error"]
+                    return
+
+                saved = await save_signal(db, signal_data, raw_data)
+                try:
+                    await build_learning_context(db)
+                except Exception:
+                    pass
+
+                tech_score = raw_data.get("technical", {}).get("technical_score", 50)
+                fund_score = raw_data.get("fundamental", {}).get("fundamental_score", 50)
+                sent_score = raw_data.get("sentiment", {}).get("sentiment_score_0_100", 50)
+                alpha_score = raw_data.get("alpha", {}).get("alpha_score", 50)
+
+                _signal_jobs[job_id]["status"] = "complete"
+                _signal_jobs[job_id]["result"] = {
+                    "signal": saved,
+                    "raw_scores": {
+                        "technical_score": tech_score,
+                        "fundamental_score": fund_score,
+                        "sentiment_score": sent_score,
+                        "alpha_score": alpha_score,
+                    },
+                    "learning_context_summary": {
+                        "total_past_signals": learning_ctx.get("total_signals", 0),
+                        "win_rate": learning_ctx.get("win_rate"),
+                        "lessons_count": len(learning_ctx.get("lessons", [])),
+                    },
+                }
+            except Exception as e:
+                logger.error(f"God mode signal job {job_id} failed: {e}")
+                _signal_jobs[job_id]["status"] = "error"
+                _signal_jobs[job_id]["error"] = str(e)
+
+        asyncio.create_task(_run_signal())
+        return {"job_id": job_id, "status": "started", "async": True}
+
+    # Non-God Mode: synchronous (fast enough)
+    raw_data = _gather_raw_data(symbol)
+    if "error" in raw_data:
+        raise HTTPException(status_code=404, detail=raw_data["error"])
+
+    db = app.db
+    learning_ctx = await get_cached_learning_context(db)
+
+    signal_data = await generate_ai_signal(symbol, raw_data, learning_ctx, req.provider)
+    if "error" in signal_data:
+        raise HTTPException(status_code=500, detail=signal_data["error"])
+
+    saved = await save_signal(db, signal_data, raw_data)
+    try:
+        await build_learning_context(db)
+    except Exception:
+        pass
+
+    tech_score = raw_data.get("technical", {}).get("technical_score", 50) if isinstance(raw_data.get("technical"), dict) else 50
+    fund_score = raw_data.get("fundamental", {}).get("fundamental_score", 50)
+    sent_score = raw_data.get("sentiment", {}).get("sentiment_score_0_100", 50)
+    alpha_score = raw_data.get("alpha", {}).get("alpha_score", 50)
+
+    return {
+        "signal": saved,
+        "raw_scores": {
+            "technical_score": tech_score,
+            "fundamental_score": fund_score,
+            "sentiment_score": sent_score,
+            "alpha_score": alpha_score,
+        },
+        "learning_context_summary": {
+            "total_past_signals": learning_ctx.get("total_signals", 0),
+            "win_rate": learning_ctx.get("win_rate"),
+            "lessons_count": len(learning_ctx.get("lessons", [])),
+        },
+    }
+
+
+def _gather_raw_data(symbol):
+    """Synchronous data gathering for signal generation."""
     raw_data = {}
 
     market_data = get_market_snapshot(symbol, "6mo", "1d")
     if "error" in market_data:
-        raise HTTPException(status_code=404, detail=f"No market data for {symbol}")
+        return {"error": f"No market data for {symbol}"}
 
     raw_data["market_data"] = {
         "latest": market_data["latest"],
@@ -523,65 +674,55 @@ async def generate_signal(req: GenerateSignalRequest):
     }
     raw_data["chart_data"] = {"ohlcv": market_data["ohlcv"]}
 
-    # Technical
     technical = full_technical_analysis(market_data["ohlcv"])
     raw_data["technical"] = technical
 
-    # Fundamentals
     fundamentals = get_fundamentals(symbol)
     raw_data["fundamental"] = fundamentals
 
-    # News & Sentiment
     headlines = fetch_news(symbol)
     raw_data["news"] = {"headlines": headlines, "count": len(headlines)}
 
-    sentiment = await analyze_sentiment(symbol, headlines)
+    # Sentiment is async - handle in sync context
+    import asyncio as _asyncio
+    try:
+        loop = _asyncio.get_event_loop()
+        if loop.is_running():
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                sentiment = pool.submit(lambda: _asyncio.run(analyze_sentiment(symbol, headlines))).result()
+        else:
+            sentiment = loop.run_until_complete(analyze_sentiment(symbol, headlines))
+    except Exception:
+        sentiment = {"sentiment_score_0_100": 50, "overall": "neutral"}
     raw_data["sentiment"] = sentiment
 
-    # Alpha Score
     tech_score = technical.get("technical_score", 50) if isinstance(technical, dict) else 50
     fund_score = fundamentals.get("fundamental_score", 50)
     sent_score = sentiment.get("sentiment_score_0_100", 50)
     alpha = full_alpha_computation(market_data["ohlcv"], tech_score, fund_score, sent_score)
     raw_data["alpha"] = alpha
 
-    # 2. Get learning context
-    db = app.db
-    learning_ctx = await get_cached_learning_context(db)
+    return raw_data
 
-    # 3. Generate AI signal - God Mode or single provider
-    if req.god_mode:
-        from services.intelligence_engine import generate_god_mode_signal
-        signal_data = await generate_god_mode_signal(symbol, raw_data, learning_ctx)
-    else:
-        signal_data = await generate_ai_signal(symbol, raw_data, learning_ctx, req.provider)
 
-    if "error" in signal_data:
-        raise HTTPException(status_code=500, detail=signal_data["error"])
+@app.get("/api/signals/generate-status/{job_id}")
+async def signal_generate_status(job_id: str):
+    """Poll signal generation job status."""
+    job = _signal_jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
 
-    # 4. Save signal
-    saved = await save_signal(db, signal_data, raw_data)
+    response = {"job_id": job_id, "status": job["status"]}
 
-    # 5. Refresh learning context (async, don't block)
-    try:
-        await build_learning_context(db)
-    except Exception:
-        pass
+    if job["status"] == "complete" and job["result"]:
+        response.update(job["result"])
+        del _signal_jobs[job_id]
+    elif job["status"] == "error":
+        response["error"] = job.get("error", "Unknown error")
+        del _signal_jobs[job_id]
 
-    return {
-        "signal": saved,
-        "raw_scores": {
-            "technical_score": tech_score,
-            "fundamental_score": fund_score,
-            "sentiment_score": sent_score,
-            "alpha_score": alpha["alpha_score"],
-        },
-        "learning_context_summary": {
-            "total_past_signals": learning_ctx.get("total_signals", 0),
-            "win_rate": learning_ctx.get("win_rate"),
-            "lessons_count": len(learning_ctx.get("lessons", [])),
-        },
-    }
+    return response
 
 
 @app.get("/api/signals/active")
