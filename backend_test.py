@@ -213,9 +213,96 @@ class BMIAAPITester:
                 print(f"   ⚠️  AI response too short or missing")
         return False
 
+    def test_generate_signal(self):
+        """Test AI signal generation - this is the main new feature"""
+        print(f"\n🔍 Testing AI Signal Generation (INFY.NS) - This may take 15-30 seconds...")
+        
+        success, data = self.run_test(
+            "Generate AI Signal - INFY.NS", 
+            "POST", 
+            "api/signals/generate",
+            data={
+                "symbol": "INFY.NS",
+                "provider": "openai",
+                "period": "6mo"
+            },
+            timeout=45
+        )
+        
+        if success:
+            signal = data.get("signal", {})
+            required_fields = ["action", "entry", "targets", "stop_loss", "confidence", "key_theses"]
+            missing_fields = []
+            
+            for field in required_fields:
+                if field not in signal:
+                    missing_fields.append(field)
+            
+            if not missing_fields:
+                action = signal["action"]
+                confidence = signal["confidence"]
+                entry_price = signal.get("entry", {}).get("price", 0)
+                print(f"   ✓ Signal generated: {action} at {entry_price} with {confidence}% confidence")
+                return True, signal
+            else:
+                print(f"   ⚠️  Missing signal fields: {missing_fields}")
+                return False, {}
+        
+        return False, {}
+
+    def test_active_signals(self):
+        """Test getting active signals"""
+        success, data = self.run_test("Get Active Signals", "GET", "api/signals/active")
+        if success:
+            signals = data.get("signals", [])
+            print(f"   ✓ Found {len(signals)} active signals")
+            return True, signals
+        return False, []
+
+    def test_signal_history(self):
+        """Test getting signal history"""
+        success, data = self.run_test("Get Signal History", "GET", "api/signals/history")
+        if success:
+            signals = data.get("signals", [])
+            print(f"   ✓ Found {len(signals)} historical signals")
+            return True, signals
+        return False, []
+
+    def test_track_record(self):
+        """Test getting track record metrics"""
+        success, data = self.run_test("Get Track Record", "GET", "api/signals/track-record")
+        if success:
+            total_signals = data.get("total_signals", 0)
+            metrics = data.get("metrics", {})
+            print(f"   ✓ Track record: {total_signals} total signals")
+            if metrics:
+                win_rate = metrics.get("win_rate", "N/A")
+                print(f"   ✓ Win rate: {win_rate}%")
+            return True, data
+        return False, {}
+
+    def test_learning_context(self):
+        """Test getting learning context"""
+        success, data = self.run_test("Get Learning Context", "GET", "api/signals/learning-context")
+        if success:
+            total_signals = data.get("total_signals", 0)
+            lessons = data.get("lessons", [])
+            print(f"   ✓ Learning context: {total_signals} signals, {len(lessons)} lessons")
+            return True, data
+        return False, {}
+
+    def test_evaluate_all_signals(self):
+        """Test evaluating all signals"""
+        success, data = self.run_test("Evaluate All Signals", "POST", "api/signals/evaluate-all", timeout=30)
+        if success:
+            evaluated = data.get("evaluated", 0)
+            print(f"   ✓ Evaluated {evaluated} signals")
+            return True, data
+        return False, {}
+
     def run_all_tests(self):
         """Run all tests in sequence"""
-        print("🚀 Starting BMIA Backend API Tests")
+        print("🚀 Starting BMIA Backend API Tests - Phase 3 Intelligence Revamp")
         print(f"   Base URL: {self.base_url}")
         print("=" * 60)
         
@@ -236,6 +323,19 @@ class BMIAAPITester:
         
         # AI features
         self.test_ai_chat()
+        
+        # NEW SIGNAL ENDPOINTS - Phase 3 Features
+        print(f"\n🧠 Testing Phase 3 Intelligence Features...")
+        
+        # Test signal generation (this is the main new feature)
+        signal_success, signal_data = self.test_generate_signal()
+        
+        # Test signal management endpoints
+        self.test_active_signals()
+        self.test_signal_history()
+        self.test_track_record()
+        self.test_learning_context()
+        self.test_evaluate_all_signals()
         
         # Print summary
         print("\n" + "=" * 60)

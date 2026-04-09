@@ -62,5 +62,44 @@ export function useApi() {
     });
   }, [fetchApi]);
 
-  return { fetchApi, analyzeStock, batchAnalyze, searchSymbols, getOverview, getHeatmap, aiChat, loading, error };
+  // New Signal APIs
+  const generateSignal = useCallback((symbol, provider = 'openai') => {
+    return fetchApi('/api/signals/generate', {
+      method: 'POST',
+      body: JSON.stringify({ symbol, provider }),
+    });
+  }, [fetchApi]);
+
+  const getActiveSignals = useCallback((symbol = null) => {
+    const query = symbol ? `?symbol=${encodeURIComponent(symbol)}` : '';
+    return fetchApi(`/api/signals/active${query}`);
+  }, [fetchApi]);
+
+  const getSignalHistory = useCallback((limit = 50, symbol = null, status = null) => {
+    const params = new URLSearchParams();
+    params.set('limit', limit);
+    if (symbol) params.set('symbol', symbol);
+    if (status) params.set('status', status);
+    return fetchApi(`/api/signals/history?${params.toString()}`);
+  }, [fetchApi]);
+
+  const evaluateAllSignals = useCallback(() => {
+    return fetchApi('/api/signals/evaluate-all', { method: 'POST' });
+  }, [fetchApi]);
+
+  const getTrackRecord = useCallback(() => {
+    return fetchApi('/api/signals/track-record');
+  }, [fetchApi]);
+
+  const getLearningContext = useCallback(() => {
+    return fetchApi('/api/signals/learning-context');
+  }, [fetchApi]);
+
+  return {
+    fetchApi, analyzeStock, batchAnalyze, searchSymbols,
+    getOverview, getHeatmap, aiChat,
+    generateSignal, getActiveSignals, getSignalHistory,
+    evaluateAllSignals, getTrackRecord, getLearningContext,
+    loading, error
+  };
 }

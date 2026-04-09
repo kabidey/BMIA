@@ -5,6 +5,8 @@ import Sidebar from './components/layout/Sidebar';
 import MarketOverview from './pages/MarketOverview';
 import SymbolAnalysis from './pages/SymbolAnalysis';
 import BatchScanner from './pages/BatchScanner';
+import SignalDashboard from './pages/SignalDashboard';
+import TrackRecord from './pages/TrackRecord';
 import { Toaster } from './components/ui/sonner';
 
 function App() {
@@ -22,6 +24,8 @@ function App() {
             <Route path="/analyze/:symbol" element={<SymbolAnalysis />} />
             <Route path="/analyze" element={<SymbolAnalysis />} />
             <Route path="/scanner" element={<BatchScanner />} />
+            <Route path="/signals" element={<SignalDashboard />} />
+            <Route path="/track-record" element={<TrackRecord />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>

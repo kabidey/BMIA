@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { BarChart3, Search, TrendingUp, LayoutGrid, ChevronLeft, ChevronRight } from 'lucide-react';
+import { BarChart3, Search, TrendingUp, LayoutGrid, ChevronLeft, ChevronRight, Zap, Trophy } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import SearchCommand from './SearchCommand';
 
 const navItems = [
   { to: '/', icon: LayoutGrid, label: 'Market Overview', shortcut: '1' },
   { to: '/analyze', icon: TrendingUp, label: 'Symbol Analysis', shortcut: '2' },
-  { to: '/scanner', icon: BarChart3, label: 'Batch Scanner', shortcut: '3' },
+  { to: '/signals', icon: Zap, label: 'AI Signals', shortcut: '3' },
+  { to: '/scanner', icon: BarChart3, label: 'Batch Scanner', shortcut: '4' },
+  { to: '/track-record', icon: Trophy, label: 'Track Record', shortcut: '5' },
 ];
 
 export default function Sidebar() {
@@ -35,10 +37,9 @@ export default function Sidebar() {
         }`}
         style={{ transition: 'width 0.2s ease-out' }}
       >
-        {/* Logo */}
         <div className="flex items-center h-14 px-4 border-b border-[hsl(var(--border))]">
           <div className="w-8 h-8 rounded-lg bg-[hsl(var(--primary))] flex items-center justify-center">
-            <TrendingUp className="w-5 h-5 text-[hsl(var(--primary-foreground))]" />
+            <Zap className="w-5 h-5 text-[hsl(var(--primary-foreground))]" />
           </div>
           {expanded && (
             <span className="ml-3 font-display font-semibold text-sm tracking-wide text-[hsl(var(--foreground))]">
@@ -47,7 +48,6 @@ export default function Sidebar() {
           )}
         </div>
 
-        {/* Search button */}
         <div className="px-3 py-3">
           <button
             data-testid="command-palette-open-button"
@@ -65,7 +65,6 @@ export default function Sidebar() {
           </button>
         </div>
 
-        {/* Navigation */}
         <nav className="flex-1 px-3 py-2 space-y-1">
           {navItems.map((item) => (
             <Tooltip key={item.to}>
@@ -87,15 +86,12 @@ export default function Sidebar() {
                 </NavLink>
               </TooltipTrigger>
               {!expanded && (
-                <TooltipContent side="right">
-                  {item.label}
-                </TooltipContent>
+                <TooltipContent side="right">{item.label}</TooltipContent>
               )}
             </Tooltip>
           ))}
         </nav>
 
-        {/* Collapse toggle */}
         <div className="px-3 py-3 border-t border-[hsl(var(--border))]">
           <button
             onClick={() => setExpanded(!expanded)}
@@ -107,7 +103,6 @@ export default function Sidebar() {
           </button>
         </div>
 
-        {/* SEBI Disclaimer */}
         {expanded && (
           <div className="px-4 py-3 border-t border-[hsl(var(--border))]">
             <p className="text-[10px] text-[hsl(var(--muted-foreground))] leading-tight" data-testid="sebi-disclaimer-sidebar">

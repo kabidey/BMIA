@@ -7,8 +7,7 @@ import { Skeleton } from '../components/ui/skeleton';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { ScrollArea } from '../components/ui/scroll-area';
-import { Separator } from '../components/ui/separator';
-import { Search, TrendingUp, BarChart3, FileText, MessageSquare, Loader2, AlertTriangle, Send } from 'lucide-react';
+import { Search, TrendingUp, BarChart3, FileText, MessageSquare, Loader2, AlertTriangle, Send, Zap, Target, ShieldAlert, Brain } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
 import AlphaGauge from '../components/charts/AlphaGauge';
 import CandlestickChart from '../components/charts/CandlestickChart';
@@ -17,6 +16,13 @@ import MACDChart from '../components/charts/MACDChart';
 import FundamentalsPanel from '../components/charts/FundamentalsPanel';
 import NewsFeed from '../components/charts/NewsFeed';
 import FormulaDisplay from '../components/charts/FormulaDisplay';
+
+const ACTION_COLORS = {
+  BUY: 'bg-emerald-500 text-white',
+  SELL: 'bg-red-500 text-white',
+  HOLD: 'bg-amber-500 text-white',
+  AVOID: 'bg-gray-500 text-white',
+};
 
 export default function SymbolAnalysis() {
   const { symbol: urlSymbol } = useParams();
@@ -30,12 +36,17 @@ export default function SymbolAnalysis() {
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const [chatProvider, setChatProvider] = useState('openai');
-  const { analyzeStock, aiChat } = useApi();
+  // Signal state
+  const [signal, setSignal] = useState(null);
+  const [signalLoading, setSignalLoading] = useState(false);
+  const [signalProvider, setSignalProvider] = useState('openai');
+  const { analyzeStock, aiChat, generateSignal } = useApi();
 
   const doAnalysis = useCallback(async (sym) => {
     if (!sym) return;
     setLoading(true);
     setAnalysis(null);
+    setSignal(null);
     setLoadingStep('Fetching market data...');
     try {
       setTimeout(() => setLoadingStep('Computing technical indicators...'), 2000);
@@ -67,6 +78,18 @@ export default function SymbolAnalysis() {
       }
       navigate(`/analyze/${encodeURIComponent(sym)}`);
     }
+  };
+
+  const handleGenerateSignal = async () => {
+    if (!symbol) return;
+    setSignalLoading(true);
+    try {
+      const result = await generateSignal(symbol, signalProvider);
+      setSignal(result);
+    } catch (e) {
+      console.error(e);
+    }
+    setSignalLoading(false);
   };
 
   const handleChat = async () => {
@@ -120,7 +143,7 @@ export default function SymbolAnalysis() {
               <Loader2 className="w-10 h-10 animate-spin text-[hsl(var(--primary))]" />
               <p className="text-sm font-medium text-[hsl(var(--primary))] animate-pulse-glow">{loadingStep}</p>
               <div className="w-64 space-y-2">
-                {['Fetching market data', 'Computing indicators', 'Analyzing fundamentals', 'Scoring sentiment', 'Computing Alpha'].map((step, i) => (
+                {['Fetching market data', 'Computing indicators', 'Analyzing fundamentals', 'Scoring sentiment', 'Computing Alpha'].map((step) => (
                   <div key={step} className={`loading-step ${loadingStep.toLowerCase().includes(step.split(' ')[0].toLowerCase()) ? 'active' : ''}`}>
                     <div className={`w-2 h-2 rounded-full ${
                       loadingStep.toLowerCase().includes(step.split(' ')[0].toLowerCase()) ? 'bg-[hsl(var(--primary))] animate-pulse-glow' : 'bg-[hsl(var(--muted))]'
@@ -139,7 +162,6 @@ export default function SymbolAnalysis() {
         <>
           {/* Header with Alpha Score */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Stock Info */}
             <Card className="lg:col-span-2 bg-[hsl(var(--card))] border-[hsl(var(--border))]">
               <CardContent className="p-6">
                 <div className="flex items-start justify-between">
@@ -175,10 +197,177 @@ export default function SymbolAnalysis() {
                 </div>
               </CardContent>
             </Card>
-
-            {/* Alpha Gauge */}
             <AlphaGauge alpha={analysis.alpha} />
           </div>
+
+          {/* AI Signal Generation Section */}
+          <Card className="bg-gradient-to-r from-[hsl(var(--surface-1))] to-[hsl(var(--surface-2))] border-[hsl(var(--primary))]/30 border" data-testid="signal-generation-card">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-[hsl(var(--primary))]/20 flex items-center justify-center">
+                    <Zap className="w-6 h-6 text-[hsl(var(--primary))]" />
+                  </div>
+                  <div>
+                    <h3 className="font-display font-semibold">AI Intelligence Engine</h3>
+                    <p className="text-xs text-[hsl(var(--muted-foreground))]">Multi-input signal generation with learning from past outcomes</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="flex gap-1">
+                    {['openai', 'claude', 'gemini'].map((p) => (
+                      <Button
+                        key={p}
+                        variant={signalProvider === p ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => setSignalProvider(p)}
+                        className="text-xs capitalize"
+                      >
+                        {p}
+                      </Button>
+                    ))}
+                  </div>
+                  <Button
+                    onClick={handleGenerateSignal}
+                    disabled={signalLoading}
+                    className="bg-[hsl(var(--primary))] hover:bg-[hsl(var(--primary))]/90"
+                    data-testid="generate-signal-button"
+                  >
+                    {signalLoading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                        Analyzing...
+                      </>
+                    ) : (
+                      <>
+                        <Zap className="w-4 h-4 mr-2" />
+                        Generate AI Signal
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Signal Loading */}
+              {signalLoading && (
+                <div className="bg-[hsl(var(--surface-2))] rounded-lg p-6 text-center">
+                  <Loader2 className="w-8 h-8 animate-spin text-[hsl(var(--primary))] mx-auto mb-3" />
+                  <p className="text-sm text-[hsl(var(--primary))]">Intelligence engine processing all data sources...</p>
+                  <p className="text-xs text-[hsl(var(--muted-foreground))] mt-1">Technical + Fundamental + Sentiment + Learning Context</p>
+                </div>
+              )}
+
+              {/* Signal Result */}
+              {signal && !signalLoading && (
+                <div className="space-y-4 animate-fade-in" data-testid="signal-result">
+                  {/* Action Banner */}
+                  <div className={`rounded-lg p-4 flex items-center justify-between ${ACTION_COLORS[signal.signal?.action] || 'bg-gray-500 text-white'}`}>
+                    <div className="flex items-center gap-3">
+                      {signal.signal?.action === 'BUY' && <TrendingUp className="w-6 h-6" />}
+                      {signal.signal?.action === 'SELL' && <TrendingUp className="w-6 h-6 rotate-180" />}
+                      {signal.signal?.action === 'HOLD' && <ShieldAlert className="w-6 h-6" />}
+                      {signal.signal?.action === 'AVOID' && <AlertTriangle className="w-6 h-6" />}
+                      <div>
+                        <p className="text-xl font-display font-bold">{signal.signal?.action} Signal</p>
+                        <p className="text-sm opacity-90">{signal.signal?.timeframe} | {signal.signal?.horizon_days}d horizon</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-3xl font-mono font-bold">{signal.signal?.confidence}%</p>
+                      <p className="text-xs opacity-80">confidence</p>
+                    </div>
+                  </div>
+
+                  {/* Price Levels */}
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div className="bg-[hsl(var(--surface-2))] rounded-lg p-3 border border-[hsl(var(--border))]">
+                      <p className="text-[10px] text-[hsl(var(--muted-foreground))] uppercase">Entry Price</p>
+                      <p className="font-mono text-lg font-bold tabular-nums">{formatPrice(signal.signal?.entry?.price)}</p>
+                      <p className="text-xs text-[hsl(var(--muted-foreground))] mt-1 line-clamp-2">{signal.signal?.entry?.rationale?.slice(0, 80)}</p>
+                    </div>
+                    {signal.signal?.targets?.map((t, i) => (
+                      <div key={i} className="bg-[hsl(var(--surface-2))] rounded-lg p-3 border border-emerald-500/20">
+                        <p className="text-[10px] text-emerald-400 uppercase">{t.label}</p>
+                        <p className="font-mono text-lg font-bold tabular-nums text-emerald-400">{formatPrice(t.price)}</p>
+                        <p className="text-xs text-[hsl(var(--muted-foreground))] mt-1">Probability: {(t.probability * 100).toFixed(0)}%</p>
+                      </div>
+                    ))}
+                    <div className="bg-[hsl(var(--surface-2))] rounded-lg p-3 border border-red-500/20">
+                      <p className="text-[10px] text-red-400 uppercase">Stop Loss ({signal.signal?.stop_loss?.type})</p>
+                      <p className="font-mono text-lg font-bold tabular-nums text-red-400">{formatPrice(signal.signal?.stop_loss?.price)}</p>
+                      <p className="text-xs text-[hsl(var(--muted-foreground))] mt-1 line-clamp-2">{signal.signal?.stop_loss?.rationale?.slice(0, 80)}</p>
+                    </div>
+                  </div>
+
+                  {/* RR + Position + Sector */}
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="bg-[hsl(var(--surface-2))] rounded-lg p-3">
+                      <p className="text-[10px] text-[hsl(var(--muted-foreground))] uppercase">Risk/Reward</p>
+                      <p className="font-mono text-sm font-bold">{signal.signal?.risk_reward_ratio}</p>
+                    </div>
+                    <div className="bg-[hsl(var(--surface-2))] rounded-lg p-3">
+                      <p className="text-[10px] text-[hsl(var(--muted-foreground))] uppercase">Position Sizing</p>
+                      <p className="text-xs font-medium">{signal.signal?.position_sizing_hint}</p>
+                    </div>
+                    <div className="bg-[hsl(var(--surface-2))] rounded-lg p-3">
+                      <p className="text-[10px] text-[hsl(var(--muted-foreground))] uppercase">Sector Context</p>
+                      <p className="text-xs font-medium line-clamp-2">{signal.signal?.sector_context}</p>
+                    </div>
+                  </div>
+
+                  {/* Key Theses */}
+                  <div className="bg-[hsl(var(--surface-2))] rounded-lg p-4">
+                    <p className="text-xs font-semibold text-[hsl(var(--primary))] mb-2 uppercase">Key Theses</p>
+                    <ul className="space-y-2">
+                      {signal.signal?.key_theses?.map((thesis, i) => (
+                        <li key={i} className="flex gap-2 text-sm">
+                          <Target className="w-4 h-4 text-[hsl(var(--primary))] flex-shrink-0 mt-0.5" />
+                          <span>{thesis}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  {/* Invalidators */}
+                  {signal.signal?.invalidators?.length > 0 && (
+                    <div className="bg-red-500/5 border border-red-500/20 rounded-lg p-4">
+                      <p className="text-xs font-semibold text-red-400 mb-2 uppercase">What Would Prove This Wrong</p>
+                      <ul className="space-y-2">
+                        {signal.signal.invalidators.map((inv, i) => (
+                          <li key={i} className="flex gap-2 text-sm">
+                            <ShieldAlert className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+                            <span className="text-[hsl(var(--foreground))]/80">{inv}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Detailed Reasoning */}
+                  <div className="bg-[hsl(var(--surface-2))] rounded-lg p-4">
+                    <p className="text-xs font-semibold text-[hsl(var(--primary))] mb-2 uppercase flex items-center gap-1">
+                      <Brain className="w-4 h-4" /> Detailed AI Reasoning
+                    </p>
+                    <p className="text-sm text-[hsl(var(--foreground))]/80 leading-relaxed whitespace-pre-line">
+                      {signal.signal?.detailed_reasoning}
+                    </p>
+                  </div>
+
+                  {/* Learning Context */}
+                  {signal.learning_context_summary && (
+                    <div className="bg-[hsl(var(--surface-2))] rounded-lg p-3 flex items-center gap-4 text-xs text-[hsl(var(--muted-foreground))]">
+                      <Brain className="w-4 h-4 text-[hsl(var(--primary))]" />
+                      <span>Past signals: {signal.learning_context_summary.total_past_signals}</span>
+                      {signal.learning_context_summary.win_rate != null && (
+                        <span>Win rate: {signal.learning_context_summary.win_rate}%</span>
+                      )}
+                      <span>Lessons applied: {signal.learning_context_summary.lessons_count}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           {/* Tabbed Content */}
           <Tabs defaultValue="technical" className="space-y-4">
@@ -245,7 +434,6 @@ export default function SymbolAnalysis() {
                 </Card>
               </div>
 
-              {/* Candlestick Chart */}
               <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-display">Price Chart (Candlestick + Volume)</CardTitle>
@@ -255,7 +443,6 @@ export default function SymbolAnalysis() {
                 </CardContent>
               </Card>
 
-              {/* RSI & MACD */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
                   <CardHeader className="pb-2">
@@ -309,15 +496,13 @@ export default function SymbolAnalysis() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  {/* Disclaimer */}
                   <div className="bg-[hsl(var(--surface-2))] border border-[hsl(var(--warning))]/20 rounded-lg p-3 mb-4 flex gap-2">
                     <AlertTriangle className="w-4 h-4 text-[hsl(var(--warning))] flex-shrink-0 mt-0.5" />
                     <p className="text-xs text-[hsl(var(--muted-foreground))]">
-                      AI analysis is for educational purposes only. Not financial advice. Always do your own research.
+                      AI analysis is for educational purposes only. Not financial advice.
                     </p>
                   </div>
 
-                  {/* Chat Messages */}
                   <ScrollArea className="h-[400px] pr-4 mb-4">
                     <div className="space-y-4">
                       {chatMessages.length === 0 && (
@@ -335,9 +520,7 @@ export default function SymbolAnalysis() {
                               : 'bg-[hsl(var(--surface-2))] border-l-2 border-[hsl(var(--primary))]'
                           }`}>
                             <p className="whitespace-pre-wrap">{msg.content}</p>
-                            {msg.provider && (
-                              <p className="text-xs opacity-60 mt-2 capitalize">via {msg.provider}</p>
-                            )}
+                            {msg.provider && <p className="text-xs opacity-60 mt-2 capitalize">via {msg.provider}</p>}
                           </div>
                         </div>
                       ))}
@@ -352,7 +535,6 @@ export default function SymbolAnalysis() {
                     </div>
                   </ScrollArea>
 
-                  {/* Chat Input */}
                   <div className="flex gap-2">
                     <Input
                       value={chatInput}
@@ -389,10 +571,10 @@ export default function SymbolAnalysis() {
       {!analysis && !loading && (
         <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
           <CardContent className="p-12 text-center">
-            <TrendingUp className="w-16 h-16 text-[hsl(var(--muted-foreground))] mx-auto mb-4 opacity-20" />
+            <Zap className="w-16 h-16 text-[hsl(var(--muted-foreground))] mx-auto mb-4 opacity-20" />
             <h3 className="font-display text-xl font-semibold mb-2">Analyze Any Stock or Commodity</h3>
             <p className="text-sm text-[hsl(var(--muted-foreground))] mb-4">
-              Enter a symbol above (e.g., RELIANCE, TCS, HDFCBANK) or use Ctrl+K to search
+              Enter a symbol above to get AI-powered multi-input analysis with actionable signals
             </p>
             <div className="flex flex-wrap justify-center gap-2">
               {['RELIANCE.NS', 'TCS.NS', 'HDFCBANK.NS', 'GC=F', 'INFY.NS'].map((s) => (

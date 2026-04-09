@@ -1,144 +1,191 @@
 # plan.md — Bharat Market Intel Agent (BMIA)
 
 ## 1. Objectives (updated)
-- ✅ Prove the **core workflow** works with real data: **yfinance OHLCV + news (RSS) + LLM sentiment + technical/fundamental calculations → Alpha Score → recommendation**.
-- ✅ Ship a V1 dashboard (FastAPI + React + MongoDB) for **NSE/BSE stocks + MCX commodity proxies** with charts, metrics, formulas, and SEBI disclaimers.
-- ✅ Provide an **LLM-powered AI agent** (OpenAI/Claude/Gemini via Emergent universal key) for narrative analysis and Q&A.
-- 🔜 VNext: harden data reliability (symbol issues, caching), expand universe, improve scanners/breakout logic, and add advanced UX (compare, exports, alerts).
+- ✅ Ship a working V1 dashboard for Indian markets using real data: **yfinance OHLCV + RSS news + LLM sentiment + technical/fundamental panels**.
+- ✅ Provide an initial combined scoring output (Alpha Score) and UI scaffolding (overview, analysis, scanner, AI chat).
+- 🔁 **Intelligence Revamp (new north star):** evolve BMIA from “formula-based scoring” to a **multi-input intelligence system** that:
+  - produces **AI-generated, actionable signals** (BUY/SELL/HOLD) with **entry, target, stop-loss, timeframe, confidence**
+  - maintains an **auditable recommendation history**
+  - **evaluates outcomes** (win/loss, return, drawdown, hit target/stop/expiry)
+  - **learns from mistakes** via a closed-loop “post-mortem → prompt/context updates” mechanism
+  - exposes a **Track Record Dashboard** (win rate, avg return, expectancy, streaks, sector breakdown)
+- ✅ Maintain **SEBI-style disclaimers** and “educational only / not investment advice” framing everywhere.
 
 ---
 
 ## 2. Implementation Steps (Phases)
 
 ### Phase 1 — Core POC (Isolation) ✅ COMPLETED
-**Goal:** Validate failure-prone integrations (yfinance India tickers + commodity proxies, scraping/RSS, LLM sentiment), then compute a stable Alpha Score.
+**Goal:** Validate the failure-prone integrations (yfinance India tickers + commodity proxies, RSS fallback, LLM sentiment) and produce stable JSON outputs.
 
 **User stories (POC) — completed**
-1. ✅ Input `RELIANCE.NS` → latest OHLCV + derived indicators.
+1. ✅ Input NSE ticker (e.g., `RELIANCE.NS`) → OHLCV + indicators.
 2. ✅ Input commodity proxy (e.g., `GC=F`) → OHLCV + indicators.
 3. ✅ Fetch headlines → sentiment score in `[-1, 1]`.
-4. ✅ See Technical/Fundamental/Sentiment subscores + final Alpha Score.
-5. ✅ Deterministic recommendation + SEBI-style disclaimer.
+4. ✅ Compute subscores + Alpha Score.
+5. ✅ Deterministic recommendation + disclaimer.
 
 **Delivered artifacts**
-- ✅ Single comprehensive POC test script: `/app/tests/test_core_poc.py`
-- ✅ Fixed issues during POC:
-  - `.env` newline issue for `EMERGENT_LLM_KEY`
-  - Google News RSS query URL encoding
+- ✅ `/app/tests/test_core_poc.py`
 
 **Exit criteria — met**
-- ✅ All 6 test blocks passed on 4 symbols (3 NSE stocks + 1 commodity proxy).
+- ✅ All 6 test blocks passed on 4 symbols.
 
 ---
 
 ### Phase 2 — V1 App Development (MVP Dashboard) ✅ COMPLETED
-**Goal:** Build full end-to-end product around the proven POC logic (no auth), with a Bloomberg-terminal-meets-modern-web UI.
+**Goal:** Build an end-to-end dashboard around the validated POC pipeline.
 
-**User stories (V1) — completed**
-1. ✅ Search a stock/commodity and see Alpha Score + recommendation.
-2. ✅ Candlestick + volume + RSI + MACD charts.
-3. ✅ News feed + sentiment scoring.
-4. ✅ Fundamental metrics + Graham intrinsic value (N/A-safe).
-5. ✅ Both professional trading-style charts + lightweight charting where appropriate.
+**Delivered (V1)**
+- ✅ Backend (FastAPI): analysis endpoints, market overview, heatmap, batch scan, AI chat.
+- ✅ Frontend (React + shadcn/ui): Market Overview, Symbol Analysis (tabs), Batch Scanner.
+- ✅ Professional charting: `lightweight-charts` for candlesticks + Recharts for RSI/MACD.
+- ✅ LLM provider support: OpenAI/Claude/Gemini via Emergent universal key.
+- ✅ SEBI disclaimers.
 
-**Backend (FastAPI) — implemented**
-- ✅ Core endpoints:
-  - `GET /api/health`
-  - `GET /api/symbols?q=` (autocomplete/search)
-  - `POST /api/analyze-stock` (full single-symbol analysis)
-  - `POST /api/batch/analyze` (scanner; neutral sentiment for speed)
-  - `GET /api/market/overview` (gainers/losers)
-  - `GET /api/market/heatmap` (sector grouped)
-  - `POST /api/ai/chat` (LLM agent analysis; provider toggle)
-  - `GET /api/analyses/history`
-- ✅ Service modules:
-  - `services/market_service.py` (yfinance OHLCV + caching)
-  - `services/technical_service.py` (RSI, MACD, VSA, breakout heuristics)
-  - `services/fundamental_service.py` (P/E, D/E, growth, Graham value)
-  - `services/news_service.py` (yfinance news + Google News RSS fallback)
-  - `services/sentiment_service.py` (LLM sentiment JSON)
-  - `services/alpha_service.py` (weights + Sharpe + recommendation)
-  - `services/ai_agent_service.py` (OpenAI/Claude/Gemini adapters)
-- ✅ MongoDB integration for saving summary analysis rows.
-
-**Frontend (React + shadcn/ui) — implemented**
-- ✅ Pages:
-  - Market Overview (gainers/losers, sector heatmap, tracked stocks table)
-  - Symbol Analysis (tabs: Technical / Fundamental / News & Sentiment / AI Agent / Formulas)
-  - Batch Scanner (sortable table + sector filter)
-- ✅ Core components:
-  - Alpha gauge (0–100)
-  - Candlestick + volume (TradingView-style via `lightweight-charts`)
-  - RSI + MACD charts (Recharts)
-  - Fundamentals panel + Graham value
-  - News feed with per-headline sentiment notes
-  - Command palette search (Ctrl/Cmd+K)
-  - SEBI disclaimers visible across pages
-- ✅ Design system applied (dark-first, teal primary, semantic red/green), with typography and tokens defined in `index.css`.
-
-**Fixes/patches applied during Phase 2**
-- ✅ Fixed `lightweight-charts` runtime error by setting chart localization locale (`en-US`).
-- ✅ Data reliability fix: yfinance symbol availability issue (e.g., `TATAMOTORS.NS` errors). Replaced with a valid symbol and improved resilience.
-
-**Phase 2 testing — completed**
-- ✅ Testing agent confirmation:
-  - Backend: **100% (8/8 tests passed)**
-  - Frontend: **95%** (expected 15–20s analysis wait; UI stable)
-  - Integration: **100%** (yfinance + LLM + charts)
-  - No critical bugs found
+**Testing**
+- ✅ Backend 100% (8/8), Integration 100%, Frontend core flows validated.
 
 ---
 
-### Phase 3 — Add More Features + Hardening 🔜 NEXT
-**Goal:** Expand coverage, improve scoring rigor, reduce flakiness, and add advanced analysis workflows.
+### Phase 3 — Intelligence Revamp (Multi-input AI Signals + Learning Loop) 🚧 CURRENT
+**Goal:** Replace the “formula-only recommendation” with an **AI decision engine** that uses raw multi-modal inputs, generates trade-like signals, tracks them over time, evaluates correctness, and continuously improves.
 
-**User stories (Expansion)**
-1. Filter batch scanner by sector, market cap, volatility, alpha threshold.
-2. Side-by-side symbol comparison (price/indicators/fundamentals/sentiment).
-3. Explain breakout flags with levels + lookback windows + ATR compression.
-4. Corporate actions (splits/dividends) adjustment and display.
-5. Export analysis to PDF/CSV.
+#### 3.1 New Concepts & Output Contracts
+**Signal (canonical schema)**
+- `signal_id`, `symbol`, `created_at`, `provider`, `model`
+- `action`: `BUY | SELL | HOLD | AVOID`
+- `timeframe`: `INTRADAY | SWING | POSITIONAL` + `horizon_days`
+- `entry`: `{ type: market/limit, price, rationale }`
+- `targets`: `[{ price, probability }]` (at least 1)
+- `stop_loss`: `{ price, type: hard/soft, rationale }`
+- `confidence`: `0–100`
+- `position_sizing_hint`: risk-based (educational), e.g. “risk 0.5–1% capital”
+- `key_theses`: bullets referencing provided data only
+- `invalidators`: what would prove the thesis wrong
+- `risk_notes` + mandatory disclaimer
 
-**Implementation focus**
-- Breakout detection v2: multi-year consolidation detection (rolling highs/lows, ATR compression).
-- VSA v2: spread/volume anomaly detection and effort-vs-result signals.
-- Sector benchmarking: compute sector P/E medians from tracked universe (cache + periodic refresh).
-- News hardening: add retry/backoff, selector fallback; prefer RSS.
-- Caching/Perf: TTL tuning, background refresh jobs, rate-limit protection.
-- Observability: structured logs, request IDs, endpoint latency.
-- Optional: provider comparison for sentiment (OpenAI vs Claude vs Gemini).
+**Evaluation schema**
+- `evaluation_id`, `signal_id`, `evaluated_at`
+- `status`: `OPEN | HIT_TARGET | HIT_STOP | EXPIRED | INVALIDATED`
+- `return_pct`, `max_drawdown_pct`, `days_open`
+- `notes`: what worked/failed
 
-**Phase 3 testing**
-- Batch scan reliability, compare view, export correctness, corporate action adjustments.
+#### 3.2 Backend Architecture Changes
+Add new services:
+- `services/intelligence_engine.py`
+  - gathers **raw** OHLCV + indicator series + fundamentals + headlines + sentiment + market regime features
+  - injects **learning context**
+  - calls LLM with strict JSON schema for signal generation
+- `services/signal_service.py`
+  - CRUD for signals
+  - normalization/validation of LLM output (bounds checks for targets/stops)
+  - evaluation logic (target/stop/expiry rules)
+- `services/learning_service.py`
+  - aggregates historical outcomes
+  - produces “lessons learned” + pattern library (what signals failed and why)
+  - generates a compact **learning_context** blob for prompts
+- `services/performance_service.py`
+  - track record metrics: win rate, avg return, expectancy, sharpe-like signal metric, sector breakdown
+
+MongoDB collections:
+- `signals`
+- `signal_evaluations`
+- `learning_context` (versioned)
+- (keep) `analyses` for snapshots
+
+New/updated endpoints:
+- `POST /api/signals/generate` (generate & persist a signal; returns structured signal JSON)
+- `GET /api/signals/active` (open signals with live P&L)
+- `GET /api/signals/history` (closed + open with filters)
+- `POST /api/signals/evaluate` (evaluate one signal)
+- `POST /api/signals/evaluate-all` (batch evaluate open signals)
+- `GET /api/signals/track-record` (aggregated performance metrics)
+- `GET /api/signals/learning-context` (current lessons + last updated)
+
+Background jobs (lightweight):
+- periodic evaluation runner (e.g., every X minutes/hours) to update open signals
+- daily learning context refresh from the last N evaluations
+
+#### 3.3 Intelligence Flow (Closed Loop)
+1. **Collect data**: OHLCV (multi-timeframe), indicator series, key levels, fundamentals, recent news, sentiment.
+2. **Compute regime features**: volatility percentile, trend strength, drawdown, volume anomalies.
+3. **Retrieve learning context**: last N mistakes/successes + summary stats.
+4. **LLM signal generation**: strict JSON schema + constraints.
+5. **Persist signal**: store in `signals` with snapshot inputs hash.
+6. **Evaluate over time**: update status & returns; write to `signal_evaluations`.
+7. **Learn**: produce updated `learning_context` for the next signal generation.
+
+> Note: This is “learning” via **prompt/context updates and guardrails**, not model fine-tuning.
+
+#### 3.4 Frontend Revamp
+New pages:
+- **Signal Dashboard** (`/signals`)
+  - Active signals table/cards with: symbol, action, entry, target(s), stop, days open, live return %, confidence
+  - filters: action, timeframe, confidence, sector
+  - signal detail drawer: reasoning, invalidators, evidence
+
+- **Track Record** (`/track-record`)
+  - win rate, avg return, expectancy, best/worst streak
+  - charts: equity curve of signal outcomes, distribution of returns
+  - breakdown: by sector, timeframe, confidence bands
+
+Update Symbol Analysis page:
+- add **“Generate AI Signal”** action
+- display latest signal card with entry/target/stop overlay hints
+- show “why this signal” evidence referencing raw inputs
+- show “AI Learning Insights” panel (top mistakes + current guardrails)
+
+#### 3.5 Phase 3 Testing (new)
+Backend tests:
+- signal generation returns valid schema and passes bounds checks
+- signal persistence and retrieval
+- evaluation correctness (target/stop/expiry)
+- track record aggregates correctness
+
+Frontend tests:
+- generate signal flow
+- active signals render + update
+- track record renders
+
+Success criteria for Phase 3:
+- AI-generated signals are **structured, reproducible**, and stored with a full audit trail
+- System can compute **track record** from stored signals
+- Learning context is updated from outcomes and influences future signal outputs
 
 ---
 
-### Phase 4 — Optional: Auth + Personalization (only after approval)
-**User stories (Auth)**
-1. Sign in and save watchlists.
-2. Alerts when Alpha crosses thresholds.
-3. Store preferred providers/timeframes.
-4. Recent analyses history per user.
-5. API usage / quotas per account.
+### Phase 4 — Hardening + Advanced Quant Features (post-intelligence) 🔜 NEXT
+**Goal:** Improve robustness and analytical quality once the intelligence loop is stable.
+- Breakout detection v2 (multi-year consolidation + ATR compression)
+- VSA v2 (effort vs result)
+- Sector benchmarking from tracked universe
+- Corporate actions adjustments
+- Export (CSV/PDF)
+- Compare view, alerts, watchlists
+
+---
+
+### Phase 5 — Optional: Auth + Personalization (only after approval)
+- Login, watchlists, saved signals, alerts, provider preferences, per-user performance
 
 ---
 
 ## 3. Next Actions (immediate) (updated)
-1. ✅ Phase 1 + Phase 2 already delivered.
-2. 🔜 Phase 3 kickoff:
-   - Add richer scanner filters + pagination
-   - Implement compare view (2 symbols)
-   - Improve breakout + VSA logic and explainability
-   - Add export (CSV first)
-3. 🔜 Data hardening:
-   - Validate symbol list periodically; auto-disable yfinance-missing symbols
-   - Improve caching and fallback behaviors
+1. Implement backend Phase 3 services: `intelligence_engine.py`, `signal_service.py`, `learning_service.py`, `performance_service.py`.
+2. Create MongoDB schemas/collections and migrations (soft).
+3. Add endpoints for signal generation, evaluation, history, track record.
+4. Add frontend pages: Signal Dashboard + Track Record; update Symbol Analysis to generate and display signals.
+5. Add a periodic evaluator (server-side scheduled task) and daily learning-context refresh.
+6. Run E2E tests and validate with a small universe (Nifty 10 + 2 commodities).
 
 ---
 
 ## 4. Success Criteria (updated)
-- ✅ POC: For 3 stocks + 1 commodity proxy, produces complete JSON (indicators, fundamentals/N/A, sentiment, Sharpe, Alpha Score, recommendation).
-- ✅ V1: `/api/analyze-stock` returns full analysis; UI renders gauge + charts + fundamentals + news + AI agent.
-- ✅ Batch: Scanner returns a usable ranked list and is sortable/filterable (baseline).
-- ✅ Reliability: Graceful degradation when yfinance/scraping/LLM fails (partial results + warnings).
-- ✅ Compliance: SEBI-style disclaimers visible; recommendations framed as educational, not financial advice.
+- ✅ V1 remains functional (overview/analysis/scanner/chat).
+- ✅ Phase 3 delivers:
+  - AI-generated signals with entry/target/stop/timeframe/confidence
+  - persisted history + evaluation outcomes
+  - track record dashboard with core metrics
+  - learning context that updates and is used for future signals
+- ✅ Compliance: explicit disclaimers, no guarantees, transparent assumptions, no fabricated numbers.

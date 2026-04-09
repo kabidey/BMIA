@@ -24,6 +24,10 @@ from services.news_service import fetch_news
 from services.sentiment_service import analyze_sentiment
 from services.alpha_service import full_alpha_computation
 from services.ai_agent_service import get_ai_analysis
+from services.intelligence_engine import generate_ai_signal
+from services.signal_service import save_signal, get_active_signals, get_signal_history, evaluate_signal, evaluate_all_signals
+from services.learning_service import build_learning_context, get_cached_learning_context
+from services.performance_service import get_track_record
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -65,6 +69,15 @@ class ChatRequest(BaseModel):
 class BatchRequest(BaseModel):
     symbols: Optional[List[str]] = None
     sector: Optional[str] = None
+
+class GenerateSignalRequest(BaseModel):
+    symbol: str
+    provider: str = "openai"
+    period: str = "6mo"
+
+class EvaluateSignalRequest(BaseModel):
+    signal_id: str
+    current_price: Optional[float] = None
 
 
 @app.get("/api/health")
@@ -320,6 +333,168 @@ async def analysis_history(limit: int = 20):
         return {"history": results}
     except Exception as e:
         return {"history": [], "error": str(e)}
+
+
+# ========== SIGNAL ENDPOINTS ==========
+
+@app.post("/api/signals/generate")
+async def generate_signal(req: GenerateSignalRequest):
+    """Generate an AI-driven trade signal with multi-input intelligence."""
+    symbol = req.symbol
+    logger.info(f"Generating AI signal for {symbol}...")
+
+    # 1. Gather ALL raw data
+    raw_data = {}
+
+    market_data = get_market_snapshot(symbol, req.period, "1d")
+    if "error" in market_data:
+        raise HTTPException(status_code=404, detail=f"No market data for {symbol}")
+
+    raw_data["market_data"] = {
+        "latest": market_data["latest"],
+        "change": market_data["change"],
+        "change_pct": market_data["change_pct"],
+        "data_points": market_data["data_points"],
+    }
+    raw_data["chart_data"] = {"ohlcv": market_data["ohlcv"]}
+
+    # Technical
+    technical = full_technical_analysis(market_data["ohlcv"])
+    raw_data["technical"] = technical
+
+    # Fundamentals
+    fundamentals = get_fundamentals(symbol)
+    raw_data["fundamental"] = fundamentals
+
+    # News & Sentiment
+    headlines = fetch_news(symbol)
+    raw_data["news"] = {"headlines": headlines, "count": len(headlines)}
+
+    sentiment = await analyze_sentiment(symbol, headlines)
+    raw_data["sentiment"] = sentiment
+
+    # Alpha Score
+    tech_score = technical.get("technical_score", 50) if isinstance(technical, dict) else 50
+    fund_score = fundamentals.get("fundamental_score", 50)
+    sent_score = sentiment.get("sentiment_score_0_100", 50)
+    alpha = full_alpha_computation(market_data["ohlcv"], tech_score, fund_score, sent_score)
+    raw_data["alpha"] = alpha
+
+    # 2. Get learning context
+    db = app.db
+    learning_ctx = await get_cached_learning_context(db)
+
+    # 3. Generate AI signal
+    signal_data = await generate_ai_signal(symbol, raw_data, learning_ctx, req.provider)
+
+    if "error" in signal_data:
+        raise HTTPException(status_code=500, detail=signal_data["error"])
+
+    # 4. Save signal
+    saved = await save_signal(db, signal_data, raw_data)
+
+    # 5. Refresh learning context (async, don't block)
+    try:
+        await build_learning_context(db)
+    except Exception:
+        pass
+
+    return {
+        "signal": saved,
+        "raw_scores": {
+            "technical_score": tech_score,
+            "fundamental_score": fund_score,
+            "sentiment_score": sent_score,
+            "alpha_score": alpha["alpha_score"],
+        },
+        "learning_context_summary": {
+            "total_past_signals": learning_ctx.get("total_signals", 0),
+            "win_rate": learning_ctx.get("win_rate"),
+            "lessons_count": len(learning_ctx.get("lessons", [])),
+        },
+    }
+
+
+@app.get("/api/signals/active")
+async def active_signals(symbol: str = None):
+    """Get all active (open) signals."""
+    db = app.db
+    signals = await get_active_signals(db, symbol)
+
+    # Update current prices for live P&L
+    for sig in signals:
+        try:
+            market = get_market_snapshot(sig["symbol"], "5d", "1d")
+            if "error" not in market:
+                sig["current_price"] = market["latest"]["close"]
+                entry_price = sig.get("entry_price", 0)
+                if entry_price > 0:
+                    action = sig.get("action", "HOLD")
+                    if action == "BUY":
+                        sig["live_return_pct"] = round((market["latest"]["close"] - entry_price) / entry_price * 100, 2)
+                    elif action == "SELL":
+                        sig["live_return_pct"] = round((entry_price - market["latest"]["close"]) / entry_price * 100, 2)
+                    else:
+                        sig["live_return_pct"] = 0
+        except Exception:
+            pass
+
+    return {"signals": signals, "total": len(signals)}
+
+
+@app.get("/api/signals/history")
+async def signal_history(limit: int = 50, symbol: str = None, status: str = None):
+    """Get signal history with filters."""
+    db = app.db
+    signals = await get_signal_history(db, limit, symbol, status)
+    return {"signals": signals, "total": len(signals)}
+
+
+@app.post("/api/signals/evaluate")
+async def evaluate_one_signal(req: EvaluateSignalRequest):
+    """Evaluate a single signal."""
+    db = app.db
+
+    current_price = req.current_price
+    if not current_price:
+        # Fetch current price
+        signal = await db.signals.find_one({"_id": __import__("bson").ObjectId(req.signal_id)})
+        if signal:
+            market = get_market_snapshot(signal["symbol"], "5d", "1d")
+            if "error" not in market:
+                current_price = market["latest"]["close"]
+
+    if not current_price:
+        raise HTTPException(status_code=400, detail="Could not determine current price")
+
+    result = await evaluate_signal(db, req.signal_id, current_price)
+    if "error" in result:
+        raise HTTPException(status_code=404, detail=result["error"])
+    return result
+
+
+@app.post("/api/signals/evaluate-all")
+async def evaluate_all():
+    """Evaluate all open signals against current prices."""
+    db = app.db
+    results = await evaluate_all_signals(db)
+    # Refresh learning context after evaluation
+    await build_learning_context(db)
+    return {"evaluated": len(results), "results": results}
+
+
+@app.get("/api/signals/track-record")
+async def track_record():
+    """Get comprehensive track record metrics."""
+    db = app.db
+    return await get_track_record(db)
+
+
+@app.get("/api/signals/learning-context")
+async def learning_context():
+    """Get current learning context (what the AI has learned)."""
+    db = app.db
+    return await get_cached_learning_context(db)
 
 
 if __name__ == "__main__":
