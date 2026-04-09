@@ -65,7 +65,7 @@ export default function Sidebar() {
         </div>
         {(expanded || mobileOpen) && (
           <span className="ml-3 font-display font-semibold text-sm tracking-wide text-[hsl(var(--foreground))]">
-            BMIA
+            Bharat Market Intel
           </span>
         )}
         {isMobile && mobileOpen && (
