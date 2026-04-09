@@ -1,53 +1,33 @@
-import { useEffect } from "react";
-import "@/App.css";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import axios from "axios";
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import './App.css';
+import Sidebar from './components/layout/Sidebar';
+import MarketOverview from './pages/MarketOverview';
+import SymbolAnalysis from './pages/SymbolAnalysis';
+import BatchScanner from './pages/BatchScanner';
+import { Toaster } from './components/ui/sonner';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
-
-const Home = () => {
-  const helloWorldApi = async () => {
-    try {
-      const response = await axios.get(`${API}/`);
-      console.log(response.data.message);
-    } catch (e) {
-      console.error(e, `errored out requesting / api`);
-    }
-  };
-
-  useEffect(() => {
-    helloWorldApi();
+function App() {
+  React.useEffect(() => {
+    document.documentElement.classList.add('dark');
   }, []);
 
   return (
-    <div>
-      <header className="App-header">
-        <a
-          className="App-link"
-          href="https://emergent.sh"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <img src="https://avatars.githubusercontent.com/in/1201222?s=120&u=2686cf91179bbafbc7a71bfbc43004cf9ae1acea&v=4" />
-        </a>
-        <p className="mt-5">Building something incredible ~!</p>
-      </header>
-    </div>
-  );
-};
-
-function App() {
-  return (
-    <div className="App">
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Home />}>
-            <Route index element={<Home />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
-    </div>
+    <Router>
+      <div className="flex min-h-screen bg-[hsl(var(--background))]" data-testid="app-root">
+        <Sidebar />
+        <main className="flex-1 overflow-auto ml-16 lg:ml-56">
+          <Routes>
+            <Route path="/" element={<MarketOverview />} />
+            <Route path="/analyze/:symbol" element={<SymbolAnalysis />} />
+            <Route path="/analyze" element={<SymbolAnalysis />} />
+            <Route path="/scanner" element={<BatchScanner />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </main>
+        <Toaster position="top-right" theme="dark" />
+      </div>
+    </Router>
   );
 }
 

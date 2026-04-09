@@ -1,34 +1,89 @@
-.App-logo {
-    height: 40vmin;
-    pointer-events: none;
+.noise-overlay {
+  position: relative;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-    .App-logo {
-        animation: App-logo-spin infinite 20s linear;
-    }
+.noise-overlay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.04;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/></filter><rect width='120' height='120' filter='url(%23n)' opacity='0.35'/></svg>");
 }
 
-.App-header {
-    background-color: #0f0f10;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    font-size: calc(10px + 2vmin);
-    color: white;
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
 }
 
-.App-link {
-    color: #61dafb;
+::-webkit-scrollbar-track {
+  background: hsl(222, 18%, 8%);
 }
 
-@keyframes App-logo-spin {
-    from {
-        transform: rotate(0deg);
-    }
-    to {
-        transform: rotate(360deg);
-    }
+::-webkit-scrollbar-thumb {
+  background: hsl(222, 14%, 18%);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(215, 16%, 30%);
+}
+
+/* Animation utilities */
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out;
+}
+
+/* Price change colors */
+.text-up { color: hsl(142, 70%, 45%); }
+.text-down { color: hsl(0, 72%, 52%); }
+.text-neutral-color { color: hsl(215, 16%, 70%); }
+
+.bg-up { background-color: hsl(142, 70%, 45%); }
+.bg-down { background-color: hsl(0, 72%, 52%); }
+
+/* Card hover effect */
+.card-hover {
+  border: 1px solid hsl(222, 14%, 18%);
+}
+.card-hover:hover {
+  border-color: hsl(222, 14%, 24%);
+}
+
+/* KaTeX override for dark theme */
+.katex { color: hsl(210, 20%, 98%); }
+.katex .base { color: hsl(210, 20%, 98%); }
+
+/* Loading stepper */
+.loading-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 0.875rem;
+  color: hsl(215, 16%, 70%);
+}
+
+.loading-step.active {
+  color: hsl(186, 92%, 42%);
+}
+
+.loading-step.done {
+  color: hsl(142, 70%, 45%);
 }
