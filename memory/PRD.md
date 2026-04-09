@@ -58,6 +58,13 @@ Build a Tier-1 Quant Analyst specializing in Indian Equity and Commodity markets
 - Mobile responsive sidebar (hamburger menu)
 - Removed "Made with Emergent" badge
 
+### Performance: Background Cache ✅
+- Background daemon thread pre-fetches cockpit data every 30s
+- Slow modules (volume shockers, OI quadrant) refresh every 120s
+- Market overview & heatmap cached with 60s TTL
+- Dashboard loads in ~2s (was 15-20s)
+- All API responses < 300ms from cache
+
 ## Architecture
 ```
 /app/backend/

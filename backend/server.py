@@ -30,7 +30,7 @@ from services.intelligence_engine import generate_ai_signal, generate_batch_rank
 from services.signal_service import save_signal, get_active_signals, get_signal_history, evaluate_signal, evaluate_all_signals
 from services.learning_service import build_learning_context, get_cached_learning_context
 from services.performance_service import get_track_record
-from services.dashboard_service import get_full_cockpit, get_slow_cockpit_modules
+from services.dashboard_service import get_full_cockpit, get_slow_cockpit_modules, get_cached_cockpit, get_cached_cockpit_slow, start_background_cache
 from services.full_market_scanner import god_mode_scan
 
 logging.basicConfig(level=logging.INFO)
@@ -49,6 +49,8 @@ async def lifespan(app: FastAPI):
     app.mongodb_client = AsyncIOMotorClient(MONGO_URL)
     app.db = app.mongodb_client[DB_NAME]
     logger.info("Connected to MongoDB")
+    # Start background cockpit cache
+    start_background_cache()
     yield
     app.mongodb_client.close()
 
@@ -377,12 +379,18 @@ async def batch_ai_scan(req: BatchAIScanRequest):
     }
 
 
-@app.get("/api/market/overview")
-async def market_overview():
+# ── In-memory cache for market overview & heatmap ─────────────────────
+_overview_cache = {"data": None, "ts": 0}
+_heatmap_cache = {"data": None, "ts": 0}
+_OVERVIEW_TTL = 60  # seconds
+
+
+def _refresh_overview():
+    """Background-safe overview refresh."""
+    from services.market_service import get_market_snapshot
     key_symbols = ["RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "ICICIBANK.NS",
                    "ITC.NS", "SBIN.NS", "BHARTIARTL.NS", "LT.NS", "KOTAKBANK.NS",
                    "SUNPHARMA.NS", "WIPRO.NS", "BAJFINANCE.NS", "MARUTI.NS", "HCLTECH.NS"]
-    
     movers = []
     for sym in key_symbols:
         try:
@@ -400,9 +408,7 @@ async def market_overview():
                 })
         except Exception as e:
             logger.error(f"Overview error for {sym}: {e}")
-    
     movers.sort(key=lambda x: x.get("change_pct", 0), reverse=True)
-    
     return {
         "gainers": movers[:5],
         "losers": movers[-5:][::-1] if len(movers) >= 5 else [],
@@ -411,8 +417,9 @@ async def market_overview():
     }
 
 
-@app.get("/api/market/heatmap")
-async def market_heatmap():
+def _refresh_heatmap():
+    """Background-safe heatmap refresh."""
+    from services.market_service import get_market_snapshot
     heatmap = {}
     for sym_info in NIFTY_50[:30]:
         try:
@@ -430,21 +437,84 @@ async def market_heatmap():
                 })
         except Exception as e:
             logger.error(f"Heatmap error for {sym_info['symbol']}: {e}")
-    
     return {"heatmap": heatmap, "timestamp": datetime.now().isoformat()}
+
+
+def _bg_overview_heatmap_loop():
+    """Daemon thread: refreshes overview & heatmap every 60s."""
+    import time as _t
+    while True:
+        try:
+            _overview_cache["data"] = _refresh_overview()
+            _overview_cache["ts"] = _t.time()
+            logger.info("BG CACHE: Market overview refreshed")
+        except Exception as e:
+            logger.error(f"BG CACHE overview error: {e}")
+        try:
+            _heatmap_cache["data"] = _refresh_heatmap()
+            _heatmap_cache["ts"] = _t.time()
+            logger.info("BG CACHE: Heatmap refreshed")
+        except Exception as e:
+            logger.error(f"BG CACHE heatmap error: {e}")
+        _t.sleep(60)
+
+
+import threading as _threading
+_bg_thread_started = False
+
+
+def _ensure_bg_threads():
+    global _bg_thread_started
+    if not _bg_thread_started:
+        _bg_thread_started = True
+        t = _threading.Thread(target=_bg_overview_heatmap_loop, daemon=True)
+        t.start()
+        logger.info("BG CACHE: Overview/heatmap background thread launched")
+
+
+@app.get("/api/market/overview")
+async def market_overview():
+    _ensure_bg_threads()
+    import time as _t
+    if _overview_cache["data"] and (_t.time() - _overview_cache["ts"]) < _OVERVIEW_TTL:
+        return _overview_cache["data"]
+    # First call before cache warm
+    data = _refresh_overview()
+    _overview_cache["data"] = data
+    _overview_cache["ts"] = _t.time()
+    return data
+
+
+@app.get("/api/market/heatmap")
+async def market_heatmap():
+    _ensure_bg_threads()
+    import time as _t
+    if _heatmap_cache["data"] and (_t.time() - _heatmap_cache["ts"]) < _OVERVIEW_TTL:
+        return _heatmap_cache["data"]
+    data = _refresh_heatmap()
+    _heatmap_cache["data"] = data
+    _heatmap_cache["ts"] = _t.time()
+    return data
 
 
 # ── Market Intelligence Cockpit Endpoints ─────────────────────────────────────
 @app.get("/api/market/cockpit")
 async def market_cockpit():
-    """Consolidated dashboard data: indices, VIX, flows, breadth, sectors, 52W, PCR, deals, actions."""
+    """Consolidated dashboard data — returns pre-fetched cache instantly."""
+    cached = get_cached_cockpit()
+    if cached:
+        return cached
+    # Fallback: first request before cache is warm
     data = get_full_cockpit()
     return data
 
 
 @app.get("/api/market/cockpit/slow")
 async def market_cockpit_slow():
-    """Slower modules: volume shockers, OI quadrant. Called separately for UX."""
+    """Slower modules — returns pre-fetched cache instantly."""
+    cached = get_cached_cockpit_slow()
+    if cached:
+        return cached
     data = get_slow_cockpit_modules()
     return data
 

@@ -6,10 +6,11 @@ Provides all data for the 4-section cockpit dashboard:
   3. Derivatives & Sentiment: PCR, OI Quadrant
   4. Corporate Actions & News: Block Deals, Earnings/Actions
 
-Uses nselib + yfinance with in-memory TTL caching and graceful degradation.
+Uses nselib + yfinance with background pre-fetch cache for instant responses.
 """
 import logging
 import time
+import threading
 import traceback
 from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
@@ -34,6 +35,68 @@ def _cached(key, ttl=CACHE_TTL):
 
 def _set_cache(key, data, ttl=CACHE_TTL):
     _cache[key] = {"data": data, "ts": time.time()}
+
+
+# ── Background Pre-fetch Cache ───────────────────────────────────────────────
+_prefetch_cache = {
+    "cockpit": None,
+    "cockpit_slow": None,
+    "cockpit_ts": 0,
+    "cockpit_slow_ts": 0,
+    "ready": False,
+}
+_prefetch_lock = threading.Lock()
+
+
+def get_cached_cockpit():
+    """Return pre-fetched cockpit data instantly."""
+    with _prefetch_lock:
+        return _prefetch_cache.get("cockpit")
+
+
+def get_cached_cockpit_slow():
+    """Return pre-fetched slow cockpit data instantly."""
+    with _prefetch_lock:
+        return _prefetch_cache.get("cockpit_slow")
+
+
+def _background_refresh_loop():
+    """Daemon thread: refreshes cockpit data every 30s, slow modules every 120s."""
+    logger.info("COCKPIT CACHE: Background refresh thread started")
+    cycle = 0
+    while True:
+        try:
+            # Always refresh main cockpit (fast modules)
+            t0 = time.time()
+            data = get_full_cockpit()
+            elapsed = round(time.time() - t0, 1)
+            with _prefetch_lock:
+                _prefetch_cache["cockpit"] = data
+                _prefetch_cache["cockpit_ts"] = time.time()
+                _prefetch_cache["ready"] = True
+            logger.info(f"COCKPIT CACHE: Main cockpit refreshed in {elapsed}s")
+
+            # Refresh slow modules every 4th cycle (~120s)
+            if cycle % 4 == 0:
+                t0 = time.time()
+                slow = get_slow_cockpit_modules()
+                elapsed = round(time.time() - t0, 1)
+                with _prefetch_lock:
+                    _prefetch_cache["cockpit_slow"] = slow
+                    _prefetch_cache["cockpit_slow_ts"] = time.time()
+                logger.info(f"COCKPIT CACHE: Slow modules refreshed in {elapsed}s")
+        except Exception as e:
+            logger.error(f"COCKPIT CACHE: Refresh error: {e}")
+
+        cycle += 1
+        time.sleep(30)
+
+
+def start_background_cache():
+    """Start the background pre-fetch thread (call once on app startup)."""
+    t = threading.Thread(target=_background_refresh_loop, daemon=True)
+    t.start()
+    logger.info("COCKPIT CACHE: Background thread launched")
 
 
 def _safe_float(val, default=None):
