@@ -9,7 +9,6 @@ import { Input } from '../components/ui/input';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { Search, TrendingUp, BarChart3, FileText, MessageSquare, Loader2, AlertTriangle, Send, Zap, Target, ShieldAlert, Brain } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
-import AlphaGauge from '../components/charts/AlphaGauge';
 import CandlestickChart from '../components/charts/CandlestickChart';
 import RSIChart from '../components/charts/RSIChart';
 import MACDChart from '../components/charts/MACDChart';
@@ -52,7 +51,7 @@ export default function SymbolAnalysis() {
       setTimeout(() => setLoadingStep('Computing technical indicators...'), 2000);
       setTimeout(() => setLoadingStep('Analyzing fundamentals...'), 4000);
       setTimeout(() => setLoadingStep('Scanning news sentiment...'), 6000);
-      setTimeout(() => setLoadingStep('Computing Alpha Score...'), 8000);
+      setTimeout(() => setLoadingStep('Analyzing valuation metrics...'), 8000);
       const data = await analyzeStock(sym);
       setAnalysis(data);
       setSymbol(sym);
@@ -160,9 +159,9 @@ export default function SymbolAnalysis() {
       {/* Analysis Results */}
       {analysis && !loading && (
         <>
-          {/* Header with Alpha Score */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <Card className="lg:col-span-2 bg-[hsl(var(--card))] border-[hsl(var(--border))]">
+          {/* Header without Alpha Gauge */}
+          <div className="grid grid-cols-1 gap-6">
+            <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
               <CardContent className="p-6">
                 <div className="flex items-start justify-between">
                   <div>
@@ -179,25 +178,29 @@ export default function SymbolAnalysis() {
                       <span className="font-mono text-3xl font-bold tabular-nums" data-testid="stock-price">
                         {formatPrice(analysis.market_data?.latest?.close)}
                       </span>
-                      <span className={`font-mono text-lg tabular-nums ${analysis.market_data?.change_pct >= 0 ? 'text-up' : 'text-down'}`}>
+                      <span className={`font-mono text-lg tabular-nums ${analysis.market_data?.change_pct >= 0 ? 'text-[hsl(var(--up))]' : 'text-[hsl(var(--down))]'}`}>
                         {analysis.market_data?.change >= 0 ? '+' : ''}{analysis.market_data?.change}
                         ({analysis.market_data?.change_pct >= 0 ? '+' : ''}{analysis.market_data?.change_pct}%)
                       </span>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <Badge
-                      style={{ backgroundColor: analysis.alpha?.recommendation_color, color: '#fff' }}
-                      className="text-sm px-3 py-1"
-                      data-testid="recommendation-badge"
-                    >
-                      {analysis.alpha?.recommendation}
-                    </Badge>
+                  <div className="text-right space-y-2">
+                    {analysis.fundamental?.valuation && (
+                      <Badge
+                        variant={analysis.fundamental.valuation.includes('Under') ? 'default' : analysis.fundamental.valuation.includes('Over') ? 'destructive' : 'secondary'}
+                        className="text-sm px-3 py-1"
+                        data-testid="valuation-badge"
+                      >
+                        {analysis.fundamental.valuation}
+                      </Badge>
+                    )}
+                    <p className="text-xs text-[hsl(var(--muted-foreground))]">
+                      Graham: {analysis.fundamental?.graham_value ? `${analysis.fundamental.graham_value}` : 'N/A'}
+                    </p>
                   </div>
                 </div>
               </CardContent>
             </Card>
-            <AlphaGauge alpha={analysis.alpha} />
           </div>
 
           {/* AI Signal Generation Section */}
@@ -391,7 +394,8 @@ export default function SymbolAnalysis() {
 
             {/* Technical Tab */}
             <TabsContent value="technical" className="space-y-6">
-              <div className="grid grid-cols-1 xl:grid-cols-4 gap-4">
+              {/* Primary Indicators Row */}
+              <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
                 <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
                   <CardContent className="p-4 text-center">
                     <p className="text-xs text-[hsl(var(--muted-foreground))]">RSI (14)</p>
@@ -406,34 +410,212 @@ export default function SymbolAnalysis() {
                 <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
                   <CardContent className="p-4 text-center">
                     <p className="text-xs text-[hsl(var(--muted-foreground))]">MACD Histogram</p>
-                    <p className={`font-mono text-2xl font-bold tabular-nums mt-1 ${analysis.technical?.macd?.histogram > 0 ? 'text-up' : 'text-down'}`}>
+                    <p className={`font-mono text-2xl font-bold tabular-nums mt-1 ${analysis.technical?.macd?.histogram > 0 ? 'text-[hsl(var(--up))]' : 'text-[hsl(var(--down))]'}`}>
                       {analysis.technical?.macd?.histogram?.toFixed(4) || '--'}
                     </p>
-                    <Badge variant={analysis.technical?.macd?.histogram > 0 ? 'default' : 'destructive'} className="mt-1">
-                      {analysis.technical?.macd?.histogram > 0 ? 'Bullish' : 'Bearish'}
+                    <Badge variant={analysis.technical?.macd?.crossover === 'bullish' ? 'default' : analysis.technical?.macd?.crossover === 'bearish' ? 'destructive' : 'secondary'} className="mt-1">
+                      {analysis.technical?.macd?.crossover === 'bullish' ? 'Bullish Cross' : analysis.technical?.macd?.crossover === 'bearish' ? 'Bearish Cross' : analysis.technical?.macd?.histogram > 0 ? 'Bullish' : 'Bearish'}
+                    </Badge>
+                  </CardContent>
+                </Card>
+                <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
+                  <CardContent className="p-4 text-center">
+                    <p className="text-xs text-[hsl(var(--muted-foreground))]">ADX (14)</p>
+                    <p className="font-mono text-2xl font-bold tabular-nums mt-1" data-testid="adx-value">
+                      {analysis.technical?.adx?.adx?.toFixed(1) || '--'}
+                    </p>
+                    <Badge variant={analysis.technical?.adx?.trend_strength === 'strong' ? 'default' : 'secondary'} className="mt-1">
+                      {analysis.technical?.adx?.trend_strength || '--'} {analysis.technical?.adx?.direction || ''}
                     </Badge>
                   </CardContent>
                 </Card>
                 <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
                   <CardContent className="p-4 text-center">
                     <p className="text-xs text-[hsl(var(--muted-foreground))]">VSA Signal</p>
-                    <p className="font-mono text-lg font-bold mt-1">{analysis.technical?.vsa?.signal || '--'}</p>
-                    <p className="text-xs text-[hsl(var(--muted-foreground))] mt-1">Vol Ratio: {analysis.technical?.vsa?.vol_ratio || '--'}</p>
-                  </CardContent>
-                </Card>
-                <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
-                  <CardContent className="p-4 text-center">
-                    <p className="text-xs text-[hsl(var(--muted-foreground))]">Technical Score</p>
-                    <p className="font-mono text-2xl font-bold tabular-nums mt-1 text-[hsl(var(--primary))]" data-testid="technical-score">
-                      {analysis.technical?.technical_score || '--'}
-                    </p>
-                    <p className="text-xs text-[hsl(var(--muted-foreground))] mt-1">
-                      Breakout: {analysis.technical?.breakout?.is_breakout ? 'Yes' : 'No'}
-                    </p>
+                    <p className="font-mono text-lg font-bold mt-1">{analysis.technical?.vsa?.signal?.replace(/_/g, ' ') || '--'}</p>
+                    <p className="text-xs text-[hsl(var(--muted-foreground))] mt-1">Vol: {analysis.technical?.vsa?.vol_ratio || '--'}x | {analysis.technical?.vsa?.vol_trend || '--'}</p>
                   </CardContent>
                 </Card>
               </div>
 
+              {/* Advanced Indicators Row */}
+              <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+                {/* Bollinger Bands */}
+                <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
+                  <CardContent className="p-3">
+                    <p className="text-[10px] text-[hsl(var(--muted-foreground))] uppercase font-semibold mb-1">Bollinger Bands</p>
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs"><span className="text-[hsl(var(--muted-foreground))]">Upper</span><span className="font-mono tabular-nums">{analysis.technical?.bollinger?.upper || '--'}</span></div>
+                      <div className="flex justify-between text-xs"><span className="text-[hsl(var(--muted-foreground))]">Middle</span><span className="font-mono tabular-nums">{analysis.technical?.bollinger?.middle || '--'}</span></div>
+                      <div className="flex justify-between text-xs"><span className="text-[hsl(var(--muted-foreground))]">Lower</span><span className="font-mono tabular-nums">{analysis.technical?.bollinger?.lower || '--'}</span></div>
+                      <div className="flex justify-between text-xs"><span className="text-[hsl(var(--muted-foreground))]">%B</span><span className="font-mono tabular-nums">{analysis.technical?.bollinger?.percent_b?.toFixed(3) || '--'}</span></div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-[hsl(var(--muted-foreground))]">Squeeze</span>
+                        <Badge variant={analysis.technical?.bollinger?.squeeze ? 'default' : 'secondary'} className="text-[10px] py-0 px-1">
+                          {analysis.technical?.bollinger?.squeeze ? 'Yes' : 'No'}
+                        </Badge>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Stochastic */}
+                <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
+                  <CardContent className="p-3">
+                    <p className="text-[10px] text-[hsl(var(--muted-foreground))] uppercase font-semibold mb-1">Stochastic (14,3)</p>
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs"><span className="text-[hsl(var(--muted-foreground))]">%K</span><span className="font-mono tabular-nums">{analysis.technical?.stochastic?.k?.toFixed(1) || '--'}</span></div>
+                      <div className="flex justify-between text-xs"><span className="text-[hsl(var(--muted-foreground))]">%D</span><span className="font-mono tabular-nums">{analysis.technical?.stochastic?.d?.toFixed(1) || '--'}</span></div>
+                      <div className="flex justify-between text-xs"><span className="text-[hsl(var(--muted-foreground))]">Zone</span><span className="font-mono">{analysis.technical?.stochastic?.zone || '--'}</span></div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-[hsl(var(--muted-foreground))]">Cross</span>
+                        <Badge variant={analysis.technical?.stochastic?.crossover === 'bullish' ? 'default' : analysis.technical?.stochastic?.crossover === 'bearish' ? 'destructive' : 'secondary'} className="text-[10px] py-0 px-1">
+                          {analysis.technical?.stochastic?.crossover || 'none'}
+                        </Badge>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* ATR / Volatility */}
+                <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
+                  <CardContent className="p-3">
+                    <p className="text-[10px] text-[hsl(var(--muted-foreground))] uppercase font-semibold mb-1">ATR & Volatility</p>
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs"><span className="text-[hsl(var(--muted-foreground))]">ATR</span><span className="font-mono tabular-nums">{analysis.technical?.atr?.atr?.toFixed(2) || '--'}</span></div>
+                      <div className="flex justify-between text-xs"><span className="text-[hsl(var(--muted-foreground))]">ATR%</span><span className="font-mono tabular-nums">{analysis.technical?.atr?.atr_pct?.toFixed(2) || '--'}%</span></div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-[hsl(var(--muted-foreground))]">Level</span>
+                        <Badge variant={analysis.technical?.atr?.volatility === 'high' ? 'destructive' : analysis.technical?.atr?.volatility === 'medium' ? 'secondary' : 'default'} className="text-[10px] py-0 px-1">
+                          {analysis.technical?.atr?.volatility || '--'}
+                        </Badge>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* OBV */}
+                <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
+                  <CardContent className="p-3">
+                    <p className="text-[10px] text-[hsl(var(--muted-foreground))] uppercase font-semibold mb-1">On-Balance Volume</p>
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-[hsl(var(--muted-foreground))]">Trend</span>
+                        <Badge variant={analysis.technical?.obv?.trend === 'accumulation' ? 'default' : analysis.technical?.obv?.trend === 'distribution' ? 'destructive' : 'secondary'} className="text-[10px] py-0 px-1">
+                          {analysis.technical?.obv?.trend || '--'}
+                        </Badge>
+                      </div>
+                      <div className="flex justify-between text-xs"><span className="text-[hsl(var(--muted-foreground))]">Williams%R</span><span className="font-mono tabular-nums">{analysis.technical?.williams_r?.value?.toFixed(1) || '--'}</span></div>
+                      <div className="flex justify-between text-xs"><span className="text-[hsl(var(--muted-foreground))]">CCI</span><span className="font-mono tabular-nums">{analysis.technical?.cci?.value?.toFixed(1) || '--'}</span></div>
+                      <div className="flex justify-between text-xs"><span className="text-[hsl(var(--muted-foreground))]">ROC</span><span className="font-mono tabular-nums">{analysis.technical?.roc?.value?.toFixed(2) || '--'}%</span></div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Ichimoku */}
+                <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
+                  <CardContent className="p-3">
+                    <p className="text-[10px] text-[hsl(var(--muted-foreground))] uppercase font-semibold mb-1">Ichimoku Cloud</p>
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-[hsl(var(--muted-foreground))]">Cloud</span>
+                        <Badge variant={analysis.technical?.ichimoku?.cloud_signal === 'bullish' ? 'default' : analysis.technical?.ichimoku?.cloud_signal === 'bearish' ? 'destructive' : 'secondary'} className="text-[10px] py-0 px-1">
+                          {analysis.technical?.ichimoku?.cloud_signal || '--'}
+                        </Badge>
+                      </div>
+                      <div className="flex justify-between text-xs"><span className="text-[hsl(var(--muted-foreground))]">TK Cross</span><span className="font-mono">{analysis.technical?.ichimoku?.tk_cross || '--'}</span></div>
+                      <div className="flex justify-between text-xs"><span className="text-[hsl(var(--muted-foreground))]">Tenkan</span><span className="font-mono tabular-nums">{analysis.technical?.ichimoku?.tenkan || '--'}</span></div>
+                      <div className="flex justify-between text-xs"><span className="text-[hsl(var(--muted-foreground))]">Kijun</span><span className="font-mono tabular-nums">{analysis.technical?.ichimoku?.kijun || '--'}</span></div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Key Levels: Fibonacci + Pivots + MAs */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                {/* Moving Average Regime */}
+                <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-display">Moving Average Regime</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      {[20, 50, 100, 200].map(p => {
+                        const smaKey = `sma_${p}`;
+                        const smaVal = analysis.technical?.moving_averages?.[smaKey];
+                        const current = analysis.market_data?.latest?.close;
+                        const above = current && smaVal ? current > smaVal : null;
+                        return smaVal ? (
+                          <div key={p} className="flex items-center justify-between text-xs">
+                            <span className="text-[hsl(var(--muted-foreground))]">SMA{p}</span>
+                            <span className="font-mono tabular-nums">{smaVal}</span>
+                            <Badge variant={above ? 'default' : 'destructive'} className="text-[10px] py-0 px-1.5">{above ? 'Above' : 'Below'}</Badge>
+                          </div>
+                        ) : null;
+                      })}
+                      <div className="pt-1 border-t border-[hsl(var(--border))] flex justify-between text-xs">
+                        <span className="text-[hsl(var(--muted-foreground))]">Golden Cross</span>
+                        <Badge variant={analysis.technical?.moving_averages?.golden_cross ? 'default' : 'secondary'} className="text-[10px] py-0 px-1.5">
+                          {analysis.technical?.moving_averages?.golden_cross ? 'Yes' : 'No'}
+                        </Badge>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Fibonacci */}
+                <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-display">Fibonacci Levels</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-1">
+                      {analysis.technical?.fibonacci?.levels && Object.entries(analysis.technical.fibonacci.levels).map(([level, price]) => (
+                        <div key={level} className="flex justify-between text-xs">
+                          <span className="text-[hsl(var(--muted-foreground))]">{level}</span>
+                          <span className="font-mono tabular-nums">{price}</span>
+                        </div>
+                      ))}
+                      {analysis.technical?.fibonacci?.nearest_support && (
+                        <div className="pt-1 border-t border-[hsl(var(--border))] flex justify-between text-xs">
+                          <span className="text-[hsl(var(--up))]">Support</span>
+                          <span className="font-mono tabular-nums">{analysis.technical.fibonacci.nearest_support}</span>
+                        </div>
+                      )}
+                      {analysis.technical?.fibonacci?.nearest_resistance && (
+                        <div className="flex justify-between text-xs">
+                          <span className="text-[hsl(var(--down))]">Resistance</span>
+                          <span className="font-mono tabular-nums">{analysis.technical.fibonacci.nearest_resistance}</span>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Pivot Points */}
+                <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-display">Pivot Points</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-1">
+                      {analysis.technical?.pivot_points && (
+                        <>
+                          <div className="flex justify-between text-xs"><span className="text-[hsl(var(--down))]">R3</span><span className="font-mono tabular-nums">{analysis.technical.pivot_points.r3}</span></div>
+                          <div className="flex justify-between text-xs"><span className="text-[hsl(var(--down))]">R2</span><span className="font-mono tabular-nums">{analysis.technical.pivot_points.r2}</span></div>
+                          <div className="flex justify-between text-xs"><span className="text-[hsl(var(--down))]">R1</span><span className="font-mono tabular-nums">{analysis.technical.pivot_points.r1}</span></div>
+                          <div className="flex justify-between text-xs font-semibold border-y border-[hsl(var(--border))] py-1"><span className="text-[hsl(var(--primary))]">PP</span><span className="font-mono tabular-nums">{analysis.technical.pivot_points.pp}</span></div>
+                          <div className="flex justify-between text-xs"><span className="text-[hsl(var(--up))]">S1</span><span className="font-mono tabular-nums">{analysis.technical.pivot_points.s1}</span></div>
+                          <div className="flex justify-between text-xs"><span className="text-[hsl(var(--up))]">S2</span><span className="font-mono tabular-nums">{analysis.technical.pivot_points.s2}</span></div>
+                          <div className="flex justify-between text-xs"><span className="text-[hsl(var(--up))]">S3</span><span className="font-mono tabular-nums">{analysis.technical.pivot_points.s3}</span></div>
+                        </>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Charts */}
               <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-display">Price Chart (Candlestick + Volume)</CardTitle>
@@ -461,6 +643,51 @@ export default function SymbolAnalysis() {
                   </CardContent>
                 </Card>
               </div>
+
+              {/* Breakout Detection */}
+              {analysis.technical?.breakout && (
+                <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-display">Breakout & Structure</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                      <div className="bg-[hsl(var(--surface-2))] rounded-lg p-3">
+                        <p className="text-[10px] text-[hsl(var(--muted-foreground))] uppercase">52W High</p>
+                        <p className="font-mono text-sm font-bold tabular-nums mt-0.5">{analysis.technical.breakout.high_52w}</p>
+                        <p className="text-[10px] text-[hsl(var(--muted-foreground))] mt-0.5">{analysis.technical.breakout.distance_from_high_pct}%</p>
+                      </div>
+                      <div className="bg-[hsl(var(--surface-2))] rounded-lg p-3">
+                        <p className="text-[10px] text-[hsl(var(--muted-foreground))] uppercase">52W Low</p>
+                        <p className="font-mono text-sm font-bold tabular-nums mt-0.5">{analysis.technical.breakout.low_52w}</p>
+                        <p className="text-[10px] text-[hsl(var(--muted-foreground))] mt-0.5">+{analysis.technical.breakout.distance_from_low_pct}%</p>
+                      </div>
+                      <div className="bg-[hsl(var(--surface-2))] rounded-lg p-3">
+                        <p className="text-[10px] text-[hsl(var(--muted-foreground))] uppercase">Near 52W High</p>
+                        <Badge variant={analysis.technical.breakout.near_52w_high ? 'default' : 'secondary'} className="mt-1 text-[10px]">
+                          {analysis.technical.breakout.near_52w_high ? 'Yes' : 'No'}
+                        </Badge>
+                      </div>
+                      <div className="bg-[hsl(var(--surface-2))] rounded-lg p-3">
+                        <p className="text-[10px] text-[hsl(var(--muted-foreground))] uppercase">Vol Confirm</p>
+                        <Badge variant={analysis.technical.breakout.volume_confirmation ? 'default' : 'secondary'} className="mt-1 text-[10px]">
+                          {analysis.technical.breakout.volume_confirmation ? 'Yes' : 'No'}
+                        </Badge>
+                      </div>
+                      <div className="bg-[hsl(var(--surface-2))] rounded-lg p-3">
+                        <p className="text-[10px] text-[hsl(var(--muted-foreground))] uppercase">30d Consolidation</p>
+                        <Badge variant={analysis.technical.breakout.consolidation_30d ? 'default' : 'secondary'} className="mt-1 text-[10px]">
+                          {analysis.technical.breakout.consolidation_30d ? 'Yes' : 'No'}
+                        </Badge>
+                      </div>
+                      <div className="bg-[hsl(var(--surface-2))] rounded-lg p-3">
+                        <p className="text-[10px] text-[hsl(var(--muted-foreground))] uppercase">30d Range</p>
+                        <p className="font-mono text-sm font-bold tabular-nums mt-0.5">{analysis.technical.breakout.range_30d_pct}%</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </TabsContent>
 
             {/* Fundamental Tab */}

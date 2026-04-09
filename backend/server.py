@@ -24,7 +24,7 @@ from services.news_service import fetch_news
 from services.sentiment_service import analyze_sentiment
 from services.alpha_service import full_alpha_computation
 from services.ai_agent_service import get_ai_analysis
-from services.intelligence_engine import generate_ai_signal
+from services.intelligence_engine import generate_ai_signal, generate_batch_ranking
 from services.signal_service import save_signal, get_active_signals, get_signal_history, evaluate_signal, evaluate_all_signals
 from services.learning_service import build_learning_context, get_cached_learning_context
 from services.performance_service import get_track_record
@@ -74,6 +74,11 @@ class GenerateSignalRequest(BaseModel):
     symbol: str
     provider: str = "openai"
     period: str = "6mo"
+
+class BatchAIScanRequest(BaseModel):
+    symbols: Optional[List[str]] = None
+    sector: Optional[str] = None
+    provider: str = "openai"
 
 class EvaluateSignalRequest(BaseModel):
     signal_id: str
@@ -240,6 +245,122 @@ async def batch_analyze(req: BatchRequest):
             logger.error(f"Batch error for {sym}: {e}")
     
     return {"results": results, "total": len(results)}
+
+
+@app.post("/api/batch/ai-scan")
+async def batch_ai_scan(req: BatchAIScanRequest):
+    """AI-powered batch stock scanner with comprehensive ranking."""
+    symbols = req.symbols
+    if not symbols:
+        if req.sector:
+            symbols = [s["symbol"] for s in ALL_SYMBOLS if s["sector"] == req.sector]
+        else:
+            symbols = [s["symbol"] for s in NIFTY_50[:15]]
+
+    # Cap at 15 stocks per batch for performance
+    symbols = symbols[:15]
+
+    # Gather expanded data for each symbol
+    stocks_data = []
+    for sym in symbols:
+        try:
+            market_data = get_market_snapshot(sym, "6mo", "1d")
+            if "error" in market_data:
+                continue
+
+            technical = full_technical_analysis(market_data["ohlcv"])
+            fundamentals = get_fundamentals(sym)
+
+            info = get_symbol_info(sym)
+            stocks_data.append({
+                "symbol": sym,
+                "name": info["name"],
+                "sector": info["sector"],
+                "market_data": {
+                    "price": market_data["latest"]["close"],
+                    "change": market_data["change"],
+                    "change_pct": market_data["change_pct"],
+                    "volume": market_data["latest"]["volume"],
+                },
+                "technical": technical if isinstance(technical, dict) else {},
+                "fundamental": fundamentals if isinstance(fundamentals, dict) else {},
+            })
+        except Exception as e:
+            logger.error(f"Batch AI data error for {sym}: {e}")
+
+    if not stocks_data:
+        return {"results": [], "total": 0, "ai_powered": True, "error": "No valid data found for symbols"}
+
+    # Get AI ranking
+    ranking_result = await generate_batch_ranking(stocks_data, req.provider)
+
+    if "error" in ranking_result:
+        # Fallback: return data without AI ranking
+        fallback = []
+        for sd in stocks_data:
+            fallback.append({
+                "symbol": sd["symbol"],
+                "name": sd["name"],
+                "sector": sd["sector"],
+                "price": sd["market_data"]["price"],
+                "change_pct": sd["market_data"]["change_pct"],
+                "volume": sd["market_data"]["volume"],
+                "rsi": sd["technical"].get("rsi", {}).get("current"),
+                "ai_score": None,
+                "action": "N/A",
+                "conviction": "N/A",
+                "rationale": f"AI ranking unavailable: {ranking_result['error']}",
+                "key_strength": "N/A",
+                "key_risk": "N/A",
+                "rank": 0,
+            })
+        return {"results": fallback, "total": len(fallback), "ai_powered": False, "error": ranking_result["error"]}
+
+    # Merge AI rankings with market data
+    rankings = ranking_result.get("rankings", [])
+    ranking_map = {r["symbol"]: r for r in rankings}
+
+    results = []
+    for sd in stocks_data:
+        ai = ranking_map.get(sd["symbol"], {})
+        results.append({
+            "symbol": sd["symbol"],
+            "name": sd["name"],
+            "sector": sd["sector"],
+            "price": sd["market_data"]["price"],
+            "change": sd["market_data"]["change"],
+            "change_pct": sd["market_data"]["change_pct"],
+            "volume": sd["market_data"]["volume"],
+            "rsi": sd["technical"].get("rsi", {}).get("current"),
+            "macd_signal": sd["technical"].get("macd", {}).get("crossover"),
+            "adx": sd["technical"].get("adx", {}).get("adx"),
+            "adx_direction": sd["technical"].get("adx", {}).get("direction"),
+            "bollinger_squeeze": sd["technical"].get("bollinger", {}).get("squeeze"),
+            "obv_trend": sd["technical"].get("obv", {}).get("trend"),
+            "pe_ratio": sd["fundamental"].get("pe_ratio"),
+            "roe": sd["fundamental"].get("roe"),
+            "revenue_growth": sd["fundamental"].get("revenue_growth"),
+            # AI fields
+            "rank": ai.get("rank", 99),
+            "ai_score": ai.get("ai_score"),
+            "action": ai.get("action", "N/A"),
+            "conviction": ai.get("conviction", "N/A"),
+            "rationale": ai.get("rationale", ""),
+            "key_strength": ai.get("key_strength", ""),
+            "key_risk": ai.get("key_risk", ""),
+        })
+
+    # Sort by AI rank
+    results.sort(key=lambda x: x.get("rank", 99))
+
+    return {
+        "results": results,
+        "total": len(results),
+        "ai_powered": True,
+        "provider": ranking_result.get("provider"),
+        "model": ranking_result.get("model"),
+        "generated_at": ranking_result.get("generated_at"),
+    }
 
 
 @app.get("/api/market/overview")

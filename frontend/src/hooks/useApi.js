@@ -43,6 +43,13 @@ export function useApi() {
     });
   }, [fetchApi]);
 
+  const batchAIScan = useCallback((symbols, sector, provider = 'openai') => {
+    return fetchApi('/api/batch/ai-scan', {
+      method: 'POST',
+      body: JSON.stringify({ symbols, sector, provider }),
+    });
+  }, [fetchApi]);
+
   const searchSymbols = useCallback((q) => {
     return fetchApi(`/api/symbols?q=${encodeURIComponent(q)}`);
   }, [fetchApi]);
@@ -62,7 +69,7 @@ export function useApi() {
     });
   }, [fetchApi]);
 
-  // New Signal APIs
+  // Signal APIs
   const generateSignal = useCallback((symbol, provider = 'openai') => {
     return fetchApi('/api/signals/generate', {
       method: 'POST',
@@ -96,7 +103,7 @@ export function useApi() {
   }, [fetchApi]);
 
   return {
-    fetchApi, analyzeStock, batchAnalyze, searchSymbols,
+    fetchApi, analyzeStock, batchAnalyze, batchAIScan, searchSymbols,
     getOverview, getHeatmap, aiChat,
     generateSignal, getActiveSignals, getSignalHistory,
     evaluateAllSignals, getTrackRecord, getLearningContext,
