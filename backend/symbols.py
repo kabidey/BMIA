@@ -18,7 +18,7 @@ NIFTY_50 = [
     {"symbol": "ASIANPAINT.NS", "name": "Asian Paints", "sector": "Consumer"},
     {"symbol": "MARUTI.NS", "name": "Maruti Suzuki", "sector": "Automobile"},
     {"symbol": "SUNPHARMA.NS", "name": "Sun Pharma", "sector": "Pharma"},
-    {"symbol": "TATAMOTORS.NS", "name": "Tata Motors", "sector": "Automobile"},
+    {"symbol": "TATAMTRDVR.NS", "name": "Tata Motors DVR", "sector": "Automobile"},
     {"symbol": "BAJFINANCE.NS", "name": "Bajaj Finance", "sector": "Finance"},
     {"symbol": "WIPRO.NS", "name": "Wipro", "sector": "IT"},
     {"symbol": "HCLTECH.NS", "name": "HCL Technologies", "sector": "IT"},

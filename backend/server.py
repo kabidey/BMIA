@@ -233,7 +233,7 @@ async def batch_analyze(req: BatchRequest):
 async def market_overview():
     key_symbols = ["RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "ICICIBANK.NS",
                    "ITC.NS", "SBIN.NS", "BHARTIARTL.NS", "LT.NS", "KOTAKBANK.NS",
-                   "TATAMOTORS.NS", "SUNPHARMA.NS", "WIPRO.NS", "BAJFINANCE.NS", "MARUTI.NS"]
+                   "SUNPHARMA.NS", "WIPRO.NS", "BAJFINANCE.NS", "MARUTI.NS", "HCLTECH.NS"]
     
     movers = []
     for sym in key_symbols:
