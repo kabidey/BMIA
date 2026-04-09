@@ -16,6 +16,16 @@
   - revamping SymbolAnalysis and BatchScanner UI to surface expanded metrics and reduce redundancy
   - expanding symbol universe and sector taxonomy (including commodities)
 
+- 🟦 **Phase 5 objective (NEW / approved): Market Intelligence Cockpit Dashboard Revamp**
+  - Replace the existing “Market Overview” page with a **visual diagnostic cockpit** that highlights:
+    - **liquidity flow** (institutional flows, volume shocks)
+    - **market sentiment/regime** (VIX, breadth)
+    - **sector rotation** (sector treemap + relative strength)
+    - **derivatives positioning** (PCR + OI build-up quadrants)
+    - **actionable events** (block/bulk deals + corporate actions)
+  - **No Top Gainers/Losers** modules (explicitly removed).
+  - Streaming/near-real-time feel via **auto-refresh (30–60s)** + **flash-on-change** microinteractions (no layout shift).
+
 ---
 
 ## 2. Implementation Steps (Phases)
@@ -76,75 +86,37 @@
 #### 3.2 Backend Architecture Changes (implemented)
 **New services added**
 - ✅ `services/intelligence_engine.py`
-  - gathers **raw** OHLCV + indicator series + fundamentals + headlines + sentiment + alpha snapshot
-  - injects **learning context**
-  - calls LLM with strict JSON schema for signal generation
 - ✅ `services/signal_service.py`
-  - stores signals, returns active/history
-  - evaluates against current prices (target/stop/expiry)
-  - logs evaluations into `signal_evaluations`
 - ✅ `services/learning_service.py`
-  - aggregates outcomes and generates: win rate, avg return, recent mistakes, lessons
-  - stores `learning_context` (global) and serves it to the intelligence engine
 - ✅ `services/performance_service.py`
-  - computes track record: win rate, avg return, expectancy, profit factor, streaks
-  - equity curve + breakdowns by sector/action/confidence
 
 **MongoDB collections (implemented)**
 - ✅ `signals`
 - ✅ `signal_evaluations`
 - ✅ `learning_context`
-- ✅ (kept) `analyses` for prior snapshots/history
+- ✅ (kept) `analyses`
 
 **New endpoints (implemented)**
-- ✅ `POST /api/signals/generate` — generate & persist multi-input AI signal
-- ✅ `GET /api/signals/active` — open signals + live P&L
-- ✅ `GET /api/signals/history` — signal history (filters supported)
-- ✅ `POST /api/signals/evaluate` — evaluate one signal (optional current_price)
-- ✅ `POST /api/signals/evaluate-all` — batch evaluate all open signals
-- ✅ `GET /api/signals/track-record` — performance metrics + equity curve
-- ✅ `GET /api/signals/learning-context` — lessons learned + mistakes + calibration stats
+- ✅ `POST /api/signals/generate`
+- ✅ `GET /api/signals/active`
+- ✅ `GET /api/signals/history`
+- ✅ `POST /api/signals/evaluate`
+- ✅ `POST /api/signals/evaluate-all`
+- ✅ `GET /api/signals/track-record`
+- ✅ `GET /api/signals/learning-context`
 
 #### 3.3 Intelligence Flow (Closed Loop) (implemented)
-1. ✅ **Collect data**: OHLCV, indicator series, key levels, fundamentals, recent news, sentiment.
-2. ✅ **Retrieve learning context**: past mistakes/successes + summary stats.
-3. ✅ **LLM signal generation**: strict JSON schema + “no fabrication” constraints.
-4. ✅ **Persist signal**: store in `signals`.
-5. ✅ **Evaluate over time**: update status/returns; write to `signal_evaluations` when closed.
-6. ✅ **Learn**: update `learning_context` from outcomes; inject it into subsequent generations.
-
-> Note: This is “learning” via **prompt/context updates and guardrails**, not model fine-tuning.
+1. ✅ Collect data → 2. ✅ Retrieve learning context → 3. ✅ LLM generation → 4. ✅ Persist → 5. ✅ Evaluate → 6. ✅ Learn.
 
 #### 3.4 Frontend Revamp (implemented)
-**New pages (added)**
-- ✅ **Signal Dashboard** (`/signals`)
-  - Active signals with live P&L
-  - History view
-  - AI Learning insights tab
-  - “Evaluate All” action
-
-- ✅ **Track Record** (`/track-record`)
-  - KPI cards: win rate, expectancy, profit factor, avg win/loss, best/worst
-  - Equity curve
-  - Breakdown: sector performance + confidence calibration
-  - Clear “No closed signals yet” state
-
-**Symbol Analysis page updates (added)**
-- ✅ Prominent **AI Intelligence Engine** section
-- ✅ Multi-provider signal generation (`OpenAI/Claude/Gemini`)
-- ✅ Full signal detail rendering: action banner, entry/targets/stop, theses, invalidators, detailed reasoning
-- ✅ Learning context summary displayed with the signal
+- ✅ Signal Dashboard (`/signals`)
+- ✅ Track Record (`/track-record`)
+- ✅ Symbol Analysis page updated to render AI signals + learning context
 
 #### 3.5 Phase 3 Testing ✅ COMPLETED
-**Testing results**
-- ✅ Backend: **100%** (14/14)
-- ✅ Frontend: **100%**
-- ✅ Integration: **100%** (yfinance + LLM + MongoDB)
-
-**Success criteria — met**
-- ✅ AI-generated signals are structured and persisted with audit trail.
-- ✅ System computes track record and learning context from stored outcomes.
-- ✅ Learning context is used in subsequent signal generation.
+- ✅ Backend: 100% (14/14)
+- ✅ Frontend: 100%
+- ✅ Integration: 100%
 
 ---
 
@@ -152,41 +124,137 @@
 **Goal:** Improve robustness, explainability, and quantitative depth now that the learning loop is stable.
 
 #### 4.0 Completion snapshot (what shipped)
-- ✅ Expanded quant inputs implemented and fully integrated end-to-end:
-  - ✅ `services/technical_service.py`: **25+ indicators** (RSI, MACD, Bollinger, ADX, Stochastic, ATR, OBV, Williams %R, CCI, ROC, Ichimoku, Fibonacci, Pivot Points, expanded MAs incl. golden/death cross, price action)
-  - ✅ `services/fundamental_service.py`: **30+ metrics** (EV/EBITDA, EV/Revenue, FCF yield, liquidity ratios, quarterly revenue/earnings, ownership, etc.)
-  - ✅ Expanded symbol universe + sector taxonomy in `symbols.py` (e.g., NIFTY 50 + broader coverage + MCX commodities)
+- ✅ Expanded quant inputs integrated end-to-end:
+  - ✅ `services/technical_service.py`: **25+ indicators**
+  - ✅ `services/fundamental_service.py`: **30+ metrics**
+  - ✅ Expanded symbol universe + sector taxonomy in `symbols.py`
 
 - ✅ Intelligence Engine rewrite:
-  - ✅ `services/intelligence_engine.py` rewritten with `build_full_context()` to feed **all expanded technical + fundamental metrics** into LLM prompts
-  - ✅ Added `build_batch_context()` + `generate_batch_ranking()` for batched, comparative AI ranking
+  - ✅ `build_full_context()` feeds all expanded technical + fundamental metrics
+  - ✅ `generate_batch_ranking()` for comparative AI ranking
 
 - ✅ AI Batch Scanner conversion:
   - ✅ Added `POST /api/batch/ai-scan`
-  - ✅ Replaced formula-based alpha ranking with AI-powered relative ranking (15 symbols per scan for performance)
+  - ✅ Removed formula-based alpha ranking from scanner flow
 
 - ✅ Frontend revamp:
-  - ✅ Removed redundant `AlphaGauge` from SymbolAnalysis
-  - ✅ Added expanded Technical panels (Bollinger, ADX, Stochastic, ATR, OBV, Williams %R, CCI, ROC, Ichimoku, Fibonacci, Pivot Points)
-  - ✅ Rewrote BatchScanner UI for AI results (AI score, action, conviction, rationale)
-  - ✅ Extended FundamentalsPanel with valuation multiples, profitability, growth, balance sheet, cash flow, risk/ownership, and quarterly mini-table
+  - ✅ Removed `AlphaGauge` from SymbolAnalysis
+  - ✅ Added expanded Technical panels (Bollinger, ADX, Stochastic, ATR, OBV, Ichimoku, Fibonacci, Pivots, etc.)
+  - ✅ Rewrote BatchScanner for AI results (AI score/action/conviction/rationale)
+  - ✅ Extended FundamentalsPanel (valuation, growth, balance sheet, cash flow, ownership, quarterly table)
 
-- ✅ Bug fix / hardening:
-  - ✅ Fixed numpy JSON serialization (`numpy.bool_`, `np.integer`, `np.floating`) via `_sanitize()` in `technical_service.py`.
+- ✅ Hardening:
+  - ✅ Fixed numpy JSON serialization via `_sanitize()` in `technical_service.py`
 
 - ✅ Testing:
   - ✅ 100% pass rate (backend + frontend + integration)
 
 #### 4.1 Phase 4 acceptance criteria — met
-- ✅ AI signal reasoning references expanded indicators (e.g., ADX, Bollinger, FCF yield, EV multiples).
+- ✅ AI signal reasoning references expanded indicators.
 - ✅ Batch scan returns ranked results with AI score + rationale.
-- ✅ AlphaGauge removed without broken imports or layout regressions.
-- ✅ `/api/analyze-stock` returns a comprehensive, JSON-serializable payload.
-- ✅ Performance remains usable (batch scan capped; graceful fallbacks present).
+- ✅ `/api/analyze-stock` returns comprehensive, JSON-serializable payload.
 
 ---
 
-### Phase 5 — Optional: Auth + Personalization (only after approval)
+### Phase 5 — Market Intelligence Cockpit Dashboard Revamp 🟦 PLANNED
+**Goal:** Turn the dashboard into a professional diagnostic tool for **liquidity flow, market regime, rotation, derivatives positioning, and actionable events**.
+
+#### 5.0 Data sources confirmed (live)
+- ✅ `nselib.capital_market.market_watch_all_indices()` — indices + breadth signals
+- ✅ `nselib.capital_market.india_vix_data()` — India VIX
+- ✅ `nselib.derivatives.fii_derivatives_statistics(trade_date)` — FII derivatives stats
+- ✅ `nselib.derivatives.participant_wise_open_interest(trade_date)` — participant-wise OI
+- ✅ `nselib.derivatives.nse_live_option_chain('NIFTY'|'BANKNIFTY')` — option chain → PCR
+- ✅ `nselib.capital_market.block_deals_data(period/from/to)` — block deals feed
+- ✅ `nselib.capital_market.corporate_actions_for_equity(from/to)` — dividends/splits/earnings actions
+- ✅ `nselib.capital_market.week_52_high_low_report(trade_date)` — 52W high/low clusters
+- ✅ `yfinance` — per-stock volume shockers/breakouts + sector aggregation
+
+> Note: `xlrd>=2.0.1` installed to support nselib xls endpoints.
+
+#### 5A — Backend: Dashboard API layer (P0)
+**Goal:** Provide a single, efficient data contract for the cockpit with caching and predictable latency.
+
+**Implementation**
+- Add `services/dashboard_service.py` (new):
+  - `get_indices_snapshot()` — Nifty 50, Sensex, Bank Nifty, Midcap 100, Smallcap 100
+  - `get_market_breadth()` — Adv/Dec/Unch counts + A/D ratio
+  - `get_vix_regime()` — latest VIX + short history
+  - `get_flows_fii_dii()` — daily flows (primary: NSE; fallback: derivatives proxy if needed)
+  - `get_sector_rotation()` — sector perf for treemap; includes relative strength vs Nifty
+  - `get_volume_shockers_breakouts()` — 3–5x 10D avg volume AND price breakout filter
+  - `get_52w_clusters()` — counts new highs vs lows + optional bucketization
+  - `get_pcr()` — compute PCR for Nifty and Bank Nifty from option chain
+  - `get_oi_quadrant()` — classify F&O symbols into 4 regimes (ΔPrice vs ΔOI)
+  - `get_block_bulk_deals()` — block/bulk feed filtered by threshold
+  - `get_corporate_actions()` — dividends/splits/earnings highlights (today/this week)
+
+**Endpoints**
+- Prefer **one consolidated endpoint** (recommended for dashboard):
+  - `GET /api/market/cockpit` → returns `{ macro, micro, derivatives, actions, updated_at }`
+- Optional granular endpoints (if needed for partial reload):
+  - `/api/market/cockpit/macro`, `/micro`, `/derivatives`, `/actions`
+
+**Non-functional**
+- Add lightweight in-memory TTL cache (30–60s) to avoid hammering NSE endpoints.
+- Strict JSON-serializable output (sanitize numpy/pandas types).
+- Graceful degradation: if any module fails, return `module.error` but keep the rest.
+
+**Exit criteria**
+- Cockpit endpoint returns within ~2–5s typical.
+- Works even if one data source fails.
+
+#### 5B — Frontend: MarketOverview → Market Intelligence Cockpit (P0)
+**Goal:** Replace current dashboard with a 4-section cockpit; “streaming” feel via auto-refresh + flash-on-change.
+
+**Implementation**
+- Replace `/pages/MarketOverview.js` layout with 4 stacked modules:
+
+1) **Macro View (Market Weather)**
+- **Major Indices Matrix** (streaming): Nifty 50, Sensex, Bank Nifty, Midcap100, Smallcap100
+  - LTP, %Chg, abs chg, mini sparkline, day range
+- **FII/DII Flows** bar chart (₹ Cr)
+- **India VIX** gauge (speedometer)
+- **Advance/Decline** ratio chip + progress/pie
+
+2) **Micro View (Where the Action Is)**
+- **Sector Treemap** (Recharts Treemap): size=market cap, color=intraday performance
+- **Volume Shockers & Breakouts** table: only 3–5x avg volume + breakout trigger
+- **52W clusters**: counts of new highs vs lows + buckets
+
+3) **Derivatives & Sentiment (Smart Money Clues)**
+- **PCR Gauges**: Nifty + BankNifty
+- **OI Buildup Quadrant**: ScatterChart with 4 quadrants
+
+4) **Corporate Actions & News**
+- **Block/Bulk Deals feed** (filtered; threshold)
+- **Corporate actions highlights** (dividends/splits/earnings actions)
+
+**UX/Design rules** (from updated `design_guidelines.md`)
+- Use `TerminalPanel` wrapper for every module.
+- No top gainers/losers, no “noise” widgets.
+- Streaming effect: flash-on-change (450ms) on updated cells; respect prefers-reduced-motion.
+- Dense but scannable: mono numbers, short labels, compact charts.
+
+**Controls**
+- Auto-refresh toggle + interval selector (30s/60s/120s)
+- Last updated timestamp per module
+
+**Exit criteria**
+- Above-the-fold shows: Indices matrix + flows/VIX/breadth.
+- Treemap + shockers visible without excessive scrolling on 1920px.
+
+#### 5C — Testing & Polish (P0)
+- Backend tests:
+  - cockpit endpoint shape validation
+  - caching behavior and error isolation
+- Frontend tests:
+  - renders all 4 sections and key elements with `data-testid`
+  - auto-refresh updates without layout shift
+
+---
+
+### Phase 6 — Optional: Auth + Personalization (only after approval)
 - Login, per-user watchlists, saved signals, alert preferences
 - Per-user track record + experiments (provider selection, aggressiveness)
 - Personal risk profile: max risk per trade, time horizon preference
@@ -194,11 +262,9 @@
 ---
 
 ## 3. Next Actions (immediate) (updated)
-**Phase 4 is complete.** Candidate next steps (pending approval):
-1. **Phase 5 (optional):** Authentication + per-user watchlists/saved signals + alert preferences.
-2. **Reliability hardening:** caching and rate limiting for yfinance + LLM endpoints; background jobs for batch scanning.
-3. **Exports  scheduler:** CSV/PDF export and a scheduled daily scan (deferred earlier; can be added as a new phase).
-4. **Cost/latency controls:** configurable batch size, provider defaults, and optional TTL caching for AI batch scan.
+1. **Phase 5A (Backend):** implement `GET /api/market/cockpit` + TTL caching + sanitization.
+2. **Phase 5B (Frontend):** rewrite MarketOverview into the 4-section cockpit with streaming updates.
+3. **Phase 5C:** add tests + polish (performance, responsive layout, reduced-motion).
 
 ---
 
@@ -215,4 +281,10 @@
   - Frontend surfaces expanded indicators cleanly; Alpha Gauge removed.
   - Expanded symbol universe + sectors (incl. commodities) available.
   - Robust JSON serialization for all outputs.
+- 🟦 Phase 5 delivers:
+  - Market Overview replaced by **Market Intelligence Cockpit** (4-section diagnostic tool).
+  - Live/streaming feel via auto-refresh and flash-on-change.
+  - Dashboard emphasizes **liquidity flows, breadth, VIX regime, sector rotation, derivatives positioning, and actionable events**.
+  - No Top Gainers/Losers modules.
+  - All modules fail gracefully and remain performant.
 - ✅ Compliance: explicit disclaimers, no guarantees, transparent assumptions, no fabricated numbers.

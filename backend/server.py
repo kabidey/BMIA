@@ -28,6 +28,7 @@ from services.intelligence_engine import generate_ai_signal, generate_batch_rank
 from services.signal_service import save_signal, get_active_signals, get_signal_history, evaluate_signal, evaluate_all_signals
 from services.learning_service import build_learning_context, get_cached_learning_context
 from services.performance_service import get_track_record
+from services.dashboard_service import get_full_cockpit, get_slow_cockpit_modules
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -418,6 +419,21 @@ async def market_heatmap():
             logger.error(f"Heatmap error for {sym_info['symbol']}: {e}")
     
     return {"heatmap": heatmap, "timestamp": datetime.now().isoformat()}
+
+
+# ── Market Intelligence Cockpit Endpoints ─────────────────────────────────────
+@app.get("/api/market/cockpit")
+async def market_cockpit():
+    """Consolidated dashboard data: indices, VIX, flows, breadth, sectors, 52W, PCR, deals, actions."""
+    data = get_full_cockpit()
+    return data
+
+
+@app.get("/api/market/cockpit/slow")
+async def market_cockpit_slow():
+    """Slower modules: volume shockers, OI quadrant. Called separately for UX."""
+    data = get_slow_cockpit_modules()
+    return data
 
 
 @app.post("/api/ai/chat")

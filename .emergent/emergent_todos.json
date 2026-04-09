@@ -1,34 +1,22 @@
 [
   {
-    "content": "Update intelligence_engine.py - Wire ALL 25+ technical indicators and 30+ fundamental metrics into the LLM context builder",
+    "content": "Phase 5A: Build dashboard_service.py with all data gathering functions",
     "status": "completed"
   },
   {
-    "content": "Update server.py - Add AI batch scan endpoint, remove alpha_service from batch ranking",
+    "content": "Phase 5A: Add GET /api/market/cockpit consolidated endpoint with caching",
     "status": "completed"
   },
   {
-    "content": "Implement AI batch scanner backend (POST /api/batch/ai-scan)",
+    "content": "Phase 5B: Build TerminalPanel wrapper + Rewrite MarketOverview as full cockpit",
     "status": "completed"
   },
   {
-    "content": "Frontend: Remove AlphaGauge from SymbolAnalysis, add expanded indicator panels",
+    "content": "Phase 5B: Add auto-refresh mechanism with streaming flash effect",
     "status": "completed"
   },
   {
-    "content": "Frontend: Rewrite BatchScanner for AI-powered ranking results",
-    "status": "completed"
-  },
-  {
-    "content": "Frontend: Extend FundamentalsPanel with new metrics and quarterly data",
-    "status": "completed"
-  },
-  {
-    "content": "Fix numpy serialization bug in technical_service.py",
-    "status": "completed"
-  },
-  {
-    "content": "Test and verify all changes (backend + frontend)",
-    "status": "completed"
+    "content": "Phase 5C: Test all backend + frontend",
+    "status": "in_progress"
   }
 ]

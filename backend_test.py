@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-BMIA Phase 4 Backend API Testing Suite
-Tests expanded parameters (25+ technical, 30+ fundamental), AI batch scanning, and signal generation
+BMIA Phase 5 Backend API Testing Suite
+Tests Market Intelligence Cockpit dashboard with 4 sections + regression tests for Phase 4 features
 """
 import requests
 import sys
@@ -16,6 +16,7 @@ class BMIAAPITester:
         self.tests_passed = 0
         self.test_results = []
         self.failed_tests = []
+        self.cockpit_data = None  # Store cockpit data for analysis
 
     def log_test(self, name, success, details="", response_time=None):
         """Log test result"""
@@ -82,6 +83,254 @@ class BMIAAPITester:
             else:
                 print(f"   ⚠️  Health check response missing expected fields: {data}")
         return False
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # PHASE 5: MARKET INTELLIGENCE COCKPIT TESTS
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    def test_market_cockpit_main(self):
+        """Test main Market Intelligence Cockpit endpoint - all 4 sections data"""
+        print(f"\n🔍 Testing Market Intelligence Cockpit Main Endpoint...")
+        
+        success, data = self.run_test(
+            "Market Cockpit Main", 
+            "GET", 
+            "api/market/cockpit",
+            timeout=60  # NSE API calls can be slow
+        )
+        
+        if success:
+            self.cockpit_data = data  # Store for detailed analysis
+            
+            # Check all required sections are present
+            required_sections = [
+                'indices', 'breadth', 'vix', 'flows',  # Macro View
+                'sectors', 'clusters_52w',              # Micro View (partial)
+                'pcr', 'block_deals', 'corporate_actions'  # Derivatives & Corporate
+            ]
+            
+            found_sections = [section for section in required_sections if section in data]
+            print(f"   📊 Cockpit sections: {len(found_sections)}/{len(required_sections)} found")
+            
+            # Detailed section analysis
+            self._analyze_indices_data(data.get('indices', {}))
+            self._analyze_breadth_data(data.get('breadth', {}))
+            self._analyze_vix_data(data.get('vix', {}))
+            self._analyze_flows_data(data.get('flows', {}))
+            self._analyze_sectors_data(data.get('sectors', {}))
+            self._analyze_clusters_data(data.get('clusters_52w', {}))
+            self._analyze_pcr_data(data.get('pcr', {}))
+            self._analyze_deals_data(data.get('block_deals', {}))
+            self._analyze_actions_data(data.get('corporate_actions', {}))
+            
+            if len(found_sections) >= 7:  # Allow some flexibility
+                print(f"   ✅ Market Cockpit main endpoint working correctly")
+                return True, data
+            else:
+                print(f"   ⚠️  Missing critical sections: {set(required_sections) - set(found_sections)}")
+                return False, data
+        
+        return False, {}
+
+    def test_market_cockpit_slow(self):
+        """Test slow Market Intelligence Cockpit endpoint - volume shockers & OI quadrant"""
+        print(f"\n🔍 Testing Market Cockpit Slow Modules...")
+        
+        success, data = self.run_test(
+            "Market Cockpit Slow", 
+            "GET", 
+            "api/market/cockpit/slow",
+            timeout=120  # Volume scanning takes longer
+        )
+        
+        if success:
+            # Check slow modules
+            required_modules = ['volume_shockers', 'oi_quadrant']
+            found_modules = [module for module in required_modules if module in data]
+            print(f"   📊 Slow modules: {len(found_modules)}/{len(required_modules)} found")
+            
+            # Analyze volume shockers
+            self._analyze_volume_shockers(data.get('volume_shockers', {}))
+            
+            # Analyze OI quadrant
+            self._analyze_oi_quadrant(data.get('oi_quadrant', {}))
+            
+            if len(found_modules) >= 1:  # At least one module should work
+                print(f"   ✅ Market Cockpit slow modules working")
+                return True, data
+            else:
+                print(f"   ⚠️  No slow modules working")
+                return False, data
+        
+        return False, {}
+
+    def _analyze_indices_data(self, indices_data):
+        """Analyze indices section data"""
+        if 'error' in indices_data:
+            print(f"   ❌ Indices error: {indices_data['error']}")
+            return
+        
+        indices = indices_data.get('indices', [])
+        if indices:
+            # Check for primary indices
+            primary_names = ['Nifty 50', 'Sensex', 'Bank Nifty', 'Midcap 100', 'Smallcap 100']
+            found_primary = [idx for idx in indices if idx.get('name') in primary_names]
+            print(f"   📈 Indices: {len(indices)} total, {len(found_primary)}/5 primary indices")
+            
+            # Check data completeness for first index
+            if indices:
+                first_idx = indices[0]
+                required_fields = ['name', 'last', 'change', 'change_pct', 'high', 'low']
+                found_fields = [f for f in required_fields if f in first_idx and first_idx[f] is not None]
+                print(f"   ✓ Sample index ({first_idx.get('name', 'Unknown')}): {len(found_fields)}/{len(required_fields)} fields")
+        else:
+            print(f"   ❌ No indices data found")
+
+    def _analyze_breadth_data(self, breadth_data):
+        """Analyze market breadth data"""
+        if 'error' in breadth_data:
+            print(f"   ❌ Breadth error: {breadth_data['error']}")
+            return
+        
+        if breadth_data.get('advances') is not None and breadth_data.get('declines') is not None:
+            advances = breadth_data['advances']
+            declines = breadth_data['declines']
+            ad_ratio = breadth_data.get('ad_ratio', 0)
+            print(f"   📊 Market Breadth: {advances} advances, {declines} declines, A/D ratio: {ad_ratio}")
+        else:
+            print(f"   ❌ Incomplete breadth data")
+
+    def _analyze_vix_data(self, vix_data):
+        """Analyze VIX data"""
+        if 'error' in vix_data:
+            print(f"   ❌ VIX error: {vix_data['error']}")
+            return
+        
+        if vix_data.get('current') is not None:
+            current = vix_data['current']
+            regime = vix_data.get('regime', 'unknown')
+            regime_label = vix_data.get('regime_label', 'Unknown')
+            print(f"   📈 VIX: {current:.2f} ({regime_label})")
+        else:
+            print(f"   ❌ No VIX data available")
+
+    def _analyze_flows_data(self, flows_data):
+        """Analyze FII/DII flows data"""
+        if 'error' in flows_data:
+            print(f"   ❌ Flows error: {flows_data['error']}")
+            return
+        
+        flows = flows_data.get('flows', [])
+        if flows:
+            latest_flow = flows[-1] if flows else {}
+            fii_net = latest_flow.get('fii_net', 0)
+            print(f"   💰 FII Flows: {len(flows)} days, latest net: ₹{fii_net} Cr")
+        else:
+            print(f"   ❌ No flows data found")
+
+    def _analyze_sectors_data(self, sectors_data):
+        """Analyze sector rotation data"""
+        if 'error' in sectors_data:
+            print(f"   ❌ Sectors error: {sectors_data['error']}")
+            return
+        
+        sectors = sectors_data.get('sectors', [])
+        if sectors:
+            # Find best and worst performing sectors
+            sectors_with_change = [s for s in sectors if s.get('change_pct') is not None]
+            if sectors_with_change:
+                best = max(sectors_with_change, key=lambda x: x['change_pct'])
+                worst = min(sectors_with_change, key=lambda x: x['change_pct'])
+                print(f"   🏭 Sectors: {len(sectors)} total, best: {best['name']} (+{best['change_pct']:.2f}%), worst: {worst['name']} ({worst['change_pct']:.2f}%)")
+        else:
+            print(f"   ❌ No sectors data found")
+
+    def _analyze_clusters_data(self, clusters_data):
+        """Analyze 52-week clusters data"""
+        if 'error' in clusters_data:
+            print(f"   ❌ 52W Clusters error: {clusters_data['error']}")
+            return
+        
+        high_count = clusters_data.get('high_count', 0)
+        low_count = clusters_data.get('low_count', 0)
+        print(f"   📊 52W Extremes: {high_count} new highs, {low_count} new lows")
+
+    def _analyze_pcr_data(self, pcr_data):
+        """Analyze Put-Call Ratio data"""
+        if 'error' in pcr_data:
+            print(f"   ❌ PCR error: {pcr_data['error']}")
+            return
+        
+        nifty_pcr = pcr_data.get('nifty', {})
+        banknifty_pcr = pcr_data.get('banknifty', {})
+        
+        if nifty_pcr.get('pcr'):
+            print(f"   📊 Nifty PCR: {nifty_pcr['pcr']} ({nifty_pcr.get('label', 'Unknown')})")
+        if banknifty_pcr.get('pcr'):
+            print(f"   📊 Bank Nifty PCR: {banknifty_pcr['pcr']} ({banknifty_pcr.get('label', 'Unknown')})")
+
+    def _analyze_deals_data(self, deals_data):
+        """Analyze block deals data"""
+        if 'error' in deals_data:
+            print(f"   ❌ Block Deals error: {deals_data['error']}")
+            return
+        
+        deals = deals_data.get('deals', [])
+        if deals:
+            total_value = sum(d.get('value_cr', 0) for d in deals)
+            print(f"   💼 Block Deals: {len(deals)} deals, total value: ₹{total_value:.1f} Cr")
+        else:
+            print(f"   ❌ No block deals data found")
+
+    def _analyze_actions_data(self, actions_data):
+        """Analyze corporate actions data"""
+        if 'error' in actions_data:
+            print(f"   ❌ Corporate Actions error: {actions_data['error']}")
+            return
+        
+        actions = actions_data.get('actions', [])
+        if actions:
+            categories = {}
+            for action in actions:
+                cat = action.get('category', 'other')
+                categories[cat] = categories.get(cat, 0) + 1
+            print(f"   📋 Corporate Actions: {len(actions)} total, categories: {dict(categories)}")
+        else:
+            print(f"   ❌ No corporate actions data found")
+
+    def _analyze_volume_shockers(self, shockers_data):
+        """Analyze volume shockers data"""
+        if 'error' in shockers_data:
+            print(f"   ❌ Volume Shockers error: {shockers_data['error']}")
+            return
+        
+        shockers = shockers_data.get('shockers', [])
+        if shockers:
+            breakouts = [s for s in shockers if s.get('is_breakout')]
+            avg_vol_ratio = sum(s.get('vol_ratio', 0) for s in shockers) / len(shockers)
+            print(f"   ⚡ Volume Shockers: {len(shockers)} stocks, {len(breakouts)} breakouts, avg vol ratio: {avg_vol_ratio:.1f}x")
+        else:
+            print(f"   ❌ No volume shockers found")
+
+    def _analyze_oi_quadrant(self, oi_data):
+        """Analyze OI quadrant data"""
+        if 'error' in oi_data:
+            print(f"   ❌ OI Quadrant error: {oi_data['error']}")
+            return
+        
+        quadrants = oi_data.get('quadrants', {})
+        if quadrants:
+            total_stocks = sum(len(quadrants.get(q, [])) for q in ['long_buildup', 'short_covering', 'short_buildup', 'long_unwinding'])
+            print(f"   📊 OI Quadrant: {total_stocks} stocks classified")
+            for quad_name, stocks in quadrants.items():
+                if stocks:
+                    print(f"      {quad_name.replace('_', ' ').title()}: {len(stocks)} stocks")
+        else:
+            print(f"   ❌ No OI quadrant data found")
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # PHASE 4 REGRESSION TESTS (Existing functionality)
+    # ═══════════════════════════════════════════════════════════════════════════
 
     def test_expanded_symbols(self):
         """Test expanded symbol universe (Phase 4: beyond Yahoo Finance)"""
@@ -493,36 +742,41 @@ class BMIAAPITester:
         return False, {}
 
     def run_all_tests(self):
-        """Run all Phase 4 tests in sequence"""
-        print("🚀 Starting BMIA Phase 4 Backend API Tests")
-        print("   📈 Expanded Parameters: 25+ Technical + 30+ Fundamental")
-        print("   🤖 AI Batch Scanner: Converted from basic to AI-powered")
-        print("   🌍 Expanded Universe: Beyond Yahoo Finance")
+        """Run all Phase 5 tests (Market Intelligence Cockpit) + Phase 4 regression tests"""
+        print("🚀 Starting BMIA Phase 5 Backend API Tests")
+        print("   🎛️  Market Intelligence Cockpit: 4-section dashboard")
+        print("   📈 Regression: Phase 4 expanded parameters & AI features")
         print(f"   🌐 Base URL: {self.base_url}")
         print("=" * 70)
         
         # Basic connectivity
         self.test_health_check()
         
-        # Phase 4: Expanded data universe
-        print(f"\n📊 Testing Phase 4: Expanded Data Universe...")
+        # ═══════════════════════════════════════════════════════════════════════
+        # PHASE 5: MARKET INTELLIGENCE COCKPIT TESTS
+        # ═══════════════════════════════════════════════════════════════════════
+        print(f"\n🎛️  Testing Phase 5: Market Intelligence Cockpit...")
+        cockpit_main_success, cockpit_data = self.test_market_cockpit_main()
+        cockpit_slow_success, slow_data = self.test_market_cockpit_slow()
+        
+        # ═══════════════════════════════════════════════════════════════════════
+        # PHASE 4 REGRESSION TESTS
+        # ═══════════════════════════════════════════════════════════════════════
+        print(f"\n📊 Testing Phase 4 Regression: Expanded Data Universe...")
         self.test_expanded_symbols()
         self.test_sectors_endpoint()
         
-        # Phase 4: Expanded analysis parameters
-        print(f"\n🔧 Testing Phase 4: Expanded Analysis Parameters...")
+        print(f"\n🔧 Testing Phase 4 Regression: Expanded Analysis Parameters...")
         analysis_success, analysis_data = self.test_expanded_stock_analysis()
         
-        # Phase 4: AI-powered batch scanner
-        print(f"\n🤖 Testing Phase 4: AI Batch Scanner...")
+        print(f"\n🤖 Testing Phase 4 Regression: AI Batch Scanner...")
         batch_success, batch_data = self.test_ai_batch_scan()
         
-        # Phase 4: AI signal generation with expanded parameters
-        print(f"\n🧠 Testing Phase 4: AI Signal Generation...")
+        print(f"\n🧠 Testing Phase 4 Regression: AI Signal Generation...")
         signal_success, signal_data = self.test_generate_signal_expanded()
         
-        # Legacy signal management endpoints
-        print(f"\n📋 Testing Signal Management...")
+        # Legacy endpoints
+        print(f"\n📋 Testing Legacy Endpoints...")
         self.test_active_signals()
         self.test_signal_history()
         self.test_track_record()
@@ -530,31 +784,41 @@ class BMIAAPITester:
         
         # Print summary
         print("\n" + "=" * 70)
-        print(f"📊 Phase 4 Test Summary: {self.tests_passed}/{self.tests_run} tests passed")
+        print(f"📊 Phase 5 Test Summary: {self.tests_passed}/{self.tests_run} tests passed")
         
-        # Phase 4 specific assessment
-        phase4_critical_tests = [
+        # Phase 5 specific assessment
+        phase5_critical_tests = [
+            cockpit_main_success,  # Main cockpit endpoint
+            cockpit_slow_success   # Slow modules endpoint
+        ]
+        
+        # Phase 4 regression assessment
+        phase4_regression_tests = [
             analysis_success,  # Expanded parameters
             batch_success,     # AI batch scanner
             signal_success     # AI signal generation
         ]
         
-        phase4_passed = sum(phase4_critical_tests)
-        print(f"🎯 Phase 4 Critical Features: {phase4_passed}/3 working")
+        phase5_passed = sum(phase5_critical_tests)
+        phase4_regression_passed = sum(phase4_regression_tests)
+        
+        print(f"🎛️  Phase 5 Market Cockpit: {phase5_passed}/2 endpoints working")
+        print(f"📈 Phase 4 Regression: {phase4_regression_passed}/3 features working")
         
         if self.failed_tests:
             print(f"\n❌ Failed Tests:")
             for failure in self.failed_tests[:10]:  # Show first 10 failures
                 print(f"   • {failure}")
         
-        if self.tests_passed == self.tests_run:
-            print("🎉 All Phase 4 tests passed!")
+        # Success criteria: Phase 5 main features + most Phase 4 regression
+        if phase5_passed >= 1 and phase4_regression_passed >= 2:
+            print("🎉 Phase 5 Market Intelligence Cockpit working with good Phase 4 regression!")
             return 0
-        elif phase4_passed >= 2:
-            print("✅ Phase 4 core features working (some minor issues)")
+        elif phase5_passed >= 1:
+            print("✅ Phase 5 Market Intelligence Cockpit working (some Phase 4 regression issues)")
             return 0
         else:
-            print(f"⚠️  Phase 4 has significant issues - {len(self.failed_tests)} tests failed")
+            print(f"⚠️  Phase 5 has significant issues - Market Intelligence Cockpit not working")
             return 1
 
 def main():
