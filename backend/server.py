@@ -37,8 +37,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # MongoDB
-MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
-DB_NAME = os.environ.get("DB_NAME", "bmia_db")
+MONGO_URL = os.environ["MONGO_URL"]
+DB_NAME = os.environ["DB_NAME"]
 
 # In-memory job store for background god-scan tasks
 _god_scan_jobs = {}
@@ -49,8 +49,11 @@ async def lifespan(app: FastAPI):
     app.mongodb_client = AsyncIOMotorClient(MONGO_URL)
     app.db = app.mongodb_client[DB_NAME]
     logger.info("Connected to MongoDB")
-    # Start background cockpit cache
-    start_background_cache()
+    # Start background cockpit cache (non-blocking, daemon thread)
+    try:
+        start_background_cache()
+    except Exception as e:
+        logger.error(f"Background cache start failed (non-fatal): {e}")
     yield
     app.mongodb_client.close()
 
