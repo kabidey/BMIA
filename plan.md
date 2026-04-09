@@ -10,10 +10,11 @@
   - **learns from mistakes** via a closed-loop “post-mortem → learning context → improved next prompt” mechanism
   - exposes **Signal Dashboard + Track Record** with key performance metrics (win rate, expectancy, profit factor, streaks, sector/confidence breakdown)
 - ✅ Maintain **SEBI-style disclaimers** and “educational only / not investment advice” framing everywhere.
-- 🔜 **Phase 4 objective (in progress):** deepen quant inputs and remove remaining “formula-first” paths by:
+- ✅ **Phase 4 objective (COMPLETED):** deepen quant inputs and remove remaining “formula-first” paths by:
   - wiring **25+ technical indicators + 30+ fundamental metrics** into the Intelligence Engine prompts
   - converting Batch Scanner from alpha-ranking to **AI-powered relative ranking**
   - revamping SymbolAnalysis and BatchScanner UI to surface expanded metrics and reduce redundancy
+  - expanding symbol universe and sector taxonomy (including commodities)
 
 ---
 
@@ -147,110 +148,41 @@
 
 ---
 
-### Phase 4 — Hardening + Advanced Quant Features (post-intelligence) 🚧 IN PROGRESS
+### Phase 4 — Hardening + Advanced Quant Features (post-intelligence) ✅ COMPLETED
 **Goal:** Improve robustness, explainability, and quantitative depth now that the learning loop is stable.
 
-#### 4.0 Current state (Phase 4 progress snapshot)
-- ✅ Expanded quant inputs are already implemented at the data layer:
+#### 4.0 Completion snapshot (what shipped)
+- ✅ Expanded quant inputs implemented and fully integrated end-to-end:
   - ✅ `services/technical_service.py`: **25+ indicators** (RSI, MACD, Bollinger, ADX, Stochastic, ATR, OBV, Williams %R, CCI, ROC, Ichimoku, Fibonacci, Pivot Points, expanded MAs incl. golden/death cross, price action)
-  - ✅ `services/fundamental_service.py`: **30+ metrics** (PEG, EV/EBITDA, EV/Revenue, FCF yield, liquidity ratios, quarterly revenue/earnings, ownership, etc.)
-  - ✅ Expanded symbol universe in `symbols.py` (NIFTY50 + Next50 + Midcap + MCX)
-- 🔴 Remaining work: these expanded fields are **not yet fully consumed** by the Intelligence Engine prompt builder nor surfaced in scanner/UI.
+  - ✅ `services/fundamental_service.py`: **30+ metrics** (EV/EBITDA, EV/Revenue, FCF yield, liquidity ratios, quarterly revenue/earnings, ownership, etc.)
+  - ✅ Expanded symbol universe + sector taxonomy in `symbols.py` (e.g., NIFTY 50 + broader coverage + MCX commodities)
 
-#### 4.1 P0 — Wire expanded parameters into Intelligence Engine
-**Goal:** Ensure AI signal generation uses the full depth of technical + fundamental inputs.
+- ✅ Intelligence Engine rewrite:
+  - ✅ `services/intelligence_engine.py` rewritten with `build_full_context()` to feed **all expanded technical + fundamental metrics** into LLM prompts
+  - ✅ Added `build_batch_context()` + `generate_batch_ranking()` for batched, comparative AI ranking
 
-**Backend work**
-- Update `services/intelligence_engine.py` context builder to include ALL new technical indicators:
-  - Bollinger: upper/middle/lower, bandwidth, %B, squeeze, position
-  - ADX: ADX value, +DI/-DI, trend_strength, direction
-  - Stochastic: %K/%D, zone, crossover
-  - ATR: ATR, ATR%, volatility label
-  - OBV: OBV, OBV SMA20, trend
-  - Williams %R, CCI, ROC
-  - Ichimoku: tenkan/kijun, cloud signal, thickness, TK cross
-  - Fibonacci: level map + nearest support/resistance
-  - Pivot points: PP, S/R levels
-  - Moving averages: SMA/EMA suite, above_all_ma, golden/death cross
-  - Price action: last 5 candles, 20d/50d trend, daily change%
-- Update `services/intelligence_engine.py` to include ALL expanded fundamentals:
-  - valuation: PE/forward PE/PEG, P/S, P/B, EV/EBITDA, EV/Revenue, enterprise value
-  - profitability: gross/operating/profit margins, ROE/ROA
-  - growth: revenue growth, earnings growth, quarterly growth
-  - balance-sheet & liquidity: debt/equity, debt/EBITDA, net cash, current/quick ratio
-  - cashflow: FCF, operating cashflow, FCF yield
-  - ownership/float/short: insider/institutional %, shares/float, short ratio
-  - quarterly snapshots: last 4 quarters revenue & net income
-- Prompt hygiene/robustness:
-  - Keep “no fabrication” and strict JSON schema
-  - Add explicit instruction: cite indicator names + values when making claims
-  - Add guardrails for unreasonable entry/target/stop levels (sanity bounds checks)
+- ✅ AI Batch Scanner conversion:
+  - ✅ Added `POST /api/batch/ai-scan`
+  - ✅ Replaced formula-based alpha ranking with AI-powered relative ranking (15 symbols per scan for performance)
 
-**Acceptance criteria**
-- For a test symbol, generated signal reasoning references expanded fields (e.g., “ADX 28 strong trend”, “Bollinger squeeze true”, “FCF yield X%”).
-- No regression in `/api/signals/generate` latency beyond acceptable budget.
+- ✅ Frontend revamp:
+  - ✅ Removed redundant `AlphaGauge` from SymbolAnalysis
+  - ✅ Added expanded Technical panels (Bollinger, ADX, Stochastic, ATR, OBV, Williams %R, CCI, ROC, Ichimoku, Fibonacci, Pivot Points)
+  - ✅ Rewrote BatchScanner UI for AI results (AI score, action, conviction, rationale)
+  - ✅ Extended FundamentalsPanel with valuation multiples, profitability, growth, balance sheet, cash flow, risk/ownership, and quarterly mini-table
 
-#### 4.2 P0 — Convert Batch Scanner to AI-powered ranking
-**Goal:** Replace alpha-score-based ranking with AI-driven relative ranking using expanded metrics.
+- ✅ Bug fix / hardening:
+  - ✅ Fixed numpy JSON serialization (`numpy.bool_`, `np.integer`, `np.floating`) via `_sanitize()` in `technical_service.py`.
 
-**Backend work**
-- Add new endpoint: `POST /api/batch/ai-scan` (name final TBD) that:
-  1. selects symbols (explicit list or sector)
-  2. gathers market snapshot + expanded technicals + expanded fundamentals per symbol
-  3. builds compact per-symbol summaries (to control prompt size)
-  4. sends summaries to the LLM in a single prompt (batched) requesting:
-     - ranking (1..N)
-     - score (0–100)
-     - action bias (BUY/SELL/HOLD/AVOID)
-     - short rationale per symbol referencing provided metrics
-  5. returns structured JSON to the frontend
-- Performance strategy:
-  - batch size (e.g., 8–12 symbols per LLM call) with iterative merging
-  - caching results for a short TTL (optional) to reduce repeated costs
+- ✅ Testing:
+  - ✅ 100% pass rate (backend + frontend + integration)
 
-**Frontend work**
-- Update BatchScanner page:
-  - change copy from “Alpha Score ranking” → “AI-powered ranking”
-  - sortable columns shift to: AI score, action bias, confidence (if provided), key metrics (price, change%, RSI)
-  - keep sector filter and “Run Scan” workflow
-
-**Acceptance criteria**
-- Batch scan returns ranked results with a deterministic UI rendering.
-- Results include AI score + short explanation per row.
-
-#### 4.3 P1 — Frontend revamp (reduce redundancy, surface expanded data)
-**Goal:** Make expanded technical/fundamental depth visible without clutter.
-
-- Remove/retire Alpha Gauge from SymbolAnalysis UI (redundant vs AI signal section).
-  - Ensure no broken imports (`AlphaGauge.js`) and adjust layout.
-- SymbolAnalysis → Technical tab:
-  - add “Advanced Indicators” cards/sections for: Bollinger, ADX, Stochastic, ATR/volatility, OBV trend
-  - add “Key Levels” section for Fibonacci + Pivot points
-  - show MA regime (above_all_ma, golden/death cross)
-- SymbolAnalysis → Fundamental tab:
-  - extend FundamentalsPanel to include EV multiples, PEG, FCF yield, liquidity, ownership
-  - add quarterly mini-table (Revenue/Net Income last 4 quarters)
-- Ensure design compliance:
-  - maintain Bloomberg-like density with shadcn Cards/Tables
-  - numeric fields use `font-mono tabular-nums`
-  - no prohibited gradients/purple
-  - keep SEBI disclaimer visible
-
-#### 4.4 P1 — Update server wiring & remove legacy dependencies
-**Goal:** Remove formula-first dependencies where they conflict with the Phase 4 direction.
-
-- Update `server.py`:
-  - add AI batch scan endpoint wiring
-  - reduce/remove usage of `alpha_service` in batch scan path (alpha may remain for legacy display only, but should not drive ranking)
-  - ensure `/api/analyze-stock` continues to return expanded technical/fundamental payloads for UI
-
-#### 4.5 Testing & hardening (continuous)
-- Add backend tests:
-  - intelligence engine prompt/context builder includes new keys (snapshot test)
-  - batch AI scan endpoint returns valid structured output
-- Add smoke tests:
-  - SymbolAnalysis renders new fields even when some metrics are missing
-  - BatchScanner handles LLM errors gracefully (fallback state)
+#### 4.1 Phase 4 acceptance criteria — met
+- ✅ AI signal reasoning references expanded indicators (e.g., ADX, Bollinger, FCF yield, EV multiples).
+- ✅ Batch scan returns ranked results with AI score + rationale.
+- ✅ AlphaGauge removed without broken imports or layout regressions.
+- ✅ `/api/analyze-stock` returns a comprehensive, JSON-serializable payload.
+- ✅ Performance remains usable (batch scan capped; graceful fallbacks present).
 
 ---
 
@@ -262,24 +194,25 @@
 ---
 
 ## 3. Next Actions (immediate) (updated)
-1. **P0:** Update `intelligence_engine.py` to consume and render all expanded technical + fundamental metrics in the LLM context.
-2. **P0:** Implement AI batch scan endpoint + update BatchScanner frontend to use AI ranking.
-3. **P1:** Remove Alpha Gauge from SymbolAnalysis and surface advanced indicator panels.
-4. **P1:** Extend FundamentalsPanel with EV/PEG/FCF/ownership + quarterly mini-table.
-5. Testing: add prompt/context snapshot tests + scanner endpoint tests; run soak scan on NIFTY50 + MCX subset and monitor latency.
+**Phase 4 is complete.** Candidate next steps (pending approval):
+1. **Phase 5 (optional):** Authentication + per-user watchlists/saved signals + alert preferences.
+2. **Reliability hardening:** caching and rate limiting for yfinance + LLM endpoints; background jobs for batch scanning.
+3. **Exports  scheduler:** CSV/PDF export and a scheduled daily scan (deferred earlier; can be added as a new phase).
+4. **Cost/latency controls:** configurable batch size, provider defaults, and optional TTL caching for AI batch scan.
 
 ---
 
 ## 4. Success Criteria (updated)
 - ✅ V1 remains functional (overview/analysis/scanner/chat).
-- ✅ Phase 3 delivers (met):
+- ✅ Phase 3 delivers:
   - AI-generated signals with entry/targets/stop/timeframe/confidence
   - persisted history + evaluation outcomes
   - track record dashboard with core metrics + equity curve
   - learning context that updates and is used for future signals
-- ✅ Compliance: explicit disclaimers, no guarantees, transparent assumptions, no fabricated numbers.
-- 🚧 Phase 4 success (in progress):
+- ✅ Phase 4 delivers:
   - Intelligence Engine prompt includes ALL expanded technical + fundamental inputs.
   - Batch Scanner ranks using AI-powered relative analysis (not alpha score).
-  - Frontend surfaces expanded indicators cleanly; Alpha Gauge removed without regressions.
-  - Performance remains usable (batch scan completes within an acceptable time budget; graceful error handling).
+  - Frontend surfaces expanded indicators cleanly; Alpha Gauge removed.
+  - Expanded symbol universe + sectors (incl. commodities) available.
+  - Robust JSON serialization for all outputs.
+- ✅ Compliance: explicit disclaimers, no guarantees, transparent assumptions, no fabricated numbers.
