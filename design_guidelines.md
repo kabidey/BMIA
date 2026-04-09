@@ -1,573 +1,368 @@
 {
-  "brand": {
-    "name": "Bharat Market Intel Agent (BMIA)",
-    "design_personality": [
-      "Bloomberg-terminal density, modern web polish",
-      "trustworthy + analytical (quant lab)",
-      "dark-first for low eye strain",
-      "high signal-to-noise: data-rich, never cluttered",
-      "India-market aware (NSE/BSE/MCX), SEBI-compliant tone"
-    ],
-    "north_star": "Make a retail investor feel like a Tier-1 quant: fast scanning, deep drill-down, and clear risk framing."
+  "design_system_name": "Market Intelligence Cockpit (India) — Terminal Dark",
+  "brand_attributes": [
+    "institutional",
+    "diagnostic",
+    "fast-scanning",
+    "data-dense-not-cluttered",
+    "trustworthy",
+    "terminal-craft (Bloomberg-inspired)"
+  ],
+  "north_star": {
+    "one_sentence": "A single-screen market diagnostic cockpit that surfaces liquidity flow, sentiment, and rotation signals in <10 seconds.",
+    "success_actions": [
+      "Trader identifies risk-on/off regime (VIX + breadth + flows)",
+      "Trader spots sector rotation (treemap + relative strength)",
+      "Trader confirms derivatives positioning (PCR + OI quadrant)",
+      "Trader catches actionable events (block/bulk + earnings highlights)"
+    ]
   },
-
-  "inspiration_refs": {
-    "dribbble_searches": [
+  "layout_strategy": {
+    "page_type": "single dashboard",
+    "reading_flow": "left-to-right scan within each module; top-to-bottom across 4 stacked sections",
+    "density_rules": [
+      "Prefer 2-row KPI matrices over tall cards.",
+      "Use mono font for numbers; keep labels short; show units.",
+      "Use separators + subtle borders instead of heavy shadows.",
+      "Avoid large hero areas; reserve motion for streaming deltas only."
+    ],
+    "grid": {
+      "container": "max-w-[1920px] mx-auto px-3 sm:px-4 lg:px-6",
+      "section_spacing": "space-y-4 lg:space-y-5",
+      "module_grid": "grid grid-cols-1 lg:grid-cols-12 gap-3 lg:gap-4",
+      "recommended_breakpoints": {
+        "mobile": "single column; collapsible subpanels",
+        "md": "2 columns for charts + tables",
+        "lg": "12-col cockpit; keep key diagnostics above the fold",
+        "xl_2k": "increase table visible rows; keep font sizes stable"
+      }
+    },
+    "section_stack": [
       {
-        "title": "Trading dashboard search",
-        "url": "https://dribbble.com/search/trading-dashboard",
-        "takeaways": [
-          "Modular card grid with dense KPIs + charts",
-          "Left rail navigation + top command/search bar",
-          "High-contrast dark surfaces with subtle borders",
-          "Heatmap blocks + sortable tables as primary scanning tools"
-        ]
+        "id": "macro-view",
+        "title": "Macro View",
+        "layout": "12-col: Indices Matrix (8) + Flows/VIX/Breadth (4)",
+        "notes": "Indices matrix is the primary scan surface; right rail is regime diagnostics."
       },
       {
-        "title": "Bloomberg terminal search",
-        "url": "https://dribbble.com/search/bloomberg-terminal",
-        "takeaways": [
-          "Terminal-like typography for tickers + numbers",
-          "Multi-panel layouts with resizable sections",
-          "Color used as semantic signal (up/down/alert), not decoration"
-        ]
-      }
-    ],
-    "behance": [
+        "id": "micro-view",
+        "title": "Micro View",
+        "layout": "12-col: Sector Treemap (7) + Volume Shockers/Breakouts (5) + 52W clusters below",
+        "notes": "Treemap must be interactive with hover-card details; lists are sortable."
+      },
       {
-        "title": "Stock Trading Dashboard UI/UX Design",
-        "url": "https://www.behance.net/gallery/236819273/Stock-Trading-Dashboard-UIUX-Design",
-        "takeaways": [
-          "Clear hierarchy: top KPIs → main chart → supporting panels",
-          "Tables with badges + micro sparklines",
-          "Side panels for news/insights"
-        ]
+        "id": "derivatives-sentiment",
+        "title": "Derivatives & Sentiment",
+        "layout": "12-col: PCR gauges (4) + OI Buildup Quadrant (8)",
+        "notes": "Quadrant is the decision tool; PCR is quick context."
+      },
+      {
+        "id": "corporate-actions-news",
+        "title": "Corporate Actions & News",
+        "layout": "12-col: Block/Bulk feed (7) + Earnings/Actions highlights (5)",
+        "notes": "Use compact feed rows with time, symbol, value, and tag chips."
       }
     ]
   },
-
   "typography": {
     "font_pairing": {
-      "display": {
-        "name": "Space Grotesk",
-        "usage": "Page titles, section headers, Alpha Score headline",
-        "google_fonts": "https://fonts.google.com/specimen/Space+Grotesk"
-      },
-      "body": {
-        "name": "Inter",
-        "usage": "Body text, labels, UI copy",
-        "google_fonts": "https://fonts.google.com/specimen/Inter"
-      },
-      "mono": {
-        "name": "Azeret Mono",
-        "usage": "Tickers, prices, OHLC, timestamps, table numeric columns",
-        "google_fonts": "https://fonts.google.com/specimen/Azeret+Mono"
-      }
+      "display": "Space Grotesk",
+      "body": "Inter",
+      "data": "Azeret Mono (already in repo) — use as JetBrains Mono substitute for now"
     },
-    "text_size_hierarchy": {
-      "h1": "text-4xl sm:text-5xl lg:text-6xl",
-      "h2": "text-base md:text-lg",
-      "body": "text-sm md:text-base",
-      "small": "text-xs md:text-sm"
+    "tailwind_usage": {
+      "display_class": "font-display",
+      "mono_class": "font-mono tabular-nums"
     },
-    "numeric_rules": [
-      "All prices/percentages use tabular numbers: add Tailwind `tabular-nums`",
-      "Tickers use mono font + slightly increased tracking: `font-mono tracking-wide`",
-      "Avoid ALL CAPS paragraphs; only tickers/badges may be uppercase"
-    ]
-  },
-
-  "color_system": {
-    "mode": "dark-first",
-    "notes": [
-      "No purple (AI/chat restriction).",
-      "Use teal/cyan as primary accent; amber as secondary; red/green strictly semantic for down/up.",
-      "Gradients only as subtle section background accents (<20% viewport)."
-    ],
-    "tokens_css": {
-      "where": "/app/frontend/src/index.css (override :root and .dark tokens)",
-      "css_variables": {
-        "--background": "222 18% 6%",
-        "--foreground": "210 20% 98%",
-        "--card": "222 18% 8%",
-        "--card-foreground": "210 20% 98%",
-        "--popover": "222 18% 8%",
-        "--popover-foreground": "210 20% 98%",
-
-        "--primary": "186 92% 42%",
-        "--primary-foreground": "222 18% 8%",
-
-        "--secondary": "222 14% 14%",
-        "--secondary-foreground": "210 20% 98%",
-
-        "--muted": "222 14% 14%",
-        "--muted-foreground": "215 16% 70%",
-
-        "--accent": "186 60% 18%",
-        "--accent-foreground": "210 20% 98%",
-
-        "--border": "222 14% 18%",
-        "--input": "222 14% 18%",
-        "--ring": "186 92% 42%",
-
-        "--destructive": "0 72% 52%",
-        "--destructive-foreground": "210 20% 98%",
-
-        "--chart-1": "186 92% 42%",
-        "--chart-2": "142 70% 45%",
-        "--chart-3": "0 72% 52%",
-        "--chart-4": "38 92% 55%",
-        "--chart-5": "210 18% 70%",
-
-        "--radius": "0.75rem"
-      },
-      "semantic_extensions": {
-        "add_to_css": {
-          "--surface-0": "222 18% 6%",
-          "--surface-1": "222 18% 8%",
-          "--surface-2": "222 14% 12%",
-          "--surface-3": "222 14% 16%",
-
-          "--success": "142 70% 45%",
-          "--warning": "38 92% 55%",
-          "--danger": "0 72% 52%",
-          "--info": "199 89% 55%",
-
-          "--up": "142 70% 45%",
-          "--down": "0 72% 52%",
-          "--neutral": "215 16% 70%",
-
-          "--alpha-strong-buy": "142 70% 45%",
-          "--alpha-neutral": "38 92% 55%",
-          "--alpha-sell": "0 72% 52%"
-        }
-      }
+    "scale": {
+      "h1": "text-4xl sm:text-5xl lg:text-6xl font-display tracking-tight",
+      "h2": "text-base md:text-lg font-display text-foreground/90",
+      "kpi_value": "text-xl sm:text-2xl font-mono",
+      "kpi_label": "text-xs uppercase tracking-widest text-muted-foreground",
+      "table": "text-xs sm:text-sm",
+      "micro": "text-[11px] leading-4"
     },
-    "allowed_gradients": {
-      "rule": "Max 20% viewport; only backgrounds/overlays; never on small elements",
-      "examples": [
-        "radial-gradient(900px circle at 20% 10%, rgba(34,211,238,0.14), transparent 55%)",
-        "radial-gradient(700px circle at 80% 0%, rgba(251,191,36,0.10), transparent 60%)"
-      ]
-    },
-    "prohibited_gradients": [
-      "blue-500 to purple-600",
-      "purple-500 to pink-500",
-      "green-500 to blue-500",
-      "red to pink"
-    ]
-  },
-
-  "layout_and_grid": {
-    "global_shell": {
-      "pattern": "Left rail + top command bar + main content",
-      "mobile": "Bottom sheet navigation (Sheet) + sticky top search",
-      "desktop": "Resizable panels for charts/news using shadcn Resizable"
-    },
-    "grid": {
-      "container": "max-w-[1600px] w-full",
-      "page_padding": "px-4 sm:px-6 lg:px-8",
-      "gutter": "gap-4 md:gap-6",
-      "bento": "Use 12-col grid on lg; cards span 3/4/6/8/12 columns"
-    },
-    "density_controls": {
-      "principle": "Let users choose density",
-      "implementation": [
-        "Add a `Density` ToggleGroup: Compact / Comfortable",
-        "Compact reduces table row height and card padding",
-        "Comfortable is default for retail"
+    "number_formatting": {
+      "rules": [
+        "Always tabular numbers for price/percent/volume.",
+        "Use compact units: Cr, L, K; show ₹ where relevant.",
+        "Show sign + color for deltas; keep neutral gray for 0."
       ]
     }
   },
-
-  "component_system": {
+  "color_system": {
+    "mode": "dark-first",
+    "tokens_css": {
+      "note": "These extend existing /src/index.css tokens; keep current teal primary and terminal surfaces.",
+      "additions": {
+        "--surface-4": "222 14% 20%",
+        "--ink": "210 20% 98%",
+        "--ink-dim": "215 16% 70%",
+        "--teal": "186 92% 42%",
+        "--teal-dim": "186 60% 18%",
+        "--up": "142 70% 45%",
+        "--down": "0 72% 52%",
+        "--amber": "38 92% 55%",
+        "--info": "199 89% 55%",
+        "--focus": "186 92% 42%",
+        "--gridline": "222 14% 18%",
+        "--shadow-soft": "0 0% 0% / 0.35"
+      }
+    },
+    "semantic_usage": {
+      "positive": "use --up for price up, breadth positive, long buildup",
+      "negative": "use --down for price down, breadth negative, short buildup",
+      "warning": "use --amber for stretched/overheated, high VIX zones",
+      "info": "use --info for neutral informational markers",
+      "accent": "use teal for selection, active tabs, focus rings, key outlines"
+    },
+    "gradients": {
+      "allowed": [
+        "Very subtle section header wash only (<=20% viewport): linear-gradient(90deg, hsla(186,92%,42%,0.10), transparent 55%)",
+        "Decorative corner glow behind top bar: radial-gradient(circle at 20% 0%, hsla(186,92%,42%,0.12), transparent 55%)"
+      ],
+      "prohibited": [
+        "Any saturated purple/pink combos",
+        "Gradients on tables/cards with dense text",
+        "Gradients on small UI elements (<100px)"
+      ]
+    },
+    "data_viz_palette": {
+      "categorical": [
+        "hsl(var(--chart-1))",
+        "hsl(var(--chart-2))",
+        "hsl(var(--chart-4))",
+        "hsl(var(--chart-5))",
+        "hsl(var(--info))"
+      ],
+      "heatmap": {
+        "down": "#ef4444",
+        "neutral": "#334155",
+        "up": "#22c55e",
+        "rule": "Use a 3-stop diverging scale; clamp extremes; never use neon saturation across the whole treemap."
+      }
+    }
+  },
+  "components": {
     "component_path": {
-      "shadcn_ui": "/app/frontend/src/components/ui",
-      "primary_components": [
-        "button.jsx",
+      "shadcn_primary": "/app/frontend/src/components/ui/",
+      "use": [
         "card.jsx",
         "tabs.jsx",
         "table.jsx",
         "badge.jsx",
-        "command.jsx",
-        "dialog.jsx",
-        "sheet.jsx",
-        "drawer.jsx",
-        "scroll-area.jsx",
-        "resizable.jsx",
+        "button.jsx",
         "separator.jsx",
-        "skeleton.jsx",
+        "scroll-area.jsx",
         "tooltip.jsx",
-        "sonner.jsx",
-        "calendar.jsx"
+        "hover-card.jsx",
+        "skeleton.jsx",
+        "resizable.jsx",
+        "collapsible.jsx",
+        "dropdown-menu.jsx",
+        "sonner.jsx"
       ]
     },
-    "navigation": {
-      "left_rail": {
-        "use": ["navigation-menu.jsx", "tooltip.jsx", "badge.jsx"],
-        "items": [
-          "Market Overview",
-          "Symbol Analysis",
-          "Batch Scanner",
-          "Heatmap",
-          "Formulas",
-          "Settings"
-        ],
-        "micro": "Collapsed rail shows icons with Tooltip; expanded shows labels + hotkeys"
-      },
-      "top_command_bar": {
-        "use": ["command.jsx", "input.jsx", "popover.jsx"],
-        "behavior": [
-          "Cmd/Ctrl+K opens Command palette",
-          "Search supports NSE/BSE/MCX prefixes (e.g., NSE:RELIANCE, MCX:GOLD)",
-          "Recent symbols + pinned watchlist"
-        ]
+    "module_shell": {
+      "pattern": "TerminalPanel",
+      "description": "A consistent module wrapper: header (title + last-updated + actions) + content + footer legend.",
+      "tailwind": "rounded-xl border border-border bg-card/70 backdrop-blur-[2px]",
+      "header": {
+        "tailwind": "flex items-center justify-between gap-3 px-3 py-2 border-b border-border",
+        "title": "text-sm font-display tracking-wide",
+        "meta": "text-[11px] text-muted-foreground font-mono"
       }
     },
-    "alpha_score_gauge": {
-      "visual": "Radial gauge with segmented thresholds + needle + numeric readout",
-      "thresholds": {
-        "strong_buy": ">= 85",
-        "neutral": "40-60",
-        "sell": "<= 30"
+    "indices_matrix": {
+      "use": ["Card", "Table", "Badge", "Tooltip"],
+      "row_design": {
+        "left": "index name + mini sparkline (Recharts LineChart)",
+        "right": "LTP, %Chg, Chg, 1D range bar (Progress), breadth mini",
+        "density": "Use 44–48px row height on desktop; 52px on touch."
       },
-      "implementation_notes": [
-        "Use shadcn `Card` container",
-        "Gauge can be SVG (custom) + shadcn `Tooltip` for threshold explanations",
-        "Always show numeric score + label badge (Strong Buy/Neutral/Sell)",
-        "Add `data-testid=\"alpha-score-gauge\"` on the gauge wrapper"
-      ]
-    },
-    "charts": {
-      "lightweight": {
-        "library": "recharts",
-        "use_cases": ["sparklines", "mini RSI", "scanner row charts", "overview trend cards"],
-        "style": [
-          "No chart backgrounds; rely on Card surface",
-          "Gridlines subtle: stroke with opacity 0.15",
-          "Tooltip uses shadcn `Card`-like styling"
-        ]
-      },
-      "professional": {
-        "library": "lightweight-charts (TradingView) OR TradingView widget",
-        "use_cases": ["candlestick + volume", "crosshair", "timeframe switching"],
-        "style": [
-          "Candles: up=success, down=danger",
-          "Volume bars match candle direction with 40% opacity",
-          "Crosshair label uses mono font"
-        ]
-      },
-      "indicator_panels": {
-        "rsi": "Dedicated small panel under candles",
-        "macd": "Dedicated small panel under RSI",
-        "tabs": "Timeframes (1D/1W/1M/1Y) as shadcn Tabs"
+      "streaming_effect": {
+        "rule": "On update, flash background for 450ms then decay.",
+        "classes": {
+          "up": "bg-[hsla(142,70%,45%,0.10)]",
+          "down": "bg-[hsla(0,72%,52%,0.10)]",
+          "neutral": "bg-[hsla(215,16%,70%,0.06)]"
+        }
       }
     },
-    "fundamentals_panel": {
-      "use": ["card.jsx", "table.jsx", "badge.jsx", "separator.jsx"],
-      "layout": "Two-column metric grid + Graham intrinsic value callout",
-      "callouts": [
-        "Graham Value: show formula icon + LaTeX + computed value",
-        "Use `Badge` for valuation status: Undervalued/Fair/Overvalued"
-      ]
+    "flows_chart": {
+      "library": "Recharts",
+      "chart": "stacked/paired bars for FII vs DII",
+      "styling": {
+        "grid": "stroke: hsl(var(--border)); strokeDasharray: '3 3'",
+        "bars": "FII teal, DII slate; negative values use down red"
+      }
     },
-    "news_sentiment_feed": {
-      "use": ["scroll-area.jsx", "card.jsx", "badge.jsx", "skeleton.jsx"],
-      "item_design": [
-        "Headline left, source+time right",
-        "Sentiment score pill (e.g., -1.0 to +1.0) with diverging color",
-        "Expand/collapse summary using Collapsible"
-      ]
-    },
-    "batch_scanner": {
-      "use": ["table.jsx", "select.jsx", "input.jsx", "badge.jsx", "pagination.jsx"],
-      "features": [
-        "Sortable columns (Alpha, 1D%, Volume, RSI)",
-        "Row click opens Symbol Analysis",
-        "Pinned columns on desktop (Symbol, Alpha)",
-        "Skeleton rows during fetch"
-      ]
-    },
-    "market_heatmap": {
-      "visual": "Treemap-like grid with sector grouping",
-      "implementation": [
-        "Use CSS grid for MVP heatmap blocks (fast) + optional D3 treemap later",
-        "Color scale: down→danger, flat→muted, up→success",
-        "Each tile shows ticker + % change + Alpha mini badge",
-        "Hover shows Tooltip with OHLC + volume"
-      ]
-    },
-    "latex_formulas": {
-      "library": "KaTeX (recommended) or react-katex",
-      "style": [
-        "Formula blocks on `surface-2` with mono caption",
-        "Copy button (ghost) to copy LaTeX",
-        "Always include plain-English explanation under formula"
-      ]
-    },
-    "ai_agent_chat": {
-      "placement": "Right sidebar Sheet/Resizable panel",
-      "use": ["sheet.jsx", "textarea.jsx", "button.jsx", "scroll-area.jsx", "tabs.jsx"],
-      "provider_switch": "Tabs for OpenAI / Claude / Gemini",
-      "message_design": [
-        "Assistant messages have subtle border-left accent (primary)",
-        "User messages align right with muted surface",
-        "Citations/assumptions in collapsible footnotes"
-      ]
-    },
-    "sebi_disclaimer": {
-      "placement": [
-        "Sticky footer bar on analysis pages",
-        "Inline callout above AI recommendations"
+    "vix_gauge": {
+      "implementation": "Recharts RadialBarChart + custom needle overlay (SVG) OR PieChart with needle",
+      "zones": [
+        {"label": "Calm", "range": "0-12", "color": "hsl(var(--success))"},
+        {"label": "Watch", "range": "12-18", "color": "hsl(var(--chart-4))"},
+        {"label": "Risk", "range": "18-30", "color": "hsl(var(--danger))"}
       ],
-      "use": ["alert.jsx", "badge.jsx"],
-      "tone": "SEBI-style: educational, not investment advice"
+      "microcopy": "India VIX (Regime)"
+    },
+    "advance_decline": {
+      "component": "Progress + numeric ratio",
+      "rule": "Show Adv, Dec, Unch counts; ratio chip with color."
+    },
+    "sector_treemap": {
+      "library": "Recharts Treemap",
+      "interaction": [
+        "HoverCard shows sector, avg %chg, leaders/laggards, volume impulse",
+        "Click filters right-side lists (shockers/breakouts)"
+      ],
+      "labeling": "Only show labels for tiles > 6% area; others on hover.",
+      "legend": "Compact diverging legend with 5 ticks (-3, -1, 0, +1, +3)."
+    },
+    "volume_shockers_breakouts": {
+      "component": "Table inside ScrollArea",
+      "columns": ["Symbol", "Vol xAvg", "%Chg", "Price", "Trigger"],
+      "badges": {
+        "3x": "Badge variant secondary",
+        "5x": "Badge variant default with teal outline"
+      }
+    },
+    "clusters_52w": {
+      "component": "Tabs (Highs / Lows) + Table",
+      "rule": "Use chips for distance-to-high/low buckets (0-1%, 1-3%, 3-5%)."
+    },
+    "pcr": {
+      "component": "2 compact gauges (Nifty, BankNifty)",
+      "thresholds": [
+        {"label": "Put-heavy", "value": "> 1.2", "color": "hsl(var(--success))"},
+        {"label": "Neutral", "value": "0.9–1.2", "color": "hsl(var(--chart-5))"},
+        {"label": "Call-heavy", "value": "< 0.9", "color": "hsl(var(--danger))"}
+      ]
+    },
+    "oi_quadrant": {
+      "implementation": "Recharts ScatterChart with 2 reference lines (x=0, y=0) to form quadrants",
+      "quadrants": [
+        {"name": "Long Buildup", "x": "+Price", "y": "+OI", "color": "hsl(var(--success))"},
+        {"name": "Short Covering", "x": "+Price", "y": "-OI", "color": "hsl(var(--info))"},
+        {"name": "Short Buildup", "x": "-Price", "y": "+OI", "color": "hsl(var(--danger))"},
+        {"name": "Long Unwinding", "x": "-Price", "y": "-OI", "color": "hsl(var(--chart-4))"}
+      ],
+      "interaction": [
+        "Hover tooltip shows symbol, price%, OI%, volume, IV",
+        "Brush/zoom optional on desktop",
+        "Click adds to watchlist toast (sonner)"
+      ]
+    },
+    "feeds": {
+      "block_bulk": {
+        "component": "ScrollArea + compact rows",
+        "row": "time | symbol | side | qty | value | tag",
+        "tags": "Badge for Block/Bulk; side colored dot"
+      },
+      "earnings_actions": {
+        "component": "Accordion or Collapsible",
+        "rule": "Group by Today / This Week; show EPS surprise, dividend, split, board meet."
+      }
     }
   },
-
-  "motion_and_microinteractions": {
-    "library": "framer-motion (recommended)",
+  "motion_microinteractions": {
     "principles": [
-      "Motion communicates state changes (loading → ready, filter applied, panel resized)",
-      "Keep durations short: 120–220ms",
-      "Avoid bouncy easing; use `easeOut` / `circOut`"
+      "Motion communicates change, not decoration.",
+      "Keep durations short: 120–220ms for hover; 300–450ms for streaming flash.",
+      "Avoid layout shift; animate opacity/background-color only (no transform on dense tables)."
     ],
-    "micro": {
-      "buttons": [
-        "Hover: subtle background shift + border brighten",
-        "Active: scale 0.98",
-        "Focus: visible ring using `ring-[hsl(var(--ring))]`"
-      ],
-      "cards": [
-        "Hover lift: shadow increases slightly (no transform on large grids if it causes jitter)",
-        "On data refresh: shimmer line at top (2px) for 600ms"
-      ],
-      "tables": [
-        "Row hover: surface highlight",
-        "Sort icon rotates 180deg with 150ms transition"
-      ],
-      "heatmap": [
-        "Hover: tile border brightens + tooltip fades in",
-        "Click: opens symbol drawer with slide-in"
-      ]
+    "streaming_updates": {
+      "pattern": "cell flash + delta tick",
+      "implementation_hint": "Store previous value; if changed, apply class for 450ms; show ▲/▼ glyph via lucide-react icons.",
+      "do_not": ["Do not animate entire card", "Do not use transition: all"]
     },
-    "loading_states": {
-      "rule": "Because analysis can take 5–10s, always show progressive feedback",
-      "patterns": [
-        "Skeleton for layout stability",
-        "Stepper text: Fetching → Computing indicators → Scoring → Summarizing",
-        "Cancelable requests show `Stop` button"
-      ]
+    "hover": {
+      "cards": "border-color shift + subtle inner glow",
+      "rows": "bg-muted/30 on hover",
+      "charts": "crosshair cursor + tooltip fade"
+    },
+    "scroll": {
+      "rule": "Use ScrollArea for tables; keep header sticky (CSS position: sticky)."
     }
   },
-
   "accessibility": {
-    "requirements": [
-      "WCAG AA contrast for text and key UI",
-      "Keyboard navigation: Command palette, tabs, tables",
-      "Reduced motion support: respect `prefers-reduced-motion`",
-      "Tooltips must be accessible; avoid hover-only critical info"
+    "contrast": [
+      "All text must meet WCAG AA; use muted-foreground only for secondary labels.",
+      "Never rely on color alone: add ▲/▼ icons and +/- signs."
     ],
-    "focus": {
-      "style": "Use visible focus ring; never remove outline without replacement",
-      "tailwind": "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))] focus-visible:ring-offset-2 focus-visible:ring-offset-[hsl(var(--background))]"
-    }
+    "focus": "Use visible focus ring: ring-2 ring-[hsl(var(--ring))] ring-offset-2 ring-offset-background",
+    "reduced_motion": "Respect prefers-reduced-motion: disable streaming flash and use subtle outline instead.",
+    "keyboard": "All tabs, dropdowns, tables with row actions must be keyboard reachable."
   },
-
   "testing_attributes": {
     "rule": "All interactive and key informational elements MUST include data-testid (kebab-case).",
     "examples": [
-      "data-testid=\"command-palette-open-button\"",
-      "data-testid=\"symbol-search-input\"",
-      "data-testid=\"alpha-score-value\"",
-      "data-testid=\"candlestick-chart-container\"",
-      "data-testid=\"scanner-table\"",
-      "data-testid=\"heatmap-tile\"",
-      "data-testid=\"ai-chat-send-button\"",
-      "data-testid=\"sebi-disclaimer-alert\""
+      "data-testid=\"macro-indices-matrix\"",
+      "data-testid=\"indices-row-nifty-50\"",
+      "data-testid=\"flows-fii-dii-chart\"",
+      "data-testid=\"vix-gauge\"",
+      "data-testid=\"sector-treemap\"",
+      "data-testid=\"volume-shockers-table\"",
+      "data-testid=\"oi-quadrant-chart\"",
+      "data-testid=\"block-bulk-feed\"",
+      "data-testid=\"refresh-interval-select\"",
+      "data-testid=\"auto-refresh-toggle\""
     ]
   },
-
-  "images": {
-    "image_urls": [
+  "image_urls": {
+    "background_textures": [
       {
-        "category": "hero/empty-state",
-        "description": "Dark trading desk monitors for onboarding/empty states (use with heavy overlay + blur)",
-        "url": "https://images.unsplash.com/photo-1660144425546-b07680e711d1?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxOTF8MHwxfHNlYXJjaHwxfHxmaW5hbmNpYWwlMjB0cmFkaW5nJTIwZGVzayUyMG1vbml0b3JzJTIwZGFya3xlbnwwfHx8YmxhY2t8MTc3NTcyMjI2Nnww&ixlib=rb-4.1.0&q=85"
+        "category": "subtle module backdrop (optional)",
+        "description": "Use as very low-opacity background image in top bar only (<=10% opacity).",
+        "url": "https://images.unsplash.com/photo-1563942833988-0803533bd016?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA3MDB8MHwxfHNlYXJjaHwxfHxhYnN0cmFjdCUyMGRhcmslMjBncmlkJTIwdGV4dHVyZXxlbnwwfHx8Ymx1ZXwxNzc1NzM1MTU5fDA&ixlib=rb-4.1.0&q=85"
       },
       {
-        "category": "analysis/visual",
-        "description": "Candlestick chart photo for marketing panel or loading screen backdrop (keep subtle)",
-        "url": "https://images.unsplash.com/photo-1643962577481-4ff81600e439?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Njl8MHwxfHNlYXJjaHwxfHxjYW5kbGVzdGljayUyMGNoYXJ0JTIwc2NyZWVuJTIwZGFya3xlbnwwfHx8YmxhY2t8MTc3NTcyMjI2Nnww&ixlib=rb-4.1.0&q=85"
-      },
-      {
-        "category": "background/texture",
-        "description": "Use CSS noise overlay instead of images for most surfaces (preferred).",
-        "url": "(no image; use CSS noise snippet in instructions)"
+        "category": "grain/texture alternative",
+        "description": "If you need a subtle texture behind the header; keep opacity <= 0.06.",
+        "url": "https://images.unsplash.com/photo-1598270106705-020a72bae1bf?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA3MDB8MHwxfHNlYXJjaHwzfHxhYnN0cmFjdCUyMGRhcmslMjBncmlkJTIwdGV4dHVyZXxlbnwwfHx8Ymx1ZXwxNzc1NzM1MTU5fDA&ixlib=rb-4.1.0&q=85"
       }
     ]
   },
-
-  "libraries_and_integrations": {
-    "recommended": [
+  "libraries": {
+    "required": [
       {
         "name": "framer-motion",
-        "why": "Micro-interactions, panel transitions, skeleton entrance",
+        "why": "Entrance animations for modules + subtle number change transitions without layout shift.",
         "install": "npm i framer-motion",
-        "usage_snippet": "import { motion } from 'framer-motion'"
-      },
-      {
-        "name": "katex + react-katex",
-        "why": "Beautiful LaTeX rendering for formulas",
-        "install": "npm i katex react-katex",
-        "usage_snippet": "import 'katex/dist/katex.min.css';"
-      },
-      {
-        "name": "lightweight-charts",
-        "why": "Professional TradingView-style candlesticks with crosshair",
-        "install": "npm i lightweight-charts",
-        "usage_snippet": "import { createChart } from 'lightweight-charts'"
-      },
-      {
-        "name": "recharts",
-        "why": "Lightweight charts for overview + sparklines",
-        "install": "npm i recharts",
-        "usage_snippet": "import { LineChart, Line, ResponsiveContainer } from 'recharts'"
+        "usage": "Use motion.div for module fade-in; avoid transforms on dense tables; prefer opacity."
       }
     ],
-    "optional": [
+    "already_available": [
       {
-        "name": "d3",
-        "why": "Treemap heatmap (sector grouping) for advanced version",
-        "install": "npm i d3"
+        "name": "recharts",
+        "why": "All charts: flows bars, treemap, scatter quadrant, radial gauges, sparklines."
       }
     ]
   },
-
-  "css_scaffolds": {
-    "noise_overlay": {
-      "where": "/app/frontend/src/index.css",
-      "snippet": ".noise-overlay{position:relative;}\n.noise-overlay:before{content:'';position:absolute;inset:0;pointer-events:none;opacity:.06;mix-blend-mode:overlay;background-image:url('data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"120\" height=\"120\"><filter id=\"n\"><feTurbulence type=\"fractalNoise\" baseFrequency=\"0.9\" numOctaves=\"3\" stitchTiles=\"stitch\"/></filter><rect width=\"120\" height=\"120\" filter=\"url(%23n)\" opacity=\"0.35\"/></svg>');}"
-    },
-    "terminal_numbers": {
-      "tailwind": "font-mono tabular-nums tracking-wide",
-      "usage": "Apply to ticker/price cells and chart labels"
-    },
-    "card_surface": {
-      "tailwind": "bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-[var(--radius)] shadow-[0_1px_0_rgba(255,255,255,0.04)]"
-    }
-  },
-
-  "page_blueprints": {
-    "market_overview": {
-      "sections": [
-        "Top command bar (search + timeframe)",
-        "KPI strip: NIFTY, BANKNIFTY, USDINR, GOLD (mini sparklines)",
-        "Heatmap (sectors) + Top movers table",
-        "News sentiment highlights (3–5 cards)"
-      ]
-    },
-    "symbol_analysis": {
-      "tabs": ["Technical", "Fundamental", "News", "AI Agent"],
-      "technical": [
-        "Alpha Score gauge + recommendation summary",
-        "Candlestick + volume (professional chart)",
-        "RSI + MACD panels",
-        "Key levels card (support/resistance)"
-      ],
-      "fundamental": [
-        "Metrics grid",
-        "Graham intrinsic value block with LaTeX",
-        "Peer comparison mini table"
-      ],
-      "news": [
-        "Scrollable feed with sentiment pills",
-        "Filters: source, sentiment range"
-      ],
-      "ai_agent": [
-        "Chat panel + provider tabs",
-        "Always show SEBI disclaimer above send box"
-      ]
-    },
-    "batch_scanner": {
-      "sections": [
-        "Filters row (sector, alpha range, RSI range)",
-        "Scanner table (sortable) with pagination",
-        "Right drawer: quick symbol preview on row click"
-      ]
-    }
-  },
-
   "instructions_to_main_agent": [
-    "Replace default CRA App.css centering patterns; do NOT center the app container.",
-    "Set `document.documentElement.classList.add('dark')` by default (trading dashboard preference).",
-    "Override shadcn tokens in /app/frontend/src/index.css using the provided HSL values.",
-    "Use Space Grotesk + Inter + Azeret Mono via Google Fonts in index.html or CSS import.",
-    "Implement Command palette search using shadcn `Command` with `data-testid=\"symbol-search-command\"`.",
-    "Use `Resizable` for desktop multi-panel layouts (chart/news/chat).",
-    "Charts: use `lightweight-charts` for candlesticks; use `recharts` for sparklines and lightweight panels.",
-    "LaTeX: use KaTeX; wrap formulas in Card with copy button.",
-    "Every interactive element and key info must include `data-testid` in kebab-case.",
-    "Loading: always show skeleton + stepper text for 5–10s operations; never leave blank panels.",
-    "SEBI disclaimer must be visible on analysis + AI pages (Alert component)."
-  ]
+    "Keep existing dark theme tokens in /src/index.css; only add missing tokens if needed (surface-4 etc).",
+    "Build a reusable TerminalPanel wrapper component (JS) to standardize headers, borders, and spacing.",
+    "Implement streaming update flash by comparing previous vs next values; apply class for 450ms; respect prefers-reduced-motion.",
+    "No top gainers/losers module anywhere; replace with diagnostics (breadth, flows, rotation, OI quadrant).",
+    "Optimize for 1920px+: use 12-col grid, sticky section headers, and ScrollArea for tables.",
+    "Every button, tab trigger, dropdown, toggle, row action, and key metric must include data-testid.",
+    "Use shadcn components from /components/ui only for dropdowns, tabs, tables, tooltips, etc."
+  ],
+  "references": {
+    "inspiration": [
+      {
+        "name": "Fortress Dashboard (Bloomberg-inspired) mention",
+        "url": "https://adminlte.io/blog/fintech-banking-dashboard-templates/"
+      },
+      {
+        "name": "Dribbble trading dashboard tag",
+        "url": "https://dribbble.com/tags/trading-dashboard"
+      },
+      {
+        "name": "Dribbble treemap tag",
+        "url": "https://dribbble.com/tags/treemap"
+      }
+    ]
+  },
+  "general_ui_ux_design_guidelines_appendix": "<General UI UX Design Guidelines>\n    - You must **not** apply universal transition. Eg: `transition: all`. This results in breaking transforms. Always add transitions for specific interactive elements like button, input excluding transforms\n    - You must **not** center align the app container, ie do not add `.App { text-align: center; }` in the css file. This disrupts the human natural reading flow of text\n   - NEVER: use AI assistant Emoji characters like`🤖🧠💭💡🔮🎯📚🎭🎬🎪🎉🎊🎁🎀🎂🍰🎈🎨🎰💰💵💳🏦💎🪙💸🤑📊📈📉💹🔢🏆🥇 etc for icons. Always use **FontAwesome cdn** or **lucid-react** library already installed in the package.json\n\n **GRADIENT RESTRICTION RULE**\nNEVER use dark/saturated gradient combos (e.g., purple/pink) on any UI element.  Prohibited gradients: blue-500 to purple 600, purple 500 to pink-500, green-500 to blue-500, red to pink etc\nNEVER use dark gradients for logo, testimonial, footer etc\nNEVER let gradients cover more than 20% of the viewport.\nNEVER apply gradients to text-heavy content or reading areas.\nNEVER use gradients on small UI elements (<100px width).\nNEVER stack multiple gradient layers in the same viewport.\n\n**ENFORCEMENT RULE:**\n    • Id gradient area exceeds 20% of viewport OR affects readability, **THEN** use solid colors\n\n**How and where to use:**\n   • Section backgrounds (not content backgrounds)\n   • Hero section header content. Eg: dark to light to dark color\n   • Decorative overlays and accent elements only\n   • Hero section with 2-3 mild color\n   • Gradients creation can be done for any angle say horizontal, vertical or diagonal\n\n- For AI chat, voice application, **do not use purple color. Use color like light green, ocean blue, peach orange etc**\n\n</Font Guidelines>\n\n- Every interaction needs micro-animations - hover states, transitions, parallax effects, and entrance animations. Static = dead. \n   \n- Use 2-3x more spacing than feels comfortable. Cramped designs look cheap.\n\n- Subtle grain textures, noise overlays, custom cursors, selection states, and loading animations: separates good from extraordinary.\n   \n- Before generating UI, infer the visual style from the problem statement (palette, contrast, mood, motion) and immediately instantiate it by setting global design tokens (primary, secondary/accent, background, foreground, ring, state colors), rather than relying on any library defaults. Don't make the background dark as a default step, always understand problem first and define colors accordingly\n    Eg: - if it implies playful/energetic, choose a colorful scheme\n           - if it implies monochrome/minimal, choose a black–white/neutral scheme\n\n**Component Reuse:**\n\t- Prioritize using pre-existing components from src/components/ui when applicable\n\t- Create new components that match the style and conventions of existing components when needed\n\t- Examine existing components to understand the project's component patterns before creating new ones\n\n**IMPORTANT**: Do not use HTML based component like dropdown, calendar, toast etc. You **MUST** always use `/app/frontend/src/components/ui/ ` only as a primary components as these are modern and stylish component\n\n**Best Practices:**\n\t- Use Shadcn/UI as the primary component library for consistency and accessibility\n\t- Import path: ./components/[component-name]\n\n**Export Conventions:**\n\t- Components MUST use named exports (export const ComponentName = ...)\n\t- Pages MUST use default exports (export default function PageName() {...})\n\n**Toasts:**\n  - Use `sonner` for toasts\"\n  - Sonner component are located in `/app/src/components/ui/sonner.tsx`\n\nUse 2–4 color gradients, subtle textures/noise overlays, or CSS-based noise to avoid flat visuals.\n</General UI UX Design Guidelines>"
 }
-
-<General UI UX Design Guidelines>  
-    - You must **not** apply universal transition. Eg: `transition: all`. This results in breaking transforms. Always add transitions for specific interactive elements like button, input excluding transforms
-    - You must **not** center align the app container, ie do not add `.App { text-align: center; }` in the css file. This disrupts the human natural reading flow of text
-   - NEVER: use AI assistant Emoji characters like`🤖🧠💭💡🔮🎯📚🎭🎬🎪🎉🎊🎁🎀🎂🍰🎈🎨🎰💰💵💳🏦💎🪙💸🤑📊📈📉💹🔢🏆🥇 etc for icons. Always use **FontAwesome cdn** or **lucid-react** library already installed in the package.json
-
- **GRADIENT RESTRICTION RULE**
-NEVER use dark/saturated gradient combos (e.g., purple/pink) on any UI element.  Prohibited gradients: blue-500 to purple 600, purple 500 to pink-500, green-500 to blue-500, red to pink etc
-NEVER use dark gradients for logo, testimonial, footer etc
-NEVER let gradients cover more than 20% of the viewport.
-NEVER apply gradients to text-heavy content or reading areas.
-NEVER use gradients on small UI elements (<100px width).
-NEVER stack multiple gradient layers in the same viewport.
-
-**ENFORCEMENT RULE:**
-    • Id gradient area exceeds 20% of viewport OR affects readability, **THEN** use solid colors
-
-**How and where to use:**
-   • Section backgrounds (not content backgrounds)
-   • Hero section header content. Eg: dark to light to dark color
-   • Decorative overlays and accent elements only
-   • Hero section with 2-3 mild color
-   • Gradients creation can be done for any angle say horizontal, vertical or diagonal
-
-- For AI chat, voice application, **do not use purple color. Use color like light green, ocean blue, peach orange etc**
-
-</Font Guidelines>
-
-- Every interaction needs micro-animations - hover states, transitions, parallax effects, and entrance animations. Static = dead. 
-   
-- Use 2-3x more spacing than feels comfortable. Cramped designs look cheap.
-
-- Subtle grain textures, noise overlays, custom cursors, selection states, and loading animations: separates good from extraordinary.
-   
-- Before generating UI, infer the visual style from the problem statement (palette, contrast, mood, motion) and immediately instantiate it by setting global design tokens (primary, secondary/accent, background, foreground, ring, state colors), rather than relying on any library defaults. Don't make the background dark as a default step, always understand problem first and define colors accordingly
-    Eg: - if it implies playful/energetic, choose a colorful scheme
-           - if it implies monochrome/minimal, choose a black–white/neutral scheme
-
-**Component Reuse:**
-	- Prioritize using pre-existing components from src/components/ui when applicable
-	- Create new components that match the style and conventions of existing components when needed
-	- Examine existing components to understand the project's component patterns before creating new ones
-
-**IMPORTANT**: Do not use HTML based component like dropdown, calendar, toast etc. You **MUST** always use `/app/frontend/src/components/ui/ ` only as a primary components as these are modern and stylish component
-
-**Best Practices:**
-	- Use Shadcn/UI as the primary component library for consistency and accessibility
-	- Import path: ./components/[component-name]
-
-**Export Conventions:**
-	- Components MUST use named exports (export const ComponentName = ...)
-	- Pages MUST use default exports (export default function PageName() {...})
-
-**Toasts:**
-  - Use `sonner` for toasts"
-  - Sonner component are located in `/app/src/components/ui/sonner.tsx`
-
-Use 2–4 color gradients, subtle textures/noise overlays, or CSS-based noise to avoid flat visuals.
-</General UI UX Design Guidelines>
