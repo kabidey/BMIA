@@ -13,7 +13,8 @@ async def build_learning_context(db):
     try:
         # Get all closed signals
         closed = await db.signals.find(
-            {"status": {"$in": ["HIT_TARGET", "HIT_STOP", "EXPIRED", "INVALIDATED"]}}
+            {"status": {"$in": ["HIT_TARGET", "HIT_STOP", "EXPIRED", "INVALIDATED"]}},
+            {"_id": 0}
         ).sort("closed_at", -1).to_list(length=200)
 
         if not closed:

@@ -76,7 +76,7 @@ async def get_active_signals(db, symbol: str = None):
     query = {"status": "OPEN"}
     if symbol:
         query["symbol"] = symbol
-    cursor = db.signals.find(query).sort("created_at", -1)
+    cursor = db.signals.find(query, {"_id": 0}).sort("created_at", -1)
     results = await cursor.to_list(length=100)
     return [serialize_signal(r) for r in results]
 
@@ -88,7 +88,7 @@ async def get_signal_history(db, limit: int = 50, symbol: str = None, status: st
         query["symbol"] = symbol
     if status:
         query["status"] = status
-    cursor = db.signals.find(query).sort("created_at", -1).limit(limit)
+    cursor = db.signals.find(query, {"_id": 0}).sort("created_at", -1).limit(limit)
     results = await cursor.to_list(length=limit)
     return [serialize_signal(r) for r in results]
 
