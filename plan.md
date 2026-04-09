@@ -10,21 +10,23 @@
   - **learns from mistakes** via a closed-loop “post-mortem → learning context → improved next prompt” mechanism
   - exposes **Signal Dashboard + Track Record** with key performance metrics (win rate, expectancy, profit factor, streaks, sector/confidence breakdown)
 - ✅ Maintain **SEBI-style disclaimers** and “educational only / not investment advice” framing everywhere.
+
 - ✅ **Phase 4 objective (COMPLETED):** deepen quant inputs and remove remaining “formula-first” paths by:
   - wiring **25+ technical indicators + 30+ fundamental metrics** into the Intelligence Engine prompts
   - converting Batch Scanner from alpha-ranking to **AI-powered relative ranking**
   - revamping SymbolAnalysis and BatchScanner UI to surface expanded metrics and reduce redundancy
   - expanding symbol universe and sector taxonomy (including commodities)
 
-- 🟦 **Phase 5 objective (NEW / approved): Market Intelligence Cockpit Dashboard Revamp**
-  - Replace the existing “Market Overview” page with a **visual diagnostic cockpit** that highlights:
-    - **liquidity flow** (institutional flows, volume shocks)
-    - **market sentiment/regime** (VIX, breadth)
-    - **sector rotation** (sector treemap + relative strength)
-    - **derivatives positioning** (PCR + OI build-up quadrants)
+- ✅ **Phase 5 objective (COMPLETED): Market Intelligence Cockpit Dashboard Revamp**
+  - Replaced the old “Market Overview” page with a **visual diagnostic cockpit** that highlights:
+    - **liquidity flow** (institutional flows, volume shocks, block deals)
+    - **market sentiment/regime** (VIX regime + breadth)
+    - **sector rotation** (sector treemap)
+    - **derivatives positioning** (PCR + quadrant view)
     - **actionable events** (block/bulk deals + corporate actions)
   - **No Top Gainers/Losers** modules (explicitly removed).
-  - Streaming/near-real-time feel via **auto-refresh (30–60s)** + **flash-on-change** microinteractions (no layout shift).
+  - Streaming/near-real-time feel via **auto-refresh (30–120s)** + **flash-on-change** microinteractions (no layout shift).
+  - All data is live (**NSE India via nselib + Yahoo Finance via yfinance**), **no mocked APIs**.
 
 ---
 
@@ -156,115 +158,95 @@
 
 ---
 
-### Phase 5 — Market Intelligence Cockpit Dashboard Revamp 🟦 PLANNED
+### Phase 5 — Market Intelligence Cockpit Dashboard Revamp ✅ COMPLETED
 **Goal:** Turn the dashboard into a professional diagnostic tool for **liquidity flow, market regime, rotation, derivatives positioning, and actionable events**.
 
 #### 5.0 Data sources confirmed (live)
 - ✅ `nselib.capital_market.market_watch_all_indices()` — indices + breadth signals
 - ✅ `nselib.capital_market.india_vix_data()` — India VIX
 - ✅ `nselib.derivatives.fii_derivatives_statistics(trade_date)` — FII derivatives stats
-- ✅ `nselib.derivatives.participant_wise_open_interest(trade_date)` — participant-wise OI
-- ✅ `nselib.derivatives.nse_live_option_chain('NIFTY'|'BANKNIFTY')` — option chain → PCR
+- ✅ `nselib.derivatives.participant_wise_open_interest(trade_date)` — participant-wise OI (used as proxy enrichment)
+- ✅ `nselib.derivatives.expiry_dates_option_index()` — index expiry dates
+- ✅ `nselib.derivatives.nse_live_option_chain('NIFTY'|'BANKNIFTY', expiry_date)` — option chain → PCR
 - ✅ `nselib.capital_market.block_deals_data(period/from/to)` — block deals feed
-- ✅ `nselib.capital_market.corporate_actions_for_equity(from/to)` — dividends/splits/earnings actions
+- ✅ `nselib.capital_market.corporate_actions_for_equity(from/to)` — dividends/splits/bonus actions
 - ✅ `nselib.capital_market.week_52_high_low_report(trade_date)` — 52W high/low clusters
-- ✅ `yfinance` — per-stock volume shockers/breakouts + sector aggregation
+- ✅ `yfinance` — Sensex fallback (`^BSESN`), per-stock volume shockers, price/volume proxies for OI quadrant
 
-> Note: `xlrd>=2.0.1` installed to support nselib xls endpoints.
+> Note: `xlrd>=2.0.2` installed to support nselib xls endpoints.
 
-#### 5A — Backend: Dashboard API layer (P0)
-**Goal:** Provide a single, efficient data contract for the cockpit with caching and predictable latency.
-
-**Implementation**
-- Add `services/dashboard_service.py` (new):
-  - `get_indices_snapshot()` — Nifty 50, Sensex, Bank Nifty, Midcap 100, Smallcap 100
+#### 5A — Backend: Dashboard API layer ✅ COMPLETED
+**What shipped**
+- ✅ New service: `services/dashboard_service.py`
+  - `get_indices_snapshot()` — includes **Nifty 50, Bank Nifty, Midcap 100, Smallcap 100** from NSE; adds **Sensex** via yfinance fallback
   - `get_market_breadth()` — Adv/Dec/Unch counts + A/D ratio
-  - `get_vix_regime()` — latest VIX + short history
-  - `get_flows_fii_dii()` — daily flows (primary: NSE; fallback: derivatives proxy if needed)
-  - `get_sector_rotation()` — sector perf for treemap; includes relative strength vs Nifty
-  - `get_volume_shockers_breakouts()` — 3–5x 10D avg volume AND price breakout filter
-  - `get_52w_clusters()` — counts new highs vs lows + optional bucketization
-  - `get_pcr()` — compute PCR for Nifty and Bank Nifty from option chain
-  - `get_oi_quadrant()` — classify F&O symbols into 4 regimes (ΔPrice vs ΔOI)
-  - `get_block_bulk_deals()` — block/bulk feed filtered by threshold
-  - `get_corporate_actions()` — dividends/splits/earnings highlights (today/this week)
+  - `get_vix_regime()` — latest VIX + regime + short history
+  - `get_fii_dii_flows()` — FII derivatives flow (₹ Cr)
+  - `get_sector_rotation()` — sector perf for treemap w/ weights
+  - `get_volume_shockers()` — stocks with ≥2.5–3x 10D avg volume + breakout heuristic
+  - `get_52w_clusters()` — 52W highs/lows counts + sample lists
+  - `get_pcr()` — PCR for Nifty and Bank Nifty using nearest expiry option chain
+  - `get_oi_quadrant()` — quadrant classification (ΔPrice vs ΔVolume proxy)
+  - `get_block_deals()` — block deals feed with value in ₹ Cr
+  - `get_corporate_actions()` — dividends/splits/bonus/rights/meetings
 
-**Endpoints**
-- Prefer **one consolidated endpoint** (recommended for dashboard):
-  - `GET /api/market/cockpit` → returns `{ macro, micro, derivatives, actions, updated_at }`
-- Optional granular endpoints (if needed for partial reload):
-  - `/api/market/cockpit/macro`, `/micro`, `/derivatives`, `/actions`
+- ✅ Endpoints (with TTL caching + graceful degradation)
+  - `GET /api/market/cockpit` — consolidated fast payload (macro/micro/derivatives/actions)
+  - `GET /api/market/cockpit/slow` — slower modules (volume shockers + OI quadrant)
 
-**Non-functional**
-- Add lightweight in-memory TTL cache (30–60s) to avoid hammering NSE endpoints.
-- Strict JSON-serializable output (sanitize numpy/pandas types).
-- Graceful degradation: if any module fails, return `module.error` but keep the rest.
+- ✅ Non-functional hardening
+  - TTL cache ~60s default (some modules 120s)
+  - Strict JSON-serializable outputs
+  - Independent module error isolation (one failure doesn’t break the cockpit)
 
-**Exit criteria**
-- Cockpit endpoint returns within ~2–5s typical.
-- Works even if one data source fails.
+#### 5B — Frontend: MarketOverview → Market Intelligence Cockpit ✅ COMPLETED
+**What shipped**
+- ✅ Full rewrite: `/frontend/src/pages/MarketOverview.js` into a 4-section cockpit
+- ✅ New layout component: `/frontend/src/components/layout/TerminalPanel.js`
+- ✅ Section 1 (Macro View)
+  - Major Indices Matrix with **streaming flash** on LTP change
+  - VIX gauge with regime
+  - Market breadth A/D bar
+  - FII derivatives flow bar chart
+- ✅ Section 2 (Micro View)
+  - Sector Rotation Treemap (Recharts)
+  - Volume Shockers table (click-through to Symbol Analysis)
+  - 52W extremes counters
+- ✅ Section 3 (Derivatives & Sentiment)
+  - PCR cards for Nifty/Bank Nifty
+  - OI buildup quadrant scatter (4 regimes + counts)
+- ✅ Section 4 (Corporate Actions & Events)
+  - Block/Bulk deals feed with value in ₹ Cr
+  - Corporate actions list with category badges
+- ✅ Controls
+  - Auto-refresh toggle + interval selector (30s/60s/120s)
+  - Manual refresh
+  - Per-panel timestamps
 
-#### 5B — Frontend: MarketOverview → Market Intelligence Cockpit (P0)
-**Goal:** Replace current dashboard with a 4-section cockpit; “streaming” feel via auto-refresh + flash-on-change.
-
-**Implementation**
-- Replace `/pages/MarketOverview.js` layout with 4 stacked modules:
-
-1) **Macro View (Market Weather)**
-- **Major Indices Matrix** (streaming): Nifty 50, Sensex, Bank Nifty, Midcap100, Smallcap100
-  - LTP, %Chg, abs chg, mini sparkline, day range
-- **FII/DII Flows** bar chart (₹ Cr)
-- **India VIX** gauge (speedometer)
-- **Advance/Decline** ratio chip + progress/pie
-
-2) **Micro View (Where the Action Is)**
-- **Sector Treemap** (Recharts Treemap): size=market cap, color=intraday performance
-- **Volume Shockers & Breakouts** table: only 3–5x avg volume + breakout trigger
-- **52W clusters**: counts of new highs vs lows + buckets
-
-3) **Derivatives & Sentiment (Smart Money Clues)**
-- **PCR Gauges**: Nifty + BankNifty
-- **OI Buildup Quadrant**: ScatterChart with 4 quadrants
-
-4) **Corporate Actions & News**
-- **Block/Bulk Deals feed** (filtered; threshold)
-- **Corporate actions highlights** (dividends/splits/earnings actions)
-
-**UX/Design rules** (from updated `design_guidelines.md`)
-- Use `TerminalPanel` wrapper for every module.
-- No top gainers/losers, no “noise” widgets.
-- Streaming effect: flash-on-change (450ms) on updated cells; respect prefers-reduced-motion.
-- Dense but scannable: mono numbers, short labels, compact charts.
-
-**Controls**
-- Auto-refresh toggle + interval selector (30s/60s/120s)
-- Last updated timestamp per module
-
-**Exit criteria**
-- Above-the-fold shows: Indices matrix + flows/VIX/breadth.
-- Treemap + shockers visible without excessive scrolling on 1920px.
-
-#### 5C — Testing & Polish (P0)
-- Backend tests:
-  - cockpit endpoint shape validation
-  - caching behavior and error isolation
-- Frontend tests:
-  - renders all 4 sections and key elements with `data-testid`
-  - auto-refresh updates without layout shift
+#### 5C — Testing & Polish ✅ COMPLETED
+- ✅ Backend: 100% tests (cockpit endpoints + Phase 4 regression)
+- ✅ Frontend: all 4 sections validated; minor expected external API latency for “slow” modules
+- ✅ Integration: 100% (NSE + yfinance live, no mocked APIs)
 
 ---
 
-### Phase 6 — Optional: Auth + Personalization (only after approval)
-- Login, per-user watchlists, saved signals, alert preferences
-- Per-user track record + experiments (provider selection, aggressiveness)
-- Personal risk profile: max risk per trade, time horizon preference
+### Phase 6 — Optional: Next Enhancements (requires approval)
+**If/when you want to take this further:**
+1. **True real-time streaming** via WebSockets/SSE (push updates instead of polling).
+2. **Real OI change** (ΔOI) from NSE derivatives endpoints (replace volume proxy where possible).
+3. **Alerting**: VIX regime shift, breadth divergence, sector rotation threshold, volume shock triggers.
+4. **Personalization**: watchlists, saved cockpit layouts, sector focus modes.
+5. **Export  Scheduler**: daily cockpit PDF/CSV export + scheduled scan runs.
 
 ---
 
 ## 3. Next Actions (immediate) (updated)
-1. **Phase 5A (Backend):** implement `GET /api/market/cockpit` + TTL caching + sanitization.
-2. **Phase 5B (Frontend):** rewrite MarketOverview into the 4-section cockpit with streaming updates.
-3. **Phase 5C:** add tests + polish (performance, responsive layout, reduced-motion).
+1. ✅ Phase 5 complete — cockpit dashboard is live.
+2. Decide Phase 6 priorities:
+   - WebSocket/SSE streaming (true live feel)
+   - Alerts
+   - Replace OI proxy with true ΔOI
+   - Personalization/auth
 
 ---
 
@@ -281,7 +263,7 @@
   - Frontend surfaces expanded indicators cleanly; Alpha Gauge removed.
   - Expanded symbol universe + sectors (incl. commodities) available.
   - Robust JSON serialization for all outputs.
-- 🟦 Phase 5 delivers:
+- ✅ Phase 5 delivers:
   - Market Overview replaced by **Market Intelligence Cockpit** (4-section diagnostic tool).
   - Live/streaming feel via auto-refresh and flash-on-change.
   - Dashboard emphasizes **liquidity flows, breadth, VIX regime, sector rotation, derivatives positioning, and actionable events**.
