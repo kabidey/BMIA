@@ -1,0 +1,332 @@
+"""
+Full Market Scanner — Scans ALL NSE EQ stocks (2400+) with multi-stage pipeline.
+Stage A: Ingest full NSE bhav copy (2400+ stocks)
+Stage B: Quantitative pre-filter → ~50-150 candidates
+Stage C: Deep feature computation → ~20-40 shortlist
+Stage D: God Mode LLM ensemble → distilled BUY calls
+"""
+import logging
+import time
+from datetime import date, datetime, timedelta, timezone
+
+import numpy as np
+import yfinance as yf
+
+logger = logging.getLogger(__name__)
+
+# Cache for bhav copy (refreshed daily)
+_bhav_cache = {"data": None, "date": None}
+
+
+def _safe_float(val, default=None):
+    if val is None:
+        return default
+    try:
+        v = float(str(val).replace(",", "").replace(" ", "").strip())
+        return v if not (isinstance(v, float) and v != v) else default  # NaN check
+    except (ValueError, TypeError):
+        return default
+
+
+def get_nse_universe(trade_date=None):
+    """Stage A: Fetch ALL NSE equity stocks from bhav copy."""
+    today = date.today()
+    if _bhav_cache["data"] is not None and _bhav_cache["date"] == today.isoformat():
+        return _bhav_cache["data"]
+
+    from nselib import capital_market
+
+    df = None
+    for days_back in range(0, 7):
+        d = today - timedelta(days=days_back)
+        ds = d.strftime("%d-%m-%Y")
+        try:
+            df = capital_market.bhav_copy_equities(ds)
+            if df is not None and len(df) > 100:
+                logger.info(f"NSE bhav copy loaded for {ds}: {len(df)} rows")
+                break
+        except Exception as e:
+            logger.debug(f"Bhav copy {ds} failed: {e}")
+
+    if df is None or len(df) == 0:
+        return []
+
+    # Filter to equity series only
+    eq = df[df["SctySrs"] == "EQ"].copy()
+
+    universe = []
+    for _, row in eq.iterrows():
+        sym = str(row.get("TckrSymb", "")).strip()
+        if not sym:
+            continue
+
+        close = _safe_float(row.get("ClsPric"))
+        prev_close = _safe_float(row.get("PrvsClsgPric"))
+        volume = _safe_float(row.get("TtlTradgVol"), 0)
+        traded_value = _safe_float(row.get("TtlTrfVal"), 0)
+        open_p = _safe_float(row.get("OpnPric"))
+        high = _safe_float(row.get("HghPric"))
+        low = _safe_float(row.get("LwPric"))
+
+        if not close or not prev_close or close <= 0:
+            continue
+
+        change_pct = round((close - prev_close) / prev_close * 100, 2) if prev_close else 0
+        range_pct = round((high - low) / low * 100, 2) if low and high else 0
+
+        universe.append({
+            "symbol": f"{sym}.NS",
+            "ticker": sym,
+            "close": close,
+            "prev_close": prev_close,
+            "change_pct": change_pct,
+            "open": open_p,
+            "high": high,
+            "low": low,
+            "volume": int(volume),
+            "traded_value": traded_value,
+            "range_pct": range_pct,
+        })
+
+    _bhav_cache["data"] = universe
+    _bhav_cache["date"] = today.isoformat()
+    logger.info(f"NSE universe: {len(universe)} EQ stocks")
+    return universe
+
+
+def prefilter_candidates(universe, max_candidates=100):
+    """
+    Stage B: Quantitative pre-filter to find interesting stocks.
+    We want stocks showing SIGNS of potential buy setups:
+    - Strong momentum (positive change)
+    - High trading activity (volume/value)
+    - Range expansion (big moves)
+    - Not penny stocks
+    """
+    if not universe:
+        return []
+
+    # Basic liquidity filter: traded value > 50 lakhs, price > 10
+    liquid = [s for s in universe if s["traded_value"] > 5_000_000 and s["close"] > 10]
+    logger.info(f"After liquidity filter: {len(liquid)} stocks (from {len(universe)})")
+
+    # Score each stock
+    for s in liquid:
+        score = 0.0
+
+        # Positive momentum (change_pct > 0)
+        if s["change_pct"] > 0:
+            score += min(s["change_pct"] * 2, 15)  # cap at 15 pts for momentum
+        elif s["change_pct"] < -3:
+            score += 3  # oversold bounce candidates get some points too
+
+        # Range expansion (high range_pct means big move = institutional activity)
+        if s["range_pct"] > 3:
+            score += min(s["range_pct"], 10)
+
+        # Volume - higher traded value means more institutional interest
+        if s["traded_value"] > 1e9:  # >100 Cr
+            score += 8
+        elif s["traded_value"] > 5e8:  # >50 Cr
+            score += 5
+        elif s["traded_value"] > 1e8:  # >10 Cr
+            score += 3
+
+        # Price action - close near high (strength)
+        if s["high"] and s["low"] and s["high"] != s["low"]:
+            close_position = (s["close"] - s["low"]) / (s["high"] - s["low"])
+            if close_position > 0.7:  # Closed in top 30% of range
+                score += 5
+
+        s["prefilter_score"] = round(score, 2)
+
+    # Sort by score and take top N
+    liquid.sort(key=lambda x: x["prefilter_score"], reverse=True)
+    candidates = liquid[:max_candidates]
+    logger.info(f"Pre-filter top {len(candidates)} candidates selected")
+    return candidates
+
+
+def build_shortlist(candidates, max_shortlist=20):
+    """
+    Stage C: Deep feature computation on candidates.
+    Fetch yfinance data and compute expanded technicals for the shortlist.
+    """
+    from services.technical_service import full_technical_analysis
+    from services.fundamental_service import get_fundamentals
+
+    shortlist = []
+    for c in candidates[:max_shortlist * 2]:  # Fetch extra in case some fail
+        sym = c["symbol"]
+        try:
+            ticker = yf.Ticker(sym)
+            hist = ticker.history(period="3mo")
+            if hist is None or len(hist) < 20:
+                continue
+
+            # Build OHLCV data
+            ohlcv = []
+            for ts, row in hist.iterrows():
+                ohlcv.append({
+                    "time": ts.strftime("%Y-%m-%d"),
+                    "open": float(row["Open"]),
+                    "high": float(row["High"]),
+                    "low": float(row["Low"]),
+                    "close": float(row["Close"]),
+                    "volume": int(row["Volume"]),
+                })
+
+            # Compute technicals
+            technical = full_technical_analysis(ohlcv)
+
+            # Get fundamentals
+            fundamentals = get_fundamentals(sym)
+
+            # Calculate volume ratio (today vs 10d avg)
+            if len(hist) >= 11:
+                current_vol = float(hist["Volume"].iloc[-1])
+                avg_vol_10d = float(hist["Volume"].iloc[-11:-1].mean())
+                vol_ratio = round(current_vol / max(avg_vol_10d, 1), 1)
+            else:
+                vol_ratio = 1.0
+
+            shortlist.append({
+                "symbol": sym,
+                "name": c["ticker"],
+                "sector": fundamentals.get("sector", "N/A") if isinstance(fundamentals, dict) else "N/A",
+                "market_data": {
+                    "price": c["close"],
+                    "change": round(c["close"] - c["prev_close"], 2),
+                    "change_pct": c["change_pct"],
+                    "volume": c["volume"],
+                    "vol_ratio": vol_ratio,
+                },
+                "technical": technical if isinstance(technical, dict) else {},
+                "fundamental": fundamentals if isinstance(fundamentals, dict) else {},
+                "prefilter_score": c["prefilter_score"],
+            })
+
+            if len(shortlist) >= max_shortlist:
+                break
+
+        except Exception as e:
+            logger.debug(f"Shortlist skip {sym}: {e}")
+            continue
+
+    logger.info(f"Shortlist: {len(shortlist)} stocks with full data")
+    return shortlist
+
+
+async def god_mode_scan(market="NSE", max_candidates=80, max_shortlist=15, top_n=15):
+    """
+    Full pipeline: Universe → Prefilter → Shortlist → God Mode → Ranked BUY calls.
+    """
+    from services.intelligence_engine import generate_god_mode_batch_ranking
+
+    pipeline_status = {
+        "stage": "universe",
+        "started_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    # Stage A: Universe
+    logger.info("GOD SCAN Stage A: Loading universe...")
+    universe = get_nse_universe()
+    pipeline_status["universe_size"] = len(universe)
+
+    if not universe:
+        return {"error": "Failed to load universe", "pipeline": pipeline_status}
+
+    # Stage B: Prefilter
+    logger.info("GOD SCAN Stage B: Pre-filtering...")
+    pipeline_status["stage"] = "prefilter"
+    candidates = prefilter_candidates(universe, max_candidates=max_candidates)
+    pipeline_status["candidates"] = len(candidates)
+
+    if not candidates:
+        return {"error": "No candidates after prefilter", "pipeline": pipeline_status}
+
+    # Stage C: Deep features
+    logger.info("GOD SCAN Stage C: Building shortlist with deep features...")
+    pipeline_status["stage"] = "shortlist"
+    shortlist = build_shortlist(candidates, max_shortlist=max_shortlist)
+    pipeline_status["shortlist_size"] = len(shortlist)
+
+    if not shortlist:
+        return {"error": "No stocks in shortlist after feature computation", "pipeline": pipeline_status}
+
+    # Stage D: God Mode ensemble
+    logger.info(f"GOD SCAN Stage D: God Mode ensemble on {len(shortlist)} stocks...")
+    pipeline_status["stage"] = "god_mode"
+    ranking_result = await generate_god_mode_batch_ranking(shortlist)
+    pipeline_status["stage"] = "complete"
+
+    if "error" in ranking_result:
+        # Fallback: return shortlist with prefilter data
+        return {
+            "results": [{
+                "symbol": s["symbol"],
+                "name": s["name"],
+                "sector": s["sector"],
+                "price": s["market_data"]["price"],
+                "change_pct": s["market_data"]["change_pct"],
+                "volume": s["market_data"]["volume"],
+                "vol_ratio": s["market_data"]["vol_ratio"],
+                "rsi": s["technical"].get("rsi", {}).get("current"),
+                "prefilter_score": s["prefilter_score"],
+                "ai_score": None,
+                "action": "N/A",
+                "conviction": "N/A",
+                "agreement_level": "N/A",
+                "rationale": f"God Mode failed: {ranking_result['error']}",
+                "model_votes": {},
+                "rank": i + 1,
+            } for i, s in enumerate(shortlist)],
+            "total": len(shortlist),
+            "god_mode": False,
+            "pipeline": pipeline_status,
+            "error": ranking_result.get("error"),
+        }
+
+    # Merge rankings with market data
+    rankings = ranking_result.get("rankings", [])
+    ranking_map = {r.get("symbol", ""): r for r in rankings}
+
+    results = []
+    for s in shortlist:
+        ai = ranking_map.get(s["symbol"], ranking_map.get(s["name"], {}))
+        results.append({
+            "symbol": s["symbol"],
+            "name": s["name"],
+            "sector": s["sector"],
+            "price": s["market_data"]["price"],
+            "change_pct": s["market_data"]["change_pct"],
+            "volume": s["market_data"]["volume"],
+            "vol_ratio": s["market_data"]["vol_ratio"],
+            "rsi": s["technical"].get("rsi", {}).get("current"),
+            "macd_signal": s["technical"].get("macd", {}).get("crossover"),
+            "adx": s["technical"].get("adx", {}).get("adx"),
+            "bollinger_squeeze": s["technical"].get("bollinger", {}).get("squeeze"),
+            "pe_ratio": s["fundamental"].get("pe_ratio"),
+            "roe": s["fundamental"].get("roe"),
+            "prefilter_score": s["prefilter_score"],
+            "rank": ai.get("rank", 99),
+            "ai_score": ai.get("ai_score"),
+            "action": ai.get("action", "N/A"),
+            "conviction": ai.get("conviction", "N/A"),
+            "agreement_level": ai.get("agreement_level", "N/A"),
+            "rationale": ai.get("rationale", ""),
+            "key_strength": ai.get("key_strength", ""),
+            "key_risk": ai.get("key_risk", ""),
+            "model_votes": ai.get("model_votes", {}),
+        })
+
+    results.sort(key=lambda x: x.get("rank", 99))
+
+    return {
+        "results": results[:top_n],
+        "total": len(results),
+        "god_mode": ranking_result.get("god_mode", True),
+        "models_succeeded": ranking_result.get("models_succeeded", []),
+        "generated_at": ranking_result.get("generated_at"),
+        "pipeline": pipeline_status,
+    }

@@ -29,6 +29,7 @@ from services.signal_service import save_signal, get_active_signals, get_signal_
 from services.learning_service import build_learning_context, get_cached_learning_context
 from services.performance_service import get_track_record
 from services.dashboard_service import get_full_cockpit, get_slow_cockpit_modules
+from services.full_market_scanner import god_mode_scan
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -80,6 +81,17 @@ class BatchAIScanRequest(BaseModel):
     symbols: Optional[List[str]] = None
     sector: Optional[str] = None
     provider: str = "openai"
+
+class GodScanRequest(BaseModel):
+    market: str = "NSE"
+    max_candidates: int = 80
+    max_shortlist: int = 15
+    top_n: int = 15
+
+class GenerateSignalRequest(BaseModel):
+    symbol: str
+    provider: str = "openai"
+    god_mode: bool = False
 
 class EvaluateSignalRequest(BaseModel):
     signal_id: str
@@ -436,6 +448,22 @@ async def market_cockpit_slow():
     return data
 
 
+@app.post("/api/batch/god-scan")
+async def batch_god_scan(req: GodScanRequest):
+    """
+    GOD MODE Full Market Scanner:
+    Scans 2400+ NSE stocks → Pre-filters → Shortlists → 3-LLM ensemble → Distilled BUY calls.
+    """
+    logger.info(f"GOD SCAN initiated: market={req.market}, candidates={req.max_candidates}, shortlist={req.max_shortlist}")
+    result = await god_mode_scan(
+        market=req.market,
+        max_candidates=req.max_candidates,
+        max_shortlist=req.max_shortlist,
+        top_n=req.top_n,
+    )
+    return result
+
+
 @app.post("/api/ai/chat")
 async def ai_chat(req: ChatRequest):
     analysis_data = req.analysis_data or {}
@@ -483,7 +511,7 @@ async def generate_signal(req: GenerateSignalRequest):
     # 1. Gather ALL raw data
     raw_data = {}
 
-    market_data = get_market_snapshot(symbol, req.period, "1d")
+    market_data = get_market_snapshot(symbol, "6mo", "1d")
     if "error" in market_data:
         raise HTTPException(status_code=404, detail=f"No market data for {symbol}")
 
@@ -521,8 +549,12 @@ async def generate_signal(req: GenerateSignalRequest):
     db = app.db
     learning_ctx = await get_cached_learning_context(db)
 
-    # 3. Generate AI signal
-    signal_data = await generate_ai_signal(symbol, raw_data, learning_ctx, req.provider)
+    # 3. Generate AI signal - God Mode or single provider
+    if req.god_mode:
+        from services.intelligence_engine import generate_god_mode_signal
+        signal_data = await generate_god_mode_signal(symbol, raw_data, learning_ctx)
+    else:
+        signal_data = await generate_ai_signal(symbol, raw_data, learning_ctx, req.provider)
 
     if "error" in signal_data:
         raise HTTPException(status_code=500, detail=signal_data["error"])

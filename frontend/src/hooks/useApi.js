@@ -70,10 +70,10 @@ export function useApi() {
   }, [fetchApi]);
 
   // Signal APIs
-  const generateSignal = useCallback((symbol, provider = 'openai') => {
+  const generateSignal = useCallback((symbol, provider = 'openai', godMode = false) => {
     return fetchApi('/api/signals/generate', {
       method: 'POST',
-      body: JSON.stringify({ symbol, provider }),
+      body: JSON.stringify({ symbol, provider, god_mode: godMode }),
     });
   }, [fetchApi]);
 

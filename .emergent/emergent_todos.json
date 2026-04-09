@@ -1,22 +1,30 @@
 [
   {
-    "content": "Phase 5A: Build dashboard_service.py with all data gathering functions",
+    "content": "Build God Mode in intelligence_engine.py - parallel 3-LLM calls + consensus synthesis",
     "status": "completed"
   },
   {
-    "content": "Phase 5A: Add GET /api/market/cockpit consolidated endpoint with caching",
+    "content": "Build full_market_scanner.py - NSE bhav copy universe, pre-filter pipeline, shortlisting",
     "status": "completed"
   },
   {
-    "content": "Phase 5B: Build TerminalPanel wrapper + Rewrite MarketOverview as full cockpit",
+    "content": "Add POST /api/batch/god-scan endpoint in server.py",
     "status": "completed"
   },
   {
-    "content": "Phase 5B: Add auto-refresh mechanism with streaming flash effect",
+    "content": "Update generate signal endpoint to support God Mode",
     "status": "completed"
   },
   {
-    "content": "Phase 5C: Test all backend + frontend",
-    "status": "completed"
+    "content": "Frontend: Rewrite BatchScanner with God Mode, agreement viz, pipeline tracker",
+    "status": "in_progress"
+  },
+  {
+    "content": "Frontend: Update SymbolAnalysis signal generation to use God Mode",
+    "status": "pending"
+  },
+  {
+    "content": "Test all changes (backend + frontend)",
+    "status": "pending"
   }
 ]

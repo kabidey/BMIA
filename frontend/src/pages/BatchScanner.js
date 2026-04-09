@@ -4,104 +4,174 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Skeleton } from '../components/ui/skeleton';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { Progress } from '../components/ui/progress';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
-import { Loader2, ArrowUpDown, Brain, Zap, TrendingUp, TrendingDown, Minus, AlertTriangle, Info } from 'lucide-react';
-import { useApi } from '../hooks/useApi';
+import { ScrollArea } from '../components/ui/scroll-area';
+import {
+  Loader2, ArrowUpDown, Brain, Zap, TrendingUp, TrendingDown, Minus,
+  AlertTriangle, Layers, Shield, Eye, CheckCircle, XCircle, MinusCircle,
+  Sparkles, BarChart3, Filter
+} from 'lucide-react';
+
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
 
 const ACTION_STYLES = {
-  BUY: { bg: 'bg-emerald-500/15', text: 'text-emerald-400', border: 'border-emerald-500/30' },
-  SELL: { bg: 'bg-red-500/15', text: 'text-red-400', border: 'border-red-500/30' },
-  HOLD: { bg: 'bg-amber-500/15', text: 'text-amber-400', border: 'border-amber-500/30' },
-  AVOID: { bg: 'bg-gray-500/15', text: 'text-gray-400', border: 'border-gray-500/30' },
+  BUY: { bg: 'bg-emerald-500/15', text: 'text-emerald-400', border: 'border-emerald-500/30', icon: TrendingUp },
+  SELL: { bg: 'bg-red-500/15', text: 'text-red-400', border: 'border-red-500/30', icon: TrendingDown },
+  HOLD: { bg: 'bg-amber-500/15', text: 'text-amber-400', border: 'border-amber-500/30', icon: Minus },
+  AVOID: { bg: 'bg-gray-500/15', text: 'text-gray-400', border: 'border-gray-500/30', icon: AlertTriangle },
 };
 
-const CONVICTION_STYLES = {
-  HIGH: 'text-emerald-400',
-  MEDIUM: 'text-amber-400',
-  LOW: 'text-gray-400',
+const AGREEMENT_STYLES = {
+  HIGH: { color: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20', icon: CheckCircle },
+  MEDIUM: { color: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/20', icon: MinusCircle },
+  LOW: { color: 'text-red-400', bg: 'bg-red-500/10', border: 'border-red-500/20', icon: XCircle },
 };
+
+function ModelVoteBadge({ provider, action }) {
+  const colors = {
+    openai: 'border-emerald-500/40 text-emerald-400',
+    claude: 'border-violet-500/40 text-violet-400',
+    gemini: 'border-blue-500/40 text-blue-400',
+  };
+  const labels = { openai: 'GPT', claude: 'Claude', gemini: 'Gemini' };
+  const actionColor = action === 'BUY' ? 'bg-emerald-500/20' : action === 'SELL' ? 'bg-red-500/20' : 'bg-gray-500/20';
+
+  return (
+    <Badge variant="outline" className={`text-[9px] px-1.5 py-0 ${colors[provider] || ''} ${actionColor}`}>
+      {labels[provider] || provider}: {action || '?'}
+    </Badge>
+  );
+}
+
+function PipelineTracker({ pipeline, isRunning }) {
+  if (!pipeline && !isRunning) return null;
+
+  const stages = [
+    { key: 'universe', label: 'Universe', desc: 'Loading 2400+ NSE stocks', icon: Layers },
+    { key: 'prefilter', label: 'Pre-Filter', desc: 'Quantitative screening', icon: Filter },
+    { key: 'shortlist', label: 'Shortlist', desc: 'Deep feature computation', icon: BarChart3 },
+    { key: 'god_mode', label: 'God Mode', desc: '3-LLM ensemble analysis', icon: Sparkles },
+    { key: 'complete', label: 'Complete', desc: 'Distilled results ready', icon: CheckCircle },
+  ];
+
+  const currentIdx = stages.findIndex(s => s.key === (pipeline?.stage || (isRunning ? 'universe' : 'complete')));
+
+  return (
+    <Card className="bg-[hsl(var(--card))] border-[hsl(var(--primary))]/20">
+      <CardContent className="p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <Sparkles className="w-4 h-4 text-[hsl(var(--primary))]" />
+          <span className="text-sm font-display font-semibold">God Mode Pipeline</span>
+          {pipeline?.universe_size && (
+            <Badge variant="secondary" className="text-[10px]">{pipeline.universe_size} stocks scanned</Badge>
+          )}
+          {pipeline?.candidates && (
+            <Badge variant="secondary" className="text-[10px]">{pipeline.candidates} candidates</Badge>
+          )}
+          {pipeline?.shortlist_size && (
+            <Badge variant="secondary" className="text-[10px]">{pipeline.shortlist_size} shortlisted</Badge>
+          )}
+        </div>
+        <div className="flex items-center gap-1">
+          {stages.map((stage, i) => {
+            const isActive = i === currentIdx;
+            const isDone = i < currentIdx || pipeline?.stage === 'complete';
+            const StageIcon = stage.icon;
+            return (
+              <React.Fragment key={stage.key}>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium ${
+                        isDone ? 'bg-[hsl(var(--primary))]/20 text-[hsl(var(--primary))]' :
+                        isActive ? 'bg-[hsl(var(--primary))]/10 text-[hsl(var(--primary))] animate-pulse' :
+                        'bg-[hsl(var(--surface-2))] text-[hsl(var(--muted-foreground))]'
+                      }`} style={{ transition: 'all 0.3s ease' }}>
+                        <StageIcon className={`w-3.5 h-3.5 ${isActive ? 'animate-spin' : ''}`} />
+                        {stage.label}
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent><p>{stage.desc}</p></TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+                {i < stages.length - 1 && (
+                  <div className={`w-6 h-0.5 rounded ${isDone ? 'bg-[hsl(var(--primary))]' : 'bg-[hsl(var(--surface-3))]'}`}
+                    style={{ transition: 'background-color 0.3s ease' }} />
+                )}
+              </React.Fragment>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function BatchScanner() {
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [loadingStep, setLoadingStep] = useState('');
-  const [sector, setSector] = useState('all');
-  const [sectors, setSectors] = useState([]);
+  const [pipeline, setPipeline] = useState(null);
+  const [scanMeta, setScanMeta] = useState(null);
   const [sortField, setSortField] = useState('rank');
   const [sortDir, setSortDir] = useState('asc');
-  const [aiPowered, setAiPowered] = useState(false);
-  const [provider, setProvider] = useState('openai');
-  const [scanMeta, setScanMeta] = useState(null);
-  const { batchAIScan, batchAnalyze, fetchApi } = useApi();
   const navigate = useNavigate();
 
-  useEffect(() => {
-    fetchApi('/api/sectors').then(d => setSectors(d.sectors || [])).catch(() => {});
-  }, []);
-
-  const runAIScan = async () => {
+  const runGodScan = async () => {
     setLoading(true);
     setResults([]);
-    setLoadingStep('Gathering market data for all symbols...');
-    try {
-      const sectorParam = sector === 'all' ? undefined : sector;
-      setTimeout(() => setLoadingStep('Computing 25+ technical indicators per stock...'), 3000);
-      setTimeout(() => setLoadingStep('Fetching 30+ fundamental metrics...'), 6000);
-      setTimeout(() => setLoadingStep('AI Intelligence Engine analyzing and ranking...'), 9000);
-      setTimeout(() => setLoadingStep('Generating conviction scores and rationale...'), 12000);
+    setPipeline({ stage: 'universe' });
 
-      const data = await batchAIScan(undefined, sectorParam, provider);
+    // Simulate pipeline progress
+    const progressTimers = [
+      setTimeout(() => setPipeline(p => ({ ...p, stage: 'prefilter', universe_size: 2400 })), 3000),
+      setTimeout(() => setPipeline(p => ({ ...p, stage: 'shortlist', candidates: 80 })), 8000),
+      setTimeout(() => setPipeline(p => ({ ...p, stage: 'god_mode', shortlist_size: 15 })), 20000),
+    ];
+
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/batch/god-scan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ market: 'NSE', max_candidates: 80, max_shortlist: 15, top_n: 15 }),
+      });
+      const data = await res.json();
+      progressTimers.forEach(clearTimeout);
+
       setResults(data.results || []);
-      setAiPowered(data.ai_powered !== false);
+      setPipeline(data.pipeline || { stage: 'complete' });
       setScanMeta({
-        provider: data.provider,
-        model: data.model,
-        generated_at: data.generated_at,
+        god_mode: data.god_mode,
+        models_succeeded: data.models_succeeded || [],
         total: data.total,
+        generated_at: data.generated_at,
+        pipeline: data.pipeline,
       });
     } catch (e) {
-      console.error(e);
-      // Fallback to basic scan
-      try {
-        const sectorParam = sector === 'all' ? undefined : sector;
-        const data = await batchAnalyze(undefined, sectorParam);
-        setResults(data.results || []);
-        setAiPowered(false);
-      } catch (e2) {
-        console.error(e2);
-      }
+      console.error('God scan error:', e);
+      progressTimers.forEach(clearTimeout);
+      setPipeline({ stage: 'complete' });
     }
     setLoading(false);
-    setLoadingStep('');
   };
 
-  useEffect(() => { runAIScan(); }, []);
+  useEffect(() => { runGodScan(); }, []);
 
   const sorted = [...results].sort((a, b) => {
     const aVal = a[sortField] ?? 999;
     const bVal = b[sortField] ?? 999;
-    if (typeof aVal === 'string') {
-      return sortDir === 'desc' ? bVal.localeCompare(aVal) : aVal.localeCompare(bVal);
-    }
+    if (typeof aVal === 'string') return sortDir === 'desc' ? bVal.localeCompare(aVal) : aVal.localeCompare(bVal);
     return sortDir === 'desc' ? bVal - aVal : aVal - bVal;
   });
 
   const toggleSort = (field) => {
-    if (sortField === field) {
-      setSortDir(prev => prev === 'desc' ? 'asc' : 'desc');
-    } else {
-      setSortField(field);
-      setSortDir(field === 'rank' ? 'asc' : 'desc');
-    }
+    if (sortField === field) setSortDir(prev => prev === 'desc' ? 'asc' : 'desc');
+    else { setSortField(field); setSortDir(field === 'rank' ? 'asc' : 'desc'); }
   };
 
   const SortHeader = ({ field, children, className = '' }) => (
-    <th
-      className={`py-3 px-2 font-medium cursor-pointer hover:text-[hsl(var(--foreground))] ${className}`}
-      style={{ transition: 'color 0.15s ease' }}
-      onClick={() => toggleSort(field)}
-    >
+    <th className={`py-3 px-2 font-medium cursor-pointer hover:text-[hsl(var(--foreground))] ${className}`}
+      style={{ transition: 'color 0.15s ease' }} onClick={() => toggleSort(field)}>
       <span className="flex items-center gap-1">
         {children}
         <ArrowUpDown className={`w-3 h-3 ${sortField === field ? 'text-[hsl(var(--primary))]' : ''}`} />
@@ -109,70 +179,60 @@ export default function BatchScanner() {
     </th>
   );
 
-  const getActionIcon = (action) => {
-    switch (action) {
-      case 'BUY': return <TrendingUp className="w-3.5 h-3.5" />;
-      case 'SELL': return <TrendingDown className="w-3.5 h-3.5" />;
-      case 'HOLD': return <Minus className="w-3.5 h-3.5" />;
-      case 'AVOID': return <AlertTriangle className="w-3.5 h-3.5" />;
-      default: return null;
-    }
-  };
+  // Count buy calls
+  const buyCount = results.filter(r => r.action === 'BUY').length;
+  const highAgreement = results.filter(r => r.agreement_level === 'HIGH').length;
 
   return (
-    <div className="p-6 space-y-6 max-w-[1600px]" data-testid="batch-scanner-page">
+    <div className="p-6 space-y-5 max-w-[1920px]" data-testid="batch-scanner-page">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-[hsl(var(--primary))]/20 flex items-center justify-center">
-              <Brain className="w-6 h-6 text-[hsl(var(--primary))]" />
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[hsl(var(--primary))]/30 to-violet-500/20 flex items-center justify-center border border-[hsl(var(--primary))]/20">
+              <Sparkles className="w-7 h-7 text-[hsl(var(--primary))]" />
             </div>
             <div>
-              <h1 className="font-display text-3xl font-bold" data-testid="scanner-title">AI Batch Scanner</h1>
-              <p className="text-sm text-[hsl(var(--muted-foreground))] mt-0.5">AI-powered stock ranking with 25+ technical & 30+ fundamental parameters</p>
+              <h1 className="font-display text-3xl font-bold tracking-tight" data-testid="scanner-title">
+                God Mode Scanner
+              </h1>
+              <p className="text-sm text-[hsl(var(--muted-foreground))] mt-0.5">
+                Full-market scan &bull; 2400+ NSE stocks &bull; 3-LLM ensemble consensus &bull; Distilled BUY calls
+              </p>
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <Select value={sector} onValueChange={setSector}>
-            <SelectTrigger className="w-40 bg-[hsl(var(--surface-2))]" data-testid="sector-filter">
-              <SelectValue placeholder="All Sectors" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Sectors</SelectItem>
-              {sectors.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <div className="flex gap-1">
-            {['openai', 'claude', 'gemini'].map((p) => (
-              <Button
-                key={p}
-                variant={provider === p ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setProvider(p)}
-                className="text-xs capitalize"
-                data-testid={`provider-${p}`}
-              >
-                {p}
-              </Button>
-            ))}
-          </div>
-          <Button onClick={runAIScan} disabled={loading} data-testid="scan-button">
-            {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Zap className="w-4 h-4 mr-2" />}
-            {loading ? 'Scanning...' : 'AI Scan'}
+        <div className="flex items-center gap-3">
+          <Button onClick={runGodScan} disabled={loading} size="lg"
+            className="bg-gradient-to-r from-[hsl(var(--primary))] to-violet-600 hover:opacity-90"
+            data-testid="scan-button">
+            {loading ? <Loader2 className="w-5 h-5 animate-spin mr-2" /> : <Sparkles className="w-5 h-5 mr-2" />}
+            {loading ? 'Scanning...' : 'Launch God Scan'}
           </Button>
         </div>
       </div>
 
-      {/* AI Scan Meta */}
-      {scanMeta && aiPowered && !loading && (
-        <div className="flex items-center gap-4 text-xs text-[hsl(var(--muted-foreground))] bg-[hsl(var(--surface-2))] rounded-lg px-4 py-2 border border-[hsl(var(--primary))]/20">
-          <Brain className="w-4 h-4 text-[hsl(var(--primary))]" />
-          <span>AI-Powered Ranking</span>
-          <span>Provider: <span className="text-[hsl(var(--foreground))] capitalize">{scanMeta.provider}</span></span>
-          <span>Model: <span className="font-mono text-[hsl(var(--foreground))]">{scanMeta.model}</span></span>
-          <span>Stocks: <span className="text-[hsl(var(--foreground))]">{scanMeta.total}</span></span>
+      {/* Pipeline Tracker */}
+      <PipelineTracker pipeline={pipeline} isRunning={loading} />
+
+      {/* Stats Row */}
+      {!loading && results.length > 0 && (
+        <div className="flex items-center gap-3 flex-wrap">
+          <Badge variant="outline" className="text-xs gap-1.5 py-1 px-3 border-[hsl(var(--primary))]/30">
+            <Sparkles className="w-3.5 h-3.5 text-[hsl(var(--primary))]" />
+            God Mode Active
+          </Badge>
+          {scanMeta?.models_succeeded?.map(m => (
+            <Badge key={m} variant="outline" className="text-[10px] py-0.5 capitalize">{m}</Badge>
+          ))}
+          <Badge variant="secondary" className="text-xs">{results.length} analyzed</Badge>
+          <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-xs">{buyCount} BUY calls</Badge>
+          <Badge className="bg-[hsl(var(--primary))]/20 text-[hsl(var(--primary))] text-xs">{highAgreement} high agreement</Badge>
+          {scanMeta?.pipeline?.universe_size && (
+            <span className="text-[10px] text-[hsl(var(--muted-foreground))] font-mono">
+              {scanMeta.pipeline.universe_size} scanned → {scanMeta.pipeline.candidates} candidates → {scanMeta.pipeline.shortlist_size} shortlisted
+            </span>
+          )}
         </div>
       )}
 
@@ -180,15 +240,26 @@ export default function BatchScanner() {
       {loading && (
         <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
           <CardContent className="p-8">
-            <div className="flex flex-col items-center gap-4">
-              <Loader2 className="w-10 h-10 animate-spin text-[hsl(var(--primary))]" />
-              <p className="text-sm font-medium text-[hsl(var(--primary))] animate-pulse">{loadingStep}</p>
-              <div className="w-80 space-y-2">
-                {['Gathering market data', 'Computing technical indicators', 'Fetching fundamentals', 'AI analyzing & ranking', 'Generating rationale'].map((step) => (
-                  <div key={step} className="flex items-center gap-2 text-xs text-[hsl(var(--muted-foreground))]">
-                    <div className={`w-2 h-2 rounded-full ${loadingStep.toLowerCase().includes(step.split(' ')[0].toLowerCase()) ? 'bg-[hsl(var(--primary))] animate-pulse' : 'bg-[hsl(var(--muted))]'}`} />
-                    <span>{step}</span>
-                  </div>
+            <div className="flex flex-col items-center gap-5">
+              <div className="relative">
+                <div className="w-20 h-20 rounded-full border-4 border-[hsl(var(--primary))]/20 flex items-center justify-center">
+                  <Sparkles className="w-10 h-10 text-[hsl(var(--primary))] animate-pulse" />
+                </div>
+                <div className="absolute -top-1 -right-1 w-5 h-5 bg-emerald-500 rounded-full animate-ping opacity-50" />
+                <div className="absolute -bottom-1 -left-1 w-5 h-5 bg-violet-500 rounded-full animate-ping opacity-50" style={{ animationDelay: '0.5s' }} />
+                <div className="absolute -top-1 -left-1 w-5 h-5 bg-blue-500 rounded-full animate-ping opacity-50" style={{ animationDelay: '1s' }} />
+              </div>
+              <div className="text-center">
+                <p className="text-base font-display font-semibold">God Mode Activated</p>
+                <p className="text-xs text-[hsl(var(--muted-foreground))] mt-1">
+                  Scanning full NSE universe, filtering candidates, running 3-LLM ensemble...
+                </p>
+              </div>
+              <div className="flex gap-3">
+                {['GPT-4.1', 'Claude Sonnet', 'Gemini Flash'].map((m, i) => (
+                  <Badge key={m} variant="outline" className="text-[10px] animate-pulse" style={{ animationDelay: `${i * 0.3}s` }}>
+                    {m}
+                  </Badge>
                 ))}
               </div>
             </div>
@@ -208,25 +279,28 @@ export default function BatchScanner() {
                     <th className="py-3 px-2 font-medium">Symbol</th>
                     <th className="py-3 px-2 font-medium">Sector</th>
                     <SortHeader field="price">Price</SortHeader>
-                    <SortHeader field="change_pct">Change %</SortHeader>
+                    <SortHeader field="change_pct">Chg %</SortHeader>
                     <SortHeader field="ai_score">AI Score</SortHeader>
                     <th className="py-3 px-2 font-medium">Action</th>
-                    <th className="py-3 px-2 font-medium">Conviction</th>
-                    <SortHeader field="rsi">RSI</SortHeader>
-                    <th className="py-3 px-2 font-medium min-w-[280px]">AI Rationale</th>
+                    <th className="py-3 px-2 font-medium">Agreement</th>
+                    <th className="py-3 px-2 font-medium">Model Votes</th>
+                    <SortHeader field="vol_ratio">Vol xAvg</SortHeader>
+                    <th className="py-3 px-2 font-medium min-w-[250px]">Distilled Rationale</th>
                   </tr>
                 </thead>
                 <tbody>
                   {sorted.map((stock) => {
                     const actionStyle = ACTION_STYLES[stock.action] || ACTION_STYLES.HOLD;
+                    const agreeStyle = AGREEMENT_STYLES[stock.agreement_level] || AGREEMENT_STYLES.LOW;
+                    const ActionIcon = actionStyle.icon;
+                    const AgreeIcon = agreeStyle.icon;
+
                     return (
-                      <tr
-                        key={stock.symbol}
+                      <tr key={stock.symbol}
                         className="border-b border-[hsl(var(--border))]/50 hover:bg-[hsl(var(--surface-2))] cursor-pointer"
                         style={{ transition: 'background-color 0.15s ease' }}
                         onClick={() => navigate(`/analyze/${encodeURIComponent(stock.symbol)}`)}
-                        data-testid={`scanner-row-${stock.symbol}`}
-                      >
+                        data-testid={`scanner-row-${stock.symbol}`}>
                         <td className="py-3 px-2">
                           <span className="font-mono font-bold text-[hsl(var(--primary))] tabular-nums">
                             #{stock.rank || '-'}
@@ -234,12 +308,12 @@ export default function BatchScanner() {
                         </td>
                         <td className="py-3 px-2">
                           <div>
-                            <p className="font-mono font-medium tracking-wide">{stock.symbol.replace('.NS', '').replace('=F', '')}</p>
-                            <p className="text-xs text-[hsl(var(--muted-foreground))]">{stock.name}</p>
+                            <p className="font-mono font-medium tracking-wide">{stock.name || stock.symbol?.replace('.NS', '')}</p>
+                            <p className="text-[10px] text-[hsl(var(--muted-foreground))] font-mono">{stock.symbol?.replace('.NS', '')}</p>
                           </div>
                         </td>
                         <td className="py-3 px-2">
-                          <Badge variant="secondary" className="text-xs">{stock.sector}</Badge>
+                          <Badge variant="secondary" className="text-[10px]">{stock.sector || 'N/A'}</Badge>
                         </td>
                         <td className="py-3 px-2 font-mono tabular-nums text-right">
                           {stock.price?.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
@@ -255,32 +329,46 @@ export default function BatchScanner() {
                             }`} data-testid="ai-score-value">
                               {stock.ai_score}
                             </span>
-                          ) : (
-                            <span className="text-[hsl(var(--muted-foreground))]">--</span>
-                          )}
+                          ) : <span className="text-[hsl(var(--muted-foreground))]">--</span>}
                         </td>
                         <td className="py-3 px-2">
                           <Badge className={`${actionStyle.bg} ${actionStyle.text} ${actionStyle.border} border text-xs gap-1`}>
-                            {getActionIcon(stock.action)}
+                            <ActionIcon className="w-3 h-3" />
                             {stock.action || 'N/A'}
                           </Badge>
                         </td>
                         <td className="py-3 px-2">
-                          <span className={`text-xs font-semibold ${CONVICTION_STYLES[stock.conviction] || 'text-gray-400'}`}>
-                            {stock.conviction || 'N/A'}
-                          </span>
+                          <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold border ${agreeStyle.bg} ${agreeStyle.color} ${agreeStyle.border}`}>
+                            <AgreeIcon className="w-3 h-3" />
+                            {stock.agreement_level || 'N/A'}
+                          </div>
                         </td>
-                        <td className="py-3 px-2 font-mono tabular-nums text-right">{stock.rsi?.toFixed(1) || '--'}</td>
+                        <td className="py-3 px-2">
+                          <div className="flex gap-1 flex-wrap">
+                            {stock.model_votes && typeof stock.model_votes === 'object' &&
+                              Object.entries(stock.model_votes).map(([prov, action]) => (
+                                <ModelVoteBadge key={prov} provider={prov} action={typeof action === 'string' ? action : action?.action || action} />
+                              ))
+                            }
+                          </div>
+                        </td>
+                        <td className="py-3 px-2 font-mono tabular-nums text-right">
+                          {stock.vol_ratio ? (
+                            <Badge variant={stock.vol_ratio >= 3 ? 'default' : 'secondary'} className="text-[10px]">
+                              {stock.vol_ratio}x
+                            </Badge>
+                          ) : '--'}
+                        </td>
                         <td className="py-3 px-2">
                           <TooltipProvider>
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <p className="text-xs text-[hsl(var(--muted-foreground))] line-clamp-2 max-w-[280px] cursor-help">
+                                <p className="text-xs text-[hsl(var(--muted-foreground))] line-clamp-2 max-w-[250px] cursor-help">
                                   {stock.rationale || 'No rationale available'}
                                 </p>
                               </TooltipTrigger>
                               <TooltipContent side="left" className="max-w-sm">
-                                <div className="space-y-1">
+                                <div className="space-y-1.5">
                                   <p className="text-xs">{stock.rationale}</p>
                                   {stock.key_strength && <p className="text-xs text-emerald-400">Strength: {stock.key_strength}</p>}
                                   {stock.key_risk && <p className="text-xs text-red-400">Risk: {stock.key_risk}</p>}
@@ -300,12 +388,12 @@ export default function BatchScanner() {
       )}
 
       {/* Empty State */}
-      {!loading && results.length === 0 && (
+      {!loading && results.length === 0 && !pipeline && (
         <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
           <CardContent className="p-12 text-center">
-            <Brain className="w-16 h-16 text-[hsl(var(--muted-foreground))] mx-auto mb-4 opacity-20" />
-            <h3 className="font-display text-xl font-semibold mb-2">No Results</h3>
-            <p className="text-sm text-[hsl(var(--muted-foreground))]">Click AI Scan to analyze and rank stocks</p>
+            <Sparkles className="w-16 h-16 text-[hsl(var(--muted-foreground))] mx-auto mb-4 opacity-20" />
+            <h3 className="font-display text-xl font-semibold mb-2">Ready to Scan</h3>
+            <p className="text-sm text-[hsl(var(--muted-foreground))]">Click Launch God Scan to analyze the full NSE universe</p>
           </CardContent>
         </Card>
       )}
@@ -313,7 +401,10 @@ export default function BatchScanner() {
       {/* Disclaimer */}
       <div className="bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))] rounded-lg p-4" data-testid="sebi-disclaimer-alert">
         <p className="text-xs text-[hsl(var(--muted-foreground))] leading-relaxed">
-          <strong>Disclaimer:</strong> AI-powered scan results are for educational purposes only. Rankings use AI analysis of 25+ technical indicators and 30+ fundamental metrics. Past performance does not guarantee future results. Always do your own research and consult a SEBI-registered advisor.
+          <strong>Disclaimer:</strong> God Mode Scanner uses 3 independent AI models (GPT-4.1, Claude Sonnet, Gemini Flash) to create consensus-driven analysis.
+          Scans 2400+ NSE EQ stocks through a quantitative pre-filter before AI analysis.
+          This is NOT investment advice. Past performance does not guarantee future results.
+          Always conduct your own research and consult a SEBI-registered financial advisor.
         </p>
       </div>
     </div>

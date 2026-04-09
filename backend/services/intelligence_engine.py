@@ -635,3 +635,274 @@ async def generate_batch_ranking(stocks_data: list, provider: str = "openai"):
     except Exception as e:
         logger.error(f"Batch ranking error: {e}")
         return {"error": str(e)}
+
+
+
+GOD_MODE_SYNTHESIS_PROMPT = """You are the Meta-Analyst of the Bharat Market Intel Agent (BMIA).
+
+You receive 3 independent trade signal analyses for the SAME stock from 3 different AI models (OpenAI GPT-4.1, Anthropic Claude Sonnet, Google Gemini Flash).
+
+Your job is to SYNTHESIZE these into a single, distilled consensus signal that is MORE robust than any individual analysis.
+
+SYNTHESIS RULES:
+1. If all 3 agree on action → HIGH agreement. Use the consensus with highest conviction.
+2. If 2 agree, 1 dissents → MEDIUM agreement. Go with the majority but note the dissent.
+3. If all 3 disagree → LOW agreement. Default to the most conservative position (HOLD/AVOID).
+4. For entry/target/stop prices: use the MEDIAN of the 3 values.
+5. For confidence: average the 3 confidences, then adjust down if agreement is LOW.
+6. Explicitly state where the models DISAGREE and WHY the disagreement matters.
+7. Never fabricate data. Reference specific values from the input signals.
+8. The distilled signal must be actionable and specific.
+
+Return ONLY valid JSON:
+{
+  "action": "BUY" | "SELL" | "HOLD" | "AVOID",
+  "timeframe": "INTRADAY" | "SWING" | "POSITIONAL",
+  "horizon_days": <int>,
+  "entry": {"type": "market" | "limit", "price": <float>, "rationale": "<merged rationale>"},
+  "targets": [{"price": <float>, "probability": <float>, "label": "Target 1"}, ...],
+  "stop_loss": {"price": <float>, "type": "hard" | "trailing", "rationale": "<merged rationale>"},
+  "confidence": <int 0-100>,
+  "risk_reward_ratio": "<e.g. 1:2.5>",
+  "key_theses": ["<thesis 1>", "<thesis 2>", "<thesis 3>"],
+  "invalidators": ["<invalidator 1>", "<invalidator 2>"],
+  "technical_summary": "<consensus technical view>",
+  "fundamental_summary": "<consensus fundamental view>",
+  "sentiment_summary": "<consensus sentiment>",
+  "detailed_reasoning": "<3-5 paragraphs synthesizing all 3 models>",
+  "agreement_level": "HIGH" | "MEDIUM" | "LOW",
+  "model_votes": {
+    "openai": {"action": "...", "confidence": <int>, "key_thesis": "..."},
+    "claude": {"action": "...", "confidence": <int>, "key_thesis": "..."},
+    "gemini": {"action": "...", "confidence": <int>, "key_thesis": "..."}
+  },
+  "disagreements": ["<where models disagree and why>"],
+  "consensus_edge": "<what makes this distilled view better than any single model>"
+}"""
+
+
+GOD_MODE_BATCH_SYNTHESIS_PROMPT = """You are the Meta-Analyst of BMIA.
+
+You receive 3 independent batch stock rankings from 3 AI models. Synthesize into one consensus ranking.
+
+Rules:
+1. Average ranks across models, weighted by model conviction.
+2. If all 3 say BUY for a stock → HIGH conviction BUY.
+3. Final output should prioritize BUY calls.
+4. Note disagreements.
+
+Return ONLY valid JSON:
+{
+  "rankings": [
+    {
+      "symbol": "<symbol>",
+      "rank": <int>,
+      "ai_score": <int 0-100>,
+      "action": "BUY" | "SELL" | "HOLD" | "AVOID",
+      "conviction": "HIGH" | "MEDIUM" | "LOW",
+      "agreement_level": "HIGH" | "MEDIUM" | "LOW",
+      "rationale": "<distilled from all 3 models>",
+      "key_strength": "<consensus strength>",
+      "key_risk": "<consensus risk>",
+      "model_votes": {"openai": "<action>", "claude": "<action>", "gemini": "<action>"}
+    }
+  ]
+}"""
+
+
+async def _call_llm(api_key, provider_name, model_name, system_msg, user_text, session_suffix=""):
+    """Helper to call a single LLM and parse JSON response."""
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+
+        chat = LlmChat(
+            api_key=api_key,
+            session_id=f"god-{provider_name}-{session_suffix}-{datetime.now().isoformat()}",
+            system_message=system_msg,
+        )
+        chat.with_model(provider_name, model_name)
+        response = await chat.send_message(UserMessage(text=user_text))
+
+        resp_text = response.strip()
+        if resp_text.startswith("```"):
+            resp_text = resp_text.split("```")[1]
+            if resp_text.startswith("json"):
+                resp_text = resp_text[4:]
+        return json.loads(resp_text)
+    except json.JSONDecodeError:
+        json_match = re.search(r"\{[\s\S]*\}", response if "response" in dir() else "")
+        if json_match:
+            return json.loads(json_match.group())
+        return {"error": f"JSON parse fail from {provider_name}", "raw": (response if "response" in dir() else "")[:300]}
+    except Exception as e:
+        return {"error": f"{provider_name} failed: {str(e)}"}
+
+
+async def generate_god_mode_signal(symbol: str, raw_data: dict, learning_context: dict = None):
+    """
+    GOD MODE: Send to ALL 3 LLMs in parallel, then synthesize consensus.
+    Returns a distilled signal with agreement metrics.
+    """
+    import asyncio
+
+    api_key = os.environ.get("EMERGENT_LLM_KEY")
+    if not api_key:
+        return {"error": "LLM API key not configured."}
+
+    clean_symbol = symbol.replace(".NS", "").replace(".BO", "").replace("=F", "")
+    full_context = build_full_context(symbol, raw_data, learning_context)
+
+    models = [
+        ("openai", "gpt-4.1"),
+        ("anthropic", "claude-sonnet-4-5-20250929"),
+        ("gemini", "gemini-2.5-flash"),
+    ]
+
+    user_text = f"Generate a trade signal for {clean_symbol} based on this comprehensive data:\n\n{full_context}\n\nReturn ONLY valid JSON."
+
+    # Stage 1: Parallel calls to all 3 LLMs
+    logger.info(f"GOD MODE: Sending {clean_symbol} to {len(models)} LLMs in parallel...")
+    tasks = [
+        _call_llm(api_key, prov, model, SIGNAL_SCHEMA_PROMPT, user_text, clean_symbol)
+        for prov, model in models
+    ]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    signals = {}
+    provider_names = ["openai", "claude", "gemini"]
+    for i, (prov_name, result) in enumerate(zip(provider_names, results)):
+        if isinstance(result, Exception):
+            signals[prov_name] = {"error": str(result)}
+        elif isinstance(result, dict):
+            signals[prov_name] = result
+        else:
+            signals[prov_name] = {"error": "Unknown result type"}
+
+    valid_signals = {k: v for k, v in signals.items() if "error" not in v}
+
+    if len(valid_signals) == 0:
+        return {"error": "All 3 LLMs failed", "details": signals}
+
+    if len(valid_signals) == 1:
+        # Only one succeeded - return it with low agreement
+        single = list(valid_signals.values())[0]
+        single["god_mode"] = True
+        single["agreement_level"] = "LOW"
+        single["model_votes"] = {k: {"action": v.get("action", "ERROR"), "confidence": v.get("confidence", 0)} for k, v in signals.items()}
+        single["models_succeeded"] = list(valid_signals.keys())
+        return single
+
+    # Stage 2: Synthesize consensus
+    logger.info(f"GOD MODE: Synthesizing {len(valid_signals)} signals for {clean_symbol}...")
+
+    synthesis_input = f"Stock: {clean_symbol}\n\n"
+    for prov_name, sig in signals.items():
+        if "error" in sig:
+            synthesis_input += f"=== {prov_name.upper()} ===\nFAILED: {sig['error']}\n\n"
+        else:
+            synthesis_input += f"=== {prov_name.upper()} ===\n{json.dumps(sig, indent=2, default=str)[:3000]}\n\n"
+
+    synthesis_input += "\nSynthesize these into a single consensus signal. Return ONLY valid JSON."
+
+    consensus = await _call_llm(
+        api_key, "openai", "gpt-4.1",
+        GOD_MODE_SYNTHESIS_PROMPT, synthesis_input, f"synth-{clean_symbol}"
+    )
+
+    if "error" in consensus:
+        # Synthesis failed - return best individual signal
+        best = max(valid_signals.values(), key=lambda x: x.get("confidence", 0))
+        best["god_mode"] = True
+        best["agreement_level"] = "MEDIUM"
+        best["synthesis_error"] = consensus.get("error")
+        best["model_votes"] = {k: {"action": v.get("action", "ERROR"), "confidence": v.get("confidence", 0)} for k, v in signals.items()}
+        return best
+
+    consensus["god_mode"] = True
+    consensus["symbol"] = symbol
+    consensus["models_succeeded"] = list(valid_signals.keys())
+    consensus["generated_at"] = datetime.now().isoformat()
+
+    # Ensure model_votes exists
+    if "model_votes" not in consensus:
+        consensus["model_votes"] = {}
+        for prov_name, sig in signals.items():
+            consensus["model_votes"][prov_name] = {
+                "action": sig.get("action", "ERROR") if "error" not in sig else "FAILED",
+                "confidence": sig.get("confidence", 0) if "error" not in sig else 0,
+                "key_thesis": (sig.get("key_theses", [""])[0] if sig.get("key_theses") else "") if "error" not in sig else sig.get("error", ""),
+            }
+
+    return consensus
+
+
+async def generate_god_mode_batch_ranking(stocks_data: list):
+    """
+    GOD MODE batch: All 3 LLMs rank stocks independently, then synthesize consensus.
+    """
+    import asyncio
+
+    api_key = os.environ.get("EMERGENT_LLM_KEY")
+    if not api_key:
+        return {"error": "LLM API key not configured."}
+
+    batch_context = build_batch_context(stocks_data)
+
+    models = [
+        ("openai", "gpt-4.1"),
+        ("anthropic", "claude-sonnet-4-5-20250929"),
+        ("gemini", "gemini-2.5-flash"),
+    ]
+
+    user_text = f"Rank these {len(stocks_data)} stocks by investment attractiveness (prioritize BUY candidates):\n\n{batch_context}\n\nReturn ONLY valid JSON."
+
+    # Parallel ranking from all 3 LLMs
+    logger.info(f"GOD MODE BATCH: Sending {len(stocks_data)} stocks to {len(models)} LLMs...")
+    tasks = [
+        _call_llm(api_key, prov, model, BATCH_RANKING_PROMPT, user_text, "batch")
+        for prov, model in models
+    ]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    rankings = {}
+    provider_names = ["openai", "claude", "gemini"]
+    for prov_name, result in zip(provider_names, results):
+        if isinstance(result, Exception):
+            rankings[prov_name] = {"error": str(result)}
+        elif isinstance(result, dict):
+            rankings[prov_name] = result
+        else:
+            rankings[prov_name] = {"error": "Unknown"}
+
+    valid_rankings = {k: v for k, v in rankings.items() if "error" not in v and "rankings" in v}
+
+    if len(valid_rankings) == 0:
+        return {"error": "All LLMs failed for batch", "details": rankings}
+
+    # Synthesize
+    logger.info(f"GOD MODE BATCH: Synthesizing {len(valid_rankings)} ranking sets...")
+    synthesis_input = "Multiple AI model rankings for the same stocks:\n\n"
+    for prov_name, rank_data in rankings.items():
+        if "error" in rank_data:
+            synthesis_input += f"=== {prov_name.upper()} ===\nFAILED: {rank_data['error']}\n\n"
+        else:
+            synthesis_input += f"=== {prov_name.upper()} ===\n{json.dumps(rank_data.get('rankings', []), indent=1, default=str)[:3000]}\n\n"
+
+    synthesis_input += "\nSynthesize into a single consensus ranking. Prioritize BUY calls. Return ONLY valid JSON."
+
+    consensus = await _call_llm(
+        api_key, "openai", "gpt-4.1",
+        GOD_MODE_BATCH_SYNTHESIS_PROMPT, synthesis_input, "batch-synth"
+    )
+
+    if "error" in consensus:
+        # Fallback to best individual ranking
+        best = max(valid_rankings.values(), key=lambda v: len(v.get("rankings", [])))
+        best["god_mode"] = True
+        best["synthesis_error"] = consensus.get("error")
+        return best
+
+    consensus["god_mode"] = True
+    consensus["models_succeeded"] = list(valid_rankings.keys())
+    consensus["generated_at"] = datetime.now().isoformat()
+    return consensus

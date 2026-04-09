@@ -39,6 +39,7 @@ export default function SymbolAnalysis() {
   const [signal, setSignal] = useState(null);
   const [signalLoading, setSignalLoading] = useState(false);
   const [signalProvider, setSignalProvider] = useState('openai');
+  const [godMode, setGodMode] = useState(true);
   const { analyzeStock, aiChat, generateSignal } = useApi();
 
   const doAnalysis = useCallback(async (sym) => {
@@ -83,7 +84,7 @@ export default function SymbolAnalysis() {
     if (!symbol) return;
     setSignalLoading(true);
     try {
-      const result = await generateSignal(symbol, signalProvider);
+      const result = await generateSignal(symbol, signalProvider, godMode);
       setSignal(result);
     } catch (e) {
       console.error(e);
@@ -217,34 +218,45 @@ export default function SymbolAnalysis() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="flex gap-1">
-                    {['openai', 'claude', 'gemini'].map((p) => (
-                      <Button
-                        key={p}
-                        variant={signalProvider === p ? 'default' : 'outline'}
-                        size="sm"
-                        onClick={() => setSignalProvider(p)}
-                        className="text-xs capitalize"
-                      >
-                        {p}
-                      </Button>
-                    ))}
-                  </div>
+                  <Button
+                    variant={godMode ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setGodMode(!godMode)}
+                    className={`text-xs ${godMode ? 'bg-gradient-to-r from-[hsl(var(--primary))] to-violet-600' : ''}`}
+                    data-testid="god-mode-toggle"
+                  >
+                    {godMode ? 'God Mode' : 'Single'}
+                  </Button>
+                  {!godMode && (
+                    <div className="flex gap-1">
+                      {['openai', 'claude', 'gemini'].map((p) => (
+                        <Button
+                          key={p}
+                          variant={signalProvider === p ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => setSignalProvider(p)}
+                          className="text-xs capitalize"
+                        >
+                          {p}
+                        </Button>
+                      ))}
+                    </div>
+                  )}
                   <Button
                     onClick={handleGenerateSignal}
                     disabled={signalLoading}
-                    className="bg-[hsl(var(--primary))] hover:bg-[hsl(var(--primary))]/90"
+                    className={godMode ? 'bg-gradient-to-r from-[hsl(var(--primary))] to-violet-600 hover:opacity-90' : 'bg-[hsl(var(--primary))] hover:bg-[hsl(var(--primary))]/90'}
                     data-testid="generate-signal-button"
                   >
                     {signalLoading ? (
                       <>
                         <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                        Analyzing...
+                        {godMode ? 'God Mode...' : 'Analyzing...'}
                       </>
                     ) : (
                       <>
                         <Zap className="w-4 h-4 mr-2" />
-                        Generate AI Signal
+                        {godMode ? 'God Mode Signal' : 'Generate Signal'}
                       </>
                     )}
                   </Button>
@@ -255,8 +267,21 @@ export default function SymbolAnalysis() {
               {signalLoading && (
                 <div className="bg-[hsl(var(--surface-2))] rounded-lg p-6 text-center">
                   <Loader2 className="w-8 h-8 animate-spin text-[hsl(var(--primary))] mx-auto mb-3" />
-                  <p className="text-sm text-[hsl(var(--primary))]">Intelligence engine processing all data sources...</p>
-                  <p className="text-xs text-[hsl(var(--muted-foreground))] mt-1">Technical + Fundamental + Sentiment + Learning Context</p>
+                  <p className="text-sm text-[hsl(var(--primary))]">
+                    {godMode ? 'God Mode: Querying GPT-4.1 + Claude Sonnet + Gemini Flash in parallel...' : 'Intelligence engine processing all data sources...'}
+                  </p>
+                  <p className="text-xs text-[hsl(var(--muted-foreground))] mt-1">
+                    {godMode ? 'Inter-LLM bouncing → Consensus synthesis → Distilled signal' : 'Technical + Fundamental + Sentiment + Learning Context'}
+                  </p>
+                  {godMode && (
+                    <div className="flex justify-center gap-2 mt-3">
+                      {['GPT-4.1', 'Claude Sonnet', 'Gemini Flash'].map((m, i) => (
+                        <Badge key={m} variant="outline" className="text-[10px] animate-pulse" style={{ animationDelay: `${i * 0.3}s` }}>
+                          {m}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -280,6 +305,43 @@ export default function SymbolAnalysis() {
                       <p className="text-xs opacity-80">confidence</p>
                     </div>
                   </div>
+
+                  {/* God Mode Agreement */}
+                  {signal.signal?.god_mode && signal.signal?.model_votes && (
+                    <div className="rounded-lg p-3 border border-[hsl(var(--primary))]/20 bg-[hsl(var(--primary))]/5">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Badge variant="outline" className="text-[10px] border-[hsl(var(--primary))]/30 text-[hsl(var(--primary))]">
+                          God Mode
+                        </Badge>
+                        <Badge variant={signal.signal.agreement_level === 'HIGH' ? 'default' : signal.signal.agreement_level === 'MEDIUM' ? 'secondary' : 'destructive'}
+                          className="text-[10px]">
+                          {signal.signal.agreement_level} Agreement
+                        </Badge>
+                      </div>
+                      <div className="flex gap-2 flex-wrap">
+                        {Object.entries(signal.signal.model_votes).map(([prov, data]) => {
+                          const action = typeof data === 'string' ? data : data?.action;
+                          const conf = typeof data === 'object' ? data?.confidence : null;
+                          const provColors = { openai: 'border-emerald-500/40', claude: 'border-violet-500/40', gemini: 'border-blue-500/40' };
+                          const provLabels = { openai: 'GPT-4.1', claude: 'Claude', gemini: 'Gemini' };
+                          return (
+                            <div key={prov} className={`px-3 py-1.5 rounded-md border ${provColors[prov] || ''} bg-[hsl(var(--surface-2))]`}>
+                              <p className="text-[10px] text-[hsl(var(--muted-foreground))]">{provLabels[prov] || prov}</p>
+                              <p className={`text-xs font-bold ${action === 'BUY' ? 'text-emerald-400' : action === 'SELL' ? 'text-red-400' : 'text-amber-400'}`}>
+                                {action} {conf ? `(${conf}%)` : ''}
+                              </p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {signal.signal.disagreements && signal.signal.disagreements.length > 0 && (
+                        <div className="mt-2 text-[10px] text-[hsl(var(--muted-foreground))]">
+                          <span className="font-semibold">Disagreements: </span>
+                          {signal.signal.disagreements.join(' | ')}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Price Levels */}
                   <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

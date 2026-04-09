@@ -1,8 +1,8 @@
 # plan.md — Bharat Market Intel Agent (BMIA)
 
 ## 1. Objectives (updated)
-- ✅ Ship a working V1 dashboard for Indian markets using real data: **yfinance OHLCV + RSS news + LLM sentiment + technical/fundamental panels**.
-- ✅ Provide a combined scoring output (Alpha Score) and UI scaffolding (overview, analysis, scanner, AI chat).
+- ✅ Ship a working V1 dashboard for Indian markets using real data: **yfinance OHLCV + RSS/news + LLM sentiment + technical/fundamental panels**.
+- ✅ Provide UI scaffolding (cockpit dashboard, analysis, scanner, AI chat) + data services.
 - ✅ **Intelligence Revamp (north star achieved):** evolve BMIA from “formula-based scoring” to a **multi-input intelligence system** that:
   - produces **AI-generated, actionable signals** (`BUY/SELL/HOLD/AVOID`) with **entry, targets, stop-loss, timeframe, horizon, confidence, risk/reward & invalidators**
   - maintains an **auditable recommendation history** (stored in MongoDB)
@@ -24,29 +24,25 @@
     - **sector rotation** (sector treemap)
     - **derivatives positioning** (PCR + quadrant view)
     - **actionable events** (block/bulk deals + corporate actions)
-  - **No Top Gainers/Losers** modules (explicitly removed).
-  - Streaming/near-real-time feel via **auto-refresh (30–120s)** + **flash-on-change** microinteractions (no layout shift).
+  - **No Top Gainers/Losers** modules.
+  - Streaming/near-real-time feel via **auto-refresh (30–120s)** + **flash-on-change** microinteractions.
   - All data is live (**NSE India via nselib + Yahoo Finance via yfinance**), **no mocked APIs**.
+
+- 🟡 **Phase 6 objective (NEW): God Mode Intelligence + Full-Market (Agnostic) Scanner**
+  - Remove large-cap bias: scanner must be capable of scanning **all NSE EQ stocks (≈2450+)** and incorporate **BSE supplementation**.
+  - Add **God Mode**: multi-LLM ensemble (OpenAI + Claude + Gemini) with **inter-LLM bouncing** and **consensus distillation**.
+  - Scanner output optimized to surface **high-conviction BUY candidates** (not “gainers/losers”).
+  - Keep performance and cost practical via **multi-stage filtering** (broad scan → quant prefilter → LLM ensemble on shortlist).
 
 ---
 
 ## 2. Implementation Steps (Phases)
 
 ### Phase 1 — Core POC (Isolation) ✅ COMPLETED
-**Goal:** Validate the failure-prone integrations (yfinance India tickers + commodity proxies, RSS fallback, LLM sentiment) and produce stable JSON outputs.
-
-**User stories (POC) — completed**
-1. ✅ Input NSE ticker (e.g., `RELIANCE.NS`) → OHLCV + indicators.
-2. ✅ Input commodity proxy (e.g., `GC=F`) → OHLCV + indicators.
-3. ✅ Fetch headlines → sentiment score in `[-1, 1]`.
-4. ✅ Compute subscores + Alpha Score.
-5. ✅ Deterministic recommendation + disclaimer.
+**Goal:** Validate failure-prone integrations (India tickers/commodities, news fallback, sentiment) and produce stable JSON outputs.
 
 **Delivered artifacts**
 - ✅ `/app/tests/test_core_poc.py`
-
-**Exit criteria — met**
-- ✅ All 6 test blocks passed on 4 symbols.
 
 ---
 
@@ -54,219 +50,187 @@
 **Goal:** Build an end-to-end dashboard around the validated POC pipeline.
 
 **Delivered (V1)**
-- ✅ Backend (FastAPI): analysis endpoints, market overview, heatmap, batch scan, AI chat.
-- ✅ Frontend (React + shadcn/ui): Market Overview, Symbol Analysis (tabs), Batch Scanner.
-- ✅ Professional charting: `lightweight-charts` for candlesticks + Recharts for RSI/MACD.
-- ✅ LLM provider support: OpenAI/Claude/Gemini via Emergent universal key.
-- ✅ SEBI disclaimers.
-
-**Testing**
-- ✅ Backend 100% (8/8), Integration 100%, Frontend core flows validated.
+- ✅ Backend (FastAPI): analysis endpoints, heatmap, batch scan, AI chat.
+- ✅ Frontend (React + shadcn/ui): Market Overview, Symbol Analysis, Batch Scanner.
 
 ---
 
 ### Phase 3 — Intelligence Revamp (Multi-input AI Signals + Learning Loop) ✅ COMPLETED
-**Goal:** Replace the “formula-only recommendation” with an **AI decision engine** that uses raw multi-input signals, generates trade-like signals, tracks them over time, evaluates correctness, and continuously improves.
+**Goal:** Replace formula-only recommendation with AI decision engine + history + evaluation + learning.
 
-#### 3.1 New Concepts & Output Contracts (implemented)
-**Signal (canonical schema)**
-- `_id`, `symbol`, `created_at/updated_at/closed_at`, `provider`, `model`
-- `action`: `BUY | SELL | HOLD | AVOID`
-- `timeframe`: `INTRADAY | SWING | POSITIONAL` + `horizon_days`
-- `entry`: `{ type: market/limit, price, rationale }`
-- `targets`: `[{ price, probability, label }]` (supports multiple)
-- `stop_loss`: `{ price, type: hard/trailing, rationale }`
-- `confidence`: `0–100`
-- `key_theses`: bullets referencing provided data only
-- `invalidators`: conditions that invalidate the thesis
-- `risk_reward_ratio`, `position_sizing_hint`, `sector_context`, `detailed_reasoning`
-- Tracking fields: `status`, `entry_price`, `current_price`, `return_pct`, `peak_return_pct`, `max_drawdown_pct`, `days_open`
-
-**Evaluation schema**
-- `signal_evaluations`: records closed outcomes with `status`, `return_pct`, `drawdown`, `days_open`, and notes.
-
-#### 3.2 Backend Architecture Changes (implemented)
-**New services added**
-- ✅ `services/intelligence_engine.py`
-- ✅ `services/signal_service.py`
-- ✅ `services/learning_service.py`
-- ✅ `services/performance_service.py`
-
-**MongoDB collections (implemented)**
-- ✅ `signals`
-- ✅ `signal_evaluations`
-- ✅ `learning_context`
-- ✅ (kept) `analyses`
-
-**New endpoints (implemented)**
-- ✅ `POST /api/signals/generate`
-- ✅ `GET /api/signals/active`
-- ✅ `GET /api/signals/history`
-- ✅ `POST /api/signals/evaluate`
-- ✅ `POST /api/signals/evaluate-all`
-- ✅ `GET /api/signals/track-record`
-- ✅ `GET /api/signals/learning-context`
-
-#### 3.3 Intelligence Flow (Closed Loop) (implemented)
-1. ✅ Collect data → 2. ✅ Retrieve learning context → 3. ✅ LLM generation → 4. ✅ Persist → 5. ✅ Evaluate → 6. ✅ Learn.
-
-#### 3.4 Frontend Revamp (implemented)
-- ✅ Signal Dashboard (`/signals`)
-- ✅ Track Record (`/track-record`)
-- ✅ Symbol Analysis page updated to render AI signals + learning context
-
-#### 3.5 Phase 3 Testing ✅ COMPLETED
-- ✅ Backend: 100% (14/14)
-- ✅ Frontend: 100%
-- ✅ Integration: 100%
+**Key delivered concepts**
+- ✅ Canonical Signal schema + evaluation schema
+- ✅ MongoDB collections: `signals`, `signal_evaluations`, `learning_context`, `analyses`
+- ✅ Endpoints: `/api/signals/*`
 
 ---
 
-### Phase 4 — Hardening + Advanced Quant Features (post-intelligence) ✅ COMPLETED
-**Goal:** Improve robustness, explainability, and quantitative depth now that the learning loop is stable.
+### Phase 4 — Advanced Quant Inputs + AI Batch Ranking ✅ COMPLETED
+**Goal:** Increase quant depth + convert scanner away from Alpha Score.
 
-#### 4.0 Completion snapshot (what shipped)
-- ✅ Expanded quant inputs integrated end-to-end:
-  - ✅ `services/technical_service.py`: **25+ indicators**
-  - ✅ `services/fundamental_service.py`: **30+ metrics**
-  - ✅ Expanded symbol universe + sector taxonomy in `symbols.py`
-
-- ✅ Intelligence Engine rewrite:
-  - ✅ `build_full_context()` feeds all expanded technical + fundamental metrics
-  - ✅ `generate_batch_ranking()` for comparative AI ranking
-
-- ✅ AI Batch Scanner conversion:
-  - ✅ Added `POST /api/batch/ai-scan`
-  - ✅ Removed formula-based alpha ranking from scanner flow
-
-- ✅ Frontend revamp:
-  - ✅ Removed `AlphaGauge` from SymbolAnalysis
-  - ✅ Added expanded Technical panels (Bollinger, ADX, Stochastic, ATR, OBV, Ichimoku, Fibonacci, Pivots, etc.)
-  - ✅ Rewrote BatchScanner for AI results (AI score/action/conviction/rationale)
-  - ✅ Extended FundamentalsPanel (valuation, growth, balance sheet, cash flow, ownership, quarterly table)
-
-- ✅ Hardening:
-  - ✅ Fixed numpy JSON serialization via `_sanitize()` in `technical_service.py`
-
-- ✅ Testing:
-  - ✅ 100% pass rate (backend + frontend + integration)
-
-#### 4.1 Phase 4 acceptance criteria — met
-- ✅ AI signal reasoning references expanded indicators.
-- ✅ Batch scan returns ranked results with AI score + rationale.
-- ✅ `/api/analyze-stock` returns comprehensive, JSON-serializable payload.
+**Completion snapshot**
+- ✅ `technical_service.py`: 25+ indicators + JSON sanitization
+- ✅ `fundamental_service.py`: 30+ metrics + quarterly data
+- ✅ Intelligence engine expanded contexts for single-stock signals
+- ✅ `POST /api/batch/ai-scan` + frontend scanner rewrite
 
 ---
 
-### Phase 5 — Market Intelligence Cockpit Dashboard Revamp ✅ COMPLETED
-**Goal:** Turn the dashboard into a professional diagnostic tool for **liquidity flow, market regime, rotation, derivatives positioning, and actionable events**.
+### Phase 5 — Market Intelligence Cockpit Dashboard ✅ COMPLETED
+**Goal:** Professional diagnostic cockpit.
 
-#### 5.0 Data sources confirmed (live)
-- ✅ `nselib.capital_market.market_watch_all_indices()` — indices + breadth signals
-- ✅ `nselib.capital_market.india_vix_data()` — India VIX
-- ✅ `nselib.derivatives.fii_derivatives_statistics(trade_date)` — FII derivatives stats
-- ✅ `nselib.derivatives.participant_wise_open_interest(trade_date)` — participant-wise OI (used as proxy enrichment)
-- ✅ `nselib.derivatives.expiry_dates_option_index()` — index expiry dates
-- ✅ `nselib.derivatives.nse_live_option_chain('NIFTY'|'BANKNIFTY', expiry_date)` — option chain → PCR
-- ✅ `nselib.capital_market.block_deals_data(period/from/to)` — block deals feed
-- ✅ `nselib.capital_market.corporate_actions_for_equity(from/to)` — dividends/splits/bonus actions
-- ✅ `nselib.capital_market.week_52_high_low_report(trade_date)` — 52W high/low clusters
-- ✅ `yfinance` — Sensex fallback (`^BSESN`), per-stock volume shockers, price/volume proxies for OI quadrant
+**Backend**
+- ✅ `services/dashboard_service.py`
+- ✅ `GET /api/market/cockpit` + `GET /api/market/cockpit/slow`
 
-> Note: `xlrd>=2.0.2` installed to support nselib xls endpoints.
-
-#### 5A — Backend: Dashboard API layer ✅ COMPLETED
-**What shipped**
-- ✅ New service: `services/dashboard_service.py`
-  - `get_indices_snapshot()` — includes **Nifty 50, Bank Nifty, Midcap 100, Smallcap 100** from NSE; adds **Sensex** via yfinance fallback
-  - `get_market_breadth()` — Adv/Dec/Unch counts + A/D ratio
-  - `get_vix_regime()` — latest VIX + regime + short history
-  - `get_fii_dii_flows()` — FII derivatives flow (₹ Cr)
-  - `get_sector_rotation()` — sector perf for treemap w/ weights
-  - `get_volume_shockers()` — stocks with ≥2.5–3x 10D avg volume + breakout heuristic
-  - `get_52w_clusters()` — 52W highs/lows counts + sample lists
-  - `get_pcr()` — PCR for Nifty and Bank Nifty using nearest expiry option chain
-  - `get_oi_quadrant()` — quadrant classification (ΔPrice vs ΔVolume proxy)
-  - `get_block_deals()` — block deals feed with value in ₹ Cr
-  - `get_corporate_actions()` — dividends/splits/bonus/rights/meetings
-
-- ✅ Endpoints (with TTL caching + graceful degradation)
-  - `GET /api/market/cockpit` — consolidated fast payload (macro/micro/derivatives/actions)
-  - `GET /api/market/cockpit/slow` — slower modules (volume shockers + OI quadrant)
-
-- ✅ Non-functional hardening
-  - TTL cache ~60s default (some modules 120s)
-  - Strict JSON-serializable outputs
-  - Independent module error isolation (one failure doesn’t break the cockpit)
-
-#### 5B — Frontend: MarketOverview → Market Intelligence Cockpit ✅ COMPLETED
-**What shipped**
-- ✅ Full rewrite: `/frontend/src/pages/MarketOverview.js` into a 4-section cockpit
-- ✅ New layout component: `/frontend/src/components/layout/TerminalPanel.js`
-- ✅ Section 1 (Macro View)
-  - Major Indices Matrix with **streaming flash** on LTP change
-  - VIX gauge with regime
-  - Market breadth A/D bar
-  - FII derivatives flow bar chart
-- ✅ Section 2 (Micro View)
-  - Sector Rotation Treemap (Recharts)
-  - Volume Shockers table (click-through to Symbol Analysis)
-  - 52W extremes counters
-- ✅ Section 3 (Derivatives & Sentiment)
-  - PCR cards for Nifty/Bank Nifty
-  - OI buildup quadrant scatter (4 regimes + counts)
-- ✅ Section 4 (Corporate Actions & Events)
-  - Block/Bulk deals feed with value in ₹ Cr
-  - Corporate actions list with category badges
-- ✅ Controls
-  - Auto-refresh toggle + interval selector (30s/60s/120s)
-  - Manual refresh
-  - Per-panel timestamps
-
-#### 5C — Testing & Polish ✅ COMPLETED
-- ✅ Backend: 100% tests (cockpit endpoints + Phase 4 regression)
-- ✅ Frontend: all 4 sections validated; minor expected external API latency for “slow” modules
-- ✅ Integration: 100% (NSE + yfinance live, no mocked APIs)
+**Frontend**
+- ✅ `MarketOverview.js` rewritten into 4-section cockpit
+- ✅ `TerminalPanel.js` layout wrapper
 
 ---
 
-### Phase 6 — Optional: Next Enhancements (requires approval)
-**If/when you want to take this further:**
-1. **True real-time streaming** via WebSockets/SSE (push updates instead of polling).
-2. **Real OI change** (ΔOI) from NSE derivatives endpoints (replace volume proxy where possible).
-3. **Alerting**: VIX regime shift, breadth divergence, sector rotation threshold, volume shock triggers.
-4. **Personalization**: watchlists, saved cockpit layouts, sector focus modes.
-5. **Export  Scheduler**: daily cockpit PDF/CSV export + scheduled scan runs.
+### Phase 6 — God Mode Intelligence & Full-Market Scanner 🟡 PLANNED / NEXT
+**Goal:** Make the scanner **market-cap agnostic**, incorporate NSE+ BSE breadth, and produce **distilled BUY calls** using an LLM ensemble.
+
+#### 6.0 Data Universe Expansion (NSE + BSE)
+**NSE (broad universe)**
+- Use `nselib.capital_market.bhav_copy_equities(trade_date)` to fetch the full daily universe.
+- Filter to equity series `SctySrs == 'EQ'`.
+- Expected universe size: ~2450+ symbols daily.
+
+**BSE supplementation**
+- Add **bselib** (Sachin-Kahandal/bselib) as a secondary data source.
+- Practical usage targets (due to library reliability variability):
+  - Bulk/block deals feed (BSE)
+  - Corporate actions feed (BSE)
+  - Potential quote/index supplementation when available
+- Build fallback logic: if bselib fails/returns `{'info':'Error'}`, degrade gracefully.
+
+**Deliverables**
+- New `services/universe_service.py`:
+  - `get_nse_universe(trade_date=None) -> List[Symbol]`
+  - `get_bse_universe(trade_date=None) -> List[Symbol]` (best-effort)
+  - `merge_universe(nse, bse)` with dedupe + mapping metadata
+
+#### 6.1 Full-Market Scanner (multi-stage pipeline)
+**Why multi-stage**: scanning 2450+ names with full indicator computation + 3 LLM calls each is infeasible.
+
+**Stage A — Broad daily ingest (fast)**
+- Pull bhav copy once per day (or per refresh window)
+- Store as cached dataframe or in Mongo for reuse
+
+**Stage B — Quant pre-filter (cheap, deterministic)**
+Goal: reduce ~2450 → ~50–150 candidates.
+- Liquidity filter:
+  - min traded value / volume threshold from bhav (`TtlTrfVal`, `TtlTradgVol`)
+- Momentum / setup filter:
+  - strong close vs prev close
+  - range expansion (true range proxy)
+  - volume spike vs rolling median (if history cached)
+- Optional fundamental screen (if available quickly):
+  - avoid extreme leverage / missing financials
+
+**Stage C — Deep feature computation (medium)**
+Goal: reduce candidates → shortlist ~20–40.
+- Fetch 3–6 months OHLCV only for candidates
+- Compute expanded technicals via `full_technical_analysis`
+- Fetch expanded fundamentals via `get_fundamentals`
+
+**Stage D — God Mode LLM ensemble (expensive)**
+Goal: produce **distilled BUY calls** for the shortlist.
+- Run multi-LLM inference in parallel:
+  - OpenAI (gpt-4.1)
+  - Claude (sonnet)
+  - Gemini (flash)
+- Distill into consensus:
+  - agreement score (0–1)
+  - consensus action/timeframe/entry/stop/targets
+  - dissent notes
+
+**Stage E — Ranking + output formatting**
+- Rank primarily by:
+  - consensus action (BUY prioritized)
+  - agreement score
+  - confidence
+  - risk/reward ratio
+- Return only top N (default 10–20) BUY candidates.
+
+**Deliverables**
+- New `services/full_market_scanner.py`:
+  - `prefilter_candidates(universe_df) -> candidates`
+  - `build_shortlist(candidates) -> shortlist`
+  - `god_mode_rank(shortlist) -> ranked results`
+
+- New endpoint:
+  - `POST /api/batch/god-scan`
+    - body: `{ market: 'NSE'|'BSE'|'ALL', max_universe: int, shortlist: int, top_n: int, god_mode: true }`
+
+#### 6.2 God Mode Intelligence Engine (inter-LLM bouncing)
+**Additions to `services/intelligence_engine.py`**
+- `generate_ai_signal_god_mode(symbol, raw_data, learning_context)`:
+  1. call `generate_ai_signal(..., provider='openai')`
+  2. call `generate_ai_signal(..., provider='claude')`
+  3. call `generate_ai_signal(..., provider='gemini')`
+  4. call `synthesize_consensus(signals=[a,b,c], raw_context)`
+
+**Synthesis prompt contract**
+- Input: 3 JSON signals + key raw metrics summary
+- Output: a single canonical signal JSON +
+  - `agreement_level`: HIGH/MEDIUM/LOW
+  - `disagreements`: short bullets
+  - `source_votes`: {openai: BUY, claude: HOLD, gemini: BUY}
+
+**Batch ranking upgrade**
+- Extend `generate_batch_ranking` to a God Mode variant:
+  - each model produces rankings
+  - synthesis merges into final ranking
+
+#### 6.3 Frontend Updates (Scanner UX)
+- Update BatchScanner into:
+  - **Universe selector**: NSE / BSE / All
+  - **Mode selector**: AI (single) vs **God Mode**
+  - **Progress view**: Universe ingest → prefilter → shortlist → ensemble → distill
+  - Results table additions:
+    - agreement badge (HIGH/MED/LOW)
+    - model votes (O/C/G)
+    - distilled rationale
+
+#### 6.4 Performance, Cost, and Reliability Guardrails
+- Hard caps:
+  - Universe scan max rows default 2450; UI allows sampling for dev
+  - Shortlist max 40
+  - Top N results 15
+- Caching:
+  - bhav copy cached daily
+  - per-symbol OHLCV cached for scan window
+- Failure isolation:
+  - if one LLM fails, still synthesize using remaining models (2/3 quorum)
+
+#### 6.5 Phase 6 Acceptance Criteria
+- ✅ Scanner can ingest NSE full EQ universe from bhav copy and produce shortlist.
+- ✅ God Mode returns distilled BUY calls with agreement score and votes.
+- ✅ No explicit large-cap bias in universe selection.
+- ✅ API latency acceptable with caps (shortlist + caching).
+- ✅ Frontend communicates pipeline stages and displays consensus clearly.
 
 ---
 
 ## 3. Next Actions (immediate) (updated)
-1. ✅ Phase 5 complete — cockpit dashboard is live.
-2. Decide Phase 6 priorities:
-   - WebSocket/SSE streaming (true live feel)
-   - Alerts
-   - Replace OI proxy with true ΔOI
-   - Personalization/auth
+1. Start Phase 6 implementation:
+   - Universe service (NSE bhav copy) + caching
+   - God Mode consensus synthesis in intelligence engine
+   - New `/api/batch/god-scan` endpoint
+2. Update BatchScanner UI for Universe + God Mode + agreement visualization.
 
 ---
 
 ## 4. Success Criteria (updated)
-- ✅ V1 remains functional (overview/analysis/scanner/chat).
-- ✅ Phase 3 delivers:
-  - AI-generated signals with entry/targets/stop/timeframe/confidence
-  - persisted history + evaluation outcomes
-  - track record dashboard with core metrics + equity curve
-  - learning context that updates and is used for future signals
-- ✅ Phase 4 delivers:
-  - Intelligence Engine prompt includes ALL expanded technical + fundamental inputs.
-  - Batch Scanner ranks using AI-powered relative analysis (not alpha score).
-  - Frontend surfaces expanded indicators cleanly; Alpha Gauge removed.
-  - Expanded symbol universe + sectors (incl. commodities) available.
-  - Robust JSON serialization for all outputs.
-- ✅ Phase 5 delivers:
-  - Market Overview replaced by **Market Intelligence Cockpit** (4-section diagnostic tool).
-  - Live/streaming feel via auto-refresh and flash-on-change.
-  - Dashboard emphasizes **liquidity flows, breadth, VIX regime, sector rotation, derivatives positioning, and actionable events**.
-  - No Top Gainers/Losers modules.
-  - All modules fail gracefully and remain performant.
+- ✅ V1 remains functional (cockpit/analysis/scanner/chat).
+- ✅ Phase 3: AI signals + history + evaluation + learning loop.
+- ✅ Phase 4: Expanded technical/fundamental inputs + AI scanner ranking.
+- ✅ Phase 5: Cockpit dashboard emphasizing liquidity/breadth/VIX/rotation/derivatives/events.
+- 🟡 Phase 6:
+  - Full-market scanning across **all NSE EQ** and best-effort **BSE supplementation**.
+  - God Mode ensemble signals with consensus distillation + agreement transparency.
+  - Scanner output optimized to surface **BUY calls** with risk controls.
 - ✅ Compliance: explicit disclaimers, no guarantees, transparent assumptions, no fabricated numbers.
