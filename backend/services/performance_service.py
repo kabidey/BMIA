@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 async def get_track_record(db):
     """Compute comprehensive track record metrics."""
     try:
-        all_signals = await db.signals.find({}, {"_id": 0}).sort("created_at", 1).to_list(length=500)
+        all_signals = await db.signals.find({}).sort("created_at", 1).to_list(length=500)
 
         if not all_signals:
             return {
