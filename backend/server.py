@@ -44,6 +44,47 @@ DB_NAME = os.environ["DB_NAME"]
 _god_scan_jobs = {}
 _signal_jobs = {}
 
+# ── Background Evaluation Scheduler ──────────────────────────────────────────
+def _start_evaluation_scheduler():
+    """Daemon thread: auto-evaluates all open signals every 60 seconds."""
+    import asyncio as _aio
+    from motor.motor_asyncio import AsyncIOMotorClient as _MotorClient
+    from services.signal_service import evaluate_all_signals
+    from services.learning_service import build_learning_context
+    import time as _t
+
+    def _run():
+        logger.info("EVAL SCHEDULER: Started (every 60s)")
+        _t.sleep(30)  # initial delay — let app warm up
+        while True:
+            try:
+                loop = _aio.new_event_loop()
+                _aio.set_event_loop(loop)
+                client = _MotorClient(MONGO_URL)
+                db = client[DB_NAME]
+
+                async def _eval():
+                    results = await evaluate_all_signals(db)
+                    evaluated = len(results)
+                    if evaluated > 0:
+                        logger.info(f"EVAL SCHEDULER: Evaluated {evaluated} signals")
+                        try:
+                            await build_learning_context(db)
+                        except Exception:
+                            pass
+                    return evaluated
+
+                loop.run_until_complete(_eval())
+                client.close()
+                loop.close()
+            except Exception as e:
+                logger.error(f"EVAL SCHEDULER error: {e}")
+            _t.sleep(60)
+
+    import threading
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.mongodb_client = AsyncIOMotorClient(MONGO_URL)
@@ -54,6 +95,11 @@ async def lifespan(app: FastAPI):
         start_background_cache()
     except Exception as e:
         logger.error(f"Background cache start failed (non-fatal): {e}")
+    # Start auto-evaluation scheduler
+    try:
+        _start_evaluation_scheduler()
+    except Exception as e:
+        logger.error(f"Evaluation scheduler start failed (non-fatal): {e}")
     yield
     app.mongodb_client.close()
 
