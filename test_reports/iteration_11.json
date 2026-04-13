@@ -1,0 +1,110 @@
+{
+  "summary": "Iteration 11 testing completed successfully. Verified hardened pipeline v2 features in value_stocks portfolio including advanced screener, deep enrichment, guidance integration, and consensus voting. All 14 backend tests passed. Frontend UI fully functional with technical signal badges (BULLISH/NEUTRAL/BEARISH), fundamental grades (A/B/C/D), filing insights, and risk flags visible in Holdings table.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "Backend: GET /api/health returns {status: 'ok', service: 'BMIA'}",
+    "Backend: GET /api/portfolios/overview returns 6 active portfolios",
+    "Backend: GET /api/portfolios returns portfolio list with 6 strategies",
+    "Backend: GET /api/portfolios/value_stocks has hardened_v2 pipeline in construction_log",
+    "Backend: GET /api/portfolios/value_stocks construction_log shows universe_size=2456, screened_candidates=12, deep_enriched=12, guidance_stocks=6",
+    "Backend: GET /api/portfolios/value_stocks holdings have technical_signal field (BULLISH/NEUTRAL/BEARISH)",
+    "Backend: GET /api/portfolios/value_stocks holdings have fundamental_grade field (A/B/C/D)",
+    "Backend: GET /api/portfolios/value_stocks holdings have filing_insight field",
+    "Backend: GET /api/portfolios/value_stocks holdings have rationale citing specific metrics (P/E, P/B, ROE, Graham value, etc.)",
+    "Backend: GET /api/portfolios/value_stocks holdings have risk_flag field",
+    "Backend: GET /api/portfolios/bespoke_forward_looking returns active portfolio with 10 holdings",
+    "Backend: GET /api/portfolios/rebalance-log-all/recent returns logs array",
+    "Backend: GET /api/signals/active returns active signals",
+    "Backend: GET /api/guidance/stats returns guidance stats with 1285 announcements for 264 stocks",
+    "Frontend: Portfolio page loads with 'Autonomous Portfolios' title",
+    "Frontend: All 6 portfolio cards visible",
+    "Frontend: Global summary shows Total Capital (300L), Current Value (299.7L), Active (6/6)",
+    "Frontend: Expanding value_stocks card shows Holdings tab with 10 holdings",
+    "Frontend: Holdings show BULLISH/NEUTRAL/BEARISH technical signal badges",
+    "Frontend: Holdings show A/B/C/D fundamental grade badges",
+    "Frontend: Holdings show AI Intelligence column with data-grounded rationales",
+    "Frontend: Holdings show Risk flag text when present",
+    "Frontend: Holdings show BSE filing insights when available"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration11_hardened_pipeline.py",
+    "/app/test_reports/pytest/iteration11_results.xml",
+    "/app/.screenshots/iteration11_portfolio_page.png",
+    "/app/.screenshots/iteration11_value_stocks_expanded.png",
+    "/app/.screenshots/iteration11_final.png"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/backend/tests/test_iteration11_hardened_pipeline.py"
+  ],
+  "success_rate": {
+    "backend": "100% (14/14 tests passed)",
+    "frontend": "100% (All UI elements and interactions working)"
+  },
+  "test_credentials": "No auth required. LLM key configured in backend/.env as EMERGENT_LLM_KEY",
+  "seed_data_creation": "value_stocks portfolio was reconstructed with hardened_v2 pipeline. All 6 portfolios active with 10 stocks each (~₹50L per portfolio). Total capital 300L, current value 299.7L.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 11 verified the hardened pipeline v2 features. Key changes verified: (1) value_stocks portfolio has construction_log.pipeline='hardened_v2', (2) construction_log shows universe_size, screened_candidates, deep_enriched, guidance_stocks fields, (3) holdings have new fields: technical_signal (BULLISH/NEUTRAL/BEARISH), fundamental_grade (A/B/C/D), filing_insight, risk_flag, consensus_votes, (4) rationales cite specific metrics like P/E, P/B, ROE, Graham value. Frontend Watchlist.js displays all these fields with appropriate badges and styling. Other 5 portfolios were built with older pipeline (no technical_signal etc). No rebalancing has occurred yet.",
+  "iteration_11_assessment": {
+    "hardened_pipeline_v2": {
+      "status": "✅ VERIFIED",
+      "details": "value_stocks portfolio has construction_log.pipeline='hardened_v2' with all expected fields"
+    },
+    "construction_log_fields": {
+      "status": "✅ ALL PRESENT",
+      "fields_verified": {
+        "pipeline": "hardened_v2",
+        "universe_size": 2456,
+        "screened_candidates": 12,
+        "deep_enriched": 12,
+        "guidance_stocks": 6,
+        "models_used": ["openai"],
+        "consensus_multi_vote": 0
+      }
+    },
+    "holdings_enrichment": {
+      "status": "✅ ALL FIELDS PRESENT",
+      "fields_verified": [
+        "technical_signal (BULLISH/NEUTRAL/BEARISH)",
+        "fundamental_grade (A/B/C/D)",
+        "filing_insight",
+        "risk_flag",
+        "consensus_votes",
+        "rationale with specific metrics"
+      ]
+    },
+    "frontend_ui": {
+      "status": "✅ WORKING",
+      "features_verified": [
+        "Technical signal badges with color coding",
+        "Fundamental grade badges",
+        "AI Intelligence column with rationales",
+        "Risk flag display",
+        "BSE filing insights display"
+      ]
+    },
+    "api_endpoints": {
+      "status": "✅ ALL WORKING",
+      "endpoints_tested": [
+        "/api/health",
+        "/api/portfolios/overview",
+        "/api/portfolios",
+        "/api/portfolios/value_stocks",
+        "/api/portfolios/bespoke_forward_looking",
+        "/api/portfolios/rebalance-log-all/recent",
+        "/api/signals/active",
+        "/api/guidance/stats"
+      ]
+    }
+  }
+}

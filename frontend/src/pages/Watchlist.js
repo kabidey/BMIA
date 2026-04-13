@@ -31,6 +31,22 @@ const STRATEGY_ACCENT = {
   value_stocks: 'text-teal-400',
 };
 
+function SignalBadge({ signal }) {
+  if (!signal || signal === '?') return null;
+  const colors = {
+    BULLISH: 'bg-emerald-500/20 text-emerald-400',
+    NEUTRAL: 'bg-[hsl(var(--surface-3))] text-[hsl(var(--muted-foreground))]',
+    BEARISH: 'bg-red-500/20 text-red-400',
+  };
+  return <span className={`text-[9px] font-mono px-1 py-0.5 rounded ${colors[signal] || colors.NEUTRAL}`}>{signal}</span>;
+}
+
+function GradeBadge({ grade }) {
+  if (!grade || grade === '?') return null;
+  const colors = { A: 'text-emerald-400', B: 'text-blue-400', C: 'text-amber-400', D: 'text-red-400' };
+  return <span className={`text-[9px] font-bold ${colors[grade] || 'text-[hsl(var(--muted-foreground))]'}`}>{grade}</span>;
+}
+
 function HoldingsTable({ holdings, accent }) {
   return (
     <table className="w-full text-sm">
@@ -42,15 +58,24 @@ function HoldingsTable({ holdings, accent }) {
           <th className="px-3 py-2 text-right hidden sm:table-cell">Qty</th>
           <th className="px-3 py-2 text-right">P&L</th>
           <th className="px-3 py-2 text-right hidden md:table-cell">Weight</th>
-          <th className="px-3 py-2 text-left hidden lg:table-cell">Rationale</th>
+          <th className="px-3 py-2 text-left hidden lg:table-cell">AI Intelligence</th>
         </tr>
       </thead>
       <tbody>
         {holdings.map((h, i) => (
           <tr key={h.symbol || i} className="border-b border-[hsl(var(--border))]/50 hover:bg-[hsl(var(--surface-2))]" data-testid={`holding-${i}`}>
             <td className="px-3 py-2">
-              <span className={`font-mono font-semibold text-xs ${accent}`}>{h.symbol?.replace('.NS', '')}</span>
+              <div className="flex items-center gap-1.5">
+                <span className={`font-mono font-semibold text-xs ${accent}`}>{h.symbol?.replace('.NS', '')}</span>
+                {h.consensus_votes > 1 && (
+                  <span className="text-[8px] bg-amber-500/20 text-amber-400 px-1 rounded font-mono" title={`Picked by ${h.consensus_votes} LLMs`}>{h.consensus_votes}V</span>
+                )}
+              </div>
               {h.sector && <p className="text-[10px] text-[hsl(var(--muted-foreground))]">{h.sector}</p>}
+              <div className="flex items-center gap-1 mt-0.5">
+                <SignalBadge signal={h.technical_signal} />
+                <GradeBadge grade={h.fundamental_grade} />
+              </div>
             </td>
             <td className="px-3 py-2 text-right font-mono text-xs text-[hsl(var(--foreground))] hidden sm:table-cell">{h.entry_price?.toFixed(2)}</td>
             <td className="px-3 py-2 text-right font-mono text-xs text-[hsl(var(--foreground))]">{h.current_price?.toFixed(2)}</td>
@@ -64,8 +89,14 @@ function HoldingsTable({ holdings, accent }) {
               </p>
             </td>
             <td className="px-3 py-2 text-right font-mono text-[10px] text-[hsl(var(--muted-foreground))] hidden md:table-cell">{h.weight?.toFixed(1)}%</td>
-            <td className="px-3 py-2 text-left hidden lg:table-cell">
-              <p className="text-[10px] text-[hsl(var(--muted-foreground))] line-clamp-2 max-w-xs">{h.rationale?.slice(0, 100)}</p>
+            <td className="px-3 py-2 text-left hidden lg:table-cell max-w-sm">
+              <p className="text-[10px] text-[hsl(var(--foreground))] line-clamp-2">{h.rationale?.slice(0, 140)}</p>
+              {h.filing_insight && h.filing_insight !== 'No recent filings' && (
+                <p className="text-[9px] text-blue-400/80 mt-0.5 line-clamp-1">BSE: {h.filing_insight}</p>
+              )}
+              {h.risk_flag && (
+                <p className="text-[9px] text-red-400/70 mt-0.5 line-clamp-1">Risk: {h.risk_flag}</p>
+              )}
             </td>
           </tr>
         ))}
