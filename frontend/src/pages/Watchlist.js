@@ -1,369 +1,388 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Trash2, TrendingUp, TrendingDown, RefreshCw, Edit3, X, Search, Briefcase, IndianRupee, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { RefreshCw, TrendingUp, TrendingDown, ChevronDown, ChevronUp, ArrowRightLeft, Clock, Zap, Target, Shield, Rocket, BarChart3, Gem, Loader2, IndianRupee, ArrowUpRight, ArrowDownRight, ExternalLink } from 'lucide-react';
 import { Card, CardContent } from '../components/ui/card';
-import { toast } from 'sonner';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
-function AddStockModal({ open, onClose, stocks, onAdd }) {
-  const [search, setSearch] = useState('');
-  const [symbol, setSymbol] = useState('');
-  const [scripCode, setScripCode] = useState('');
-  const [name, setName] = useState('');
-  const [entryPrice, setEntryPrice] = useState('');
-  const [quantity, setQuantity] = useState('');
-  const [notes, setNotes] = useState('');
+const STRATEGY_ICONS = {
+  bespoke_forward_looking: Rocket,
+  quick_entry: Zap,
+  long_term: Shield,
+  swing: ArrowRightLeft,
+  alpha_generator: Target,
+  value_stocks: Gem,
+};
 
-  const filteredStocks = stocks.filter(s =>
-    !search || s.symbol?.toLowerCase().includes(search.toLowerCase()) ||
-    s.name?.toLowerCase().includes(search.toLowerCase())
-  ).slice(0, 50);
+const STRATEGY_COLORS = {
+  bespoke_forward_looking: 'from-blue-500/20 to-cyan-500/20 border-blue-500/30',
+  quick_entry: 'from-amber-500/20 to-orange-500/20 border-amber-500/30',
+  long_term: 'from-emerald-500/20 to-green-500/20 border-emerald-500/30',
+  swing: 'from-purple-500/20 to-violet-500/20 border-purple-500/30',
+  alpha_generator: 'from-red-500/20 to-rose-500/20 border-red-500/30',
+  value_stocks: 'from-teal-500/20 to-cyan-500/20 border-teal-500/30',
+};
 
-  const selectStock = (s) => {
-    setSymbol(s.symbol);
-    setScripCode(s.scrip_code);
-    setName(s.name);
-    setSearch('');
-  };
+const STRATEGY_ACCENT = {
+  bespoke_forward_looking: 'text-blue-400',
+  quick_entry: 'text-amber-400',
+  long_term: 'text-emerald-400',
+  swing: 'text-purple-400',
+  alpha_generator: 'text-red-400',
+  value_stocks: 'text-teal-400',
+};
 
-  const handleSubmit = () => {
-    if (!symbol) return;
-    onAdd({
-      symbol, scrip_code: scripCode, name,
-      entry_price: parseFloat(entryPrice) || 0,
-      quantity: parseInt(quantity) || 0,
-      notes,
-    });
-    setSymbol(''); setScripCode(''); setName('');
-    setEntryPrice(''); setQuantity(''); setNotes('');
-    onClose();
-  };
+function PortfolioCard({ portfolio, strategies, onExpand, expanded }) {
+  const type = portfolio.type;
+  const cfg = strategies[type] || {};
+  const Icon = STRATEGY_ICONS[type] || BarChart3;
+  const colors = STRATEGY_COLORS[type] || '';
+  const accent = STRATEGY_ACCENT[type] || 'text-[hsl(var(--primary))]';
+  const isConstructing = portfolio.status === 'constructing';
+  const isError = portfolio.status === 'error';
+  const isActive = portfolio.status === 'active';
 
-  if (!open) return null;
+  const pnl = portfolio.total_pnl || 0;
+  const pnlPct = portfolio.total_pnl_pct || 0;
+  const holdings = portfolio.holdings || [];
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" data-testid="add-stock-modal-overlay" onClick={onClose}>
-      <div className="bg-[hsl(var(--surface-1))] border border-[hsl(var(--border))] rounded-2xl w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()} data-testid="add-stock-modal">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[hsl(var(--border))]">
-          <h3 className="text-base font-semibold text-[hsl(var(--foreground))]">Add to Watchlist</h3>
-          <button onClick={onClose} className="p-1 rounded hover:bg-[hsl(var(--surface-3))]" data-testid="close-add-modal">
-            <X className="w-4 h-4 text-[hsl(var(--muted-foreground))]" />
-          </button>
-        </div>
-        <div className="p-5 space-y-4">
-          {!symbol ? (
-            <div>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[hsl(var(--muted-foreground))]" />
-                <input type="text" placeholder="Search stock..." value={search} onChange={e => setSearch(e.target.value)}
-                  className="w-full pl-10 pr-3 py-2.5 rounded-lg bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))] text-sm text-[hsl(var(--foreground))]"
-                  data-testid="search-stock-add" autoFocus />
-              </div>
-              {search && (
-                <div className="mt-2 max-h-48 overflow-y-auto rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--surface-2))]">
-                  {filteredStocks.map(s => (
-                    <button key={s.scrip_code || s.symbol} onClick={() => selectStock(s)}
-                      className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-[hsl(var(--surface-3))] text-left">
-                      <span className="font-mono text-[hsl(var(--primary))]">{s.symbol}</span>
-                      <span className="text-xs text-[hsl(var(--muted-foreground))] ml-2 truncate">{s.name?.slice(0, 25)}</span>
-                    </button>
-                  ))}
-                  {filteredStocks.length === 0 && (
-                    <p className="px-3 py-4 text-sm text-[hsl(var(--muted-foreground))] text-center">No stocks found</p>
-                  )}
-                </div>
-              )}
-              <div className="mt-3 text-center">
-                <p className="text-xs text-[hsl(var(--muted-foreground))]">Or enter manually:</p>
-                <input type="text" placeholder="Symbol (e.g. RELIANCE)" value={symbol}
-                  onChange={e => setSymbol(e.target.value.toUpperCase())}
-                  className="mt-2 w-full px-3 py-2 rounded-lg bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))] text-sm text-[hsl(var(--foreground))] text-center"
-                  data-testid="manual-symbol-input" />
-              </div>
+    <div className="space-y-0" data-testid={`portfolio-card-${type}`}>
+      <div
+        className={`p-4 rounded-xl border cursor-pointer bg-gradient-to-br ${colors} transition-all hover:scale-[1.01]`}
+        onClick={() => onExpand(type)}
+      >
+        <div className="flex items-start justify-between">
+          <div className="flex items-start gap-3">
+            <div className={`w-10 h-10 rounded-lg bg-[hsl(var(--surface-1))] flex items-center justify-center flex-shrink-0 ${accent}`}>
+              <Icon className="w-5 h-5" />
             </div>
-          ) : (
-            <>
-              <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[hsl(var(--primary))]/10 border border-[hsl(var(--primary))]/20">
-                <span className="font-mono font-bold text-[hsl(var(--primary))]">{symbol}</span>
-                {name && <span className="text-xs text-[hsl(var(--muted-foreground))]">{name}</span>}
-                <button onClick={() => { setSymbol(''); setName(''); setScripCode(''); }} className="ml-auto">
-                  <X className="w-3 h-3 text-[hsl(var(--muted-foreground))]" />
-                </button>
+            <div>
+              <h3 className="text-base font-semibold text-[hsl(var(--foreground))]">{cfg.name || portfolio.name}</h3>
+              <p className="text-xs text-[hsl(var(--muted-foreground))] mt-0.5">{cfg.description?.slice(0, 80) || ''}</p>
+              <p className="text-[10px] text-[hsl(var(--muted-foreground))] mt-1">{cfg.horizon || portfolio.horizon}</p>
+            </div>
+          </div>
+
+          <div className="text-right flex-shrink-0 ml-4">
+            {isConstructing && (
+              <div className="flex items-center gap-2 text-amber-400">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span className="text-sm font-medium">Constructing...</span>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs text-[hsl(var(--muted-foreground))] mb-1 block">Entry Price</label>
-                  <input type="number" placeholder="0.00" value={entryPrice} onChange={e => setEntryPrice(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))] text-sm text-[hsl(var(--foreground))]"
-                    data-testid="entry-price-input" />
-                </div>
-                <div>
-                  <label className="text-xs text-[hsl(var(--muted-foreground))] mb-1 block">Quantity</label>
-                  <input type="number" placeholder="0" value={quantity} onChange={e => setQuantity(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))] text-sm text-[hsl(var(--foreground))]"
-                    data-testid="quantity-input" />
-                </div>
-              </div>
-              <div>
-                <label className="text-xs text-[hsl(var(--muted-foreground))] mb-1 block">Notes (optional)</label>
-                <input type="text" placeholder="e.g. Long-term hold" value={notes} onChange={e => setNotes(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))] text-sm text-[hsl(var(--foreground))]"
-                  data-testid="notes-input" />
-              </div>
-              <button onClick={handleSubmit}
-                className="w-full py-2.5 rounded-lg text-sm font-medium bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] hover:opacity-90"
-                data-testid="confirm-add-btn">
-                Add to Watchlist
-              </button>
-            </>
-          )}
+            )}
+            {isError && <span className="text-sm text-red-400 font-medium">Error</span>}
+            {isActive && (
+              <>
+                <p className="text-lg font-mono font-bold text-[hsl(var(--foreground))]">
+                  <IndianRupee className="w-3 h-3 inline" />{(portfolio.current_value || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                </p>
+                <p className={`text-sm font-mono flex items-center justify-end gap-0.5 ${pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {pnl >= 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                  {pnl >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%
+                  <span className="ml-1 text-xs">({pnl >= 0 ? '+' : ''}{pnl.toLocaleString('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })})</span>
+                </p>
+                <p className="text-[10px] text-[hsl(var(--muted-foreground))] mt-1">
+                  {holdings.length} stocks | W:{portfolio.winners || 0} L:{portfolio.losers || 0}
+                </p>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center justify-center mt-2">
+          {expanded ? <ChevronUp className="w-4 h-4 text-[hsl(var(--muted-foreground))]" /> : <ChevronDown className="w-4 h-4 text-[hsl(var(--muted-foreground))]" />}
         </div>
       </div>
+
+      {/* Expanded: Holdings Table */}
+      {expanded && isActive && holdings.length > 0 && (
+        <div className="mx-2 -mt-1 rounded-b-xl bg-[hsl(var(--surface-1))] border border-t-0 border-[hsl(var(--border))] overflow-hidden" data-testid={`holdings-${type}`}>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-xs text-[hsl(var(--muted-foreground))] border-b border-[hsl(var(--border))]">
+                <th className="px-3 py-2 text-left">Stock</th>
+                <th className="px-3 py-2 text-right hidden sm:table-cell">Entry</th>
+                <th className="px-3 py-2 text-right">Current</th>
+                <th className="px-3 py-2 text-right hidden sm:table-cell">Qty</th>
+                <th className="px-3 py-2 text-right">P&L</th>
+                <th className="px-3 py-2 text-right hidden md:table-cell">Weight</th>
+                <th className="px-3 py-2 text-left hidden lg:table-cell">Rationale</th>
+              </tr>
+            </thead>
+            <tbody>
+              {holdings.map((h, i) => (
+                <tr key={h.symbol || i} className="border-b border-[hsl(var(--border))]/50 hover:bg-[hsl(var(--surface-2))]" data-testid={`holding-${i}`}>
+                  <td className="px-3 py-2">
+                    <span className={`font-mono font-semibold text-xs ${accent}`}>{h.symbol?.replace('.NS', '')}</span>
+                    {h.sector && <p className="text-[10px] text-[hsl(var(--muted-foreground))]">{h.sector}</p>}
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono text-xs text-[hsl(var(--foreground))] hidden sm:table-cell">{h.entry_price?.toFixed(2)}</td>
+                  <td className="px-3 py-2 text-right font-mono text-xs text-[hsl(var(--foreground))]">{h.current_price?.toFixed(2)}</td>
+                  <td className="px-3 py-2 text-right font-mono text-xs text-[hsl(var(--muted-foreground))] hidden sm:table-cell">{h.quantity}</td>
+                  <td className="px-3 py-2 text-right">
+                    <span className={`font-mono text-xs font-semibold ${(h.pnl_pct || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {(h.pnl_pct || 0) >= 0 ? '+' : ''}{(h.pnl_pct || 0).toFixed(2)}%
+                    </span>
+                    <p className={`font-mono text-[10px] ${(h.pnl || 0) >= 0 ? 'text-emerald-400/70' : 'text-red-400/70'}`}>
+                      {(h.pnl || 0) >= 0 ? '+' : ''}{(h.pnl || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                    </p>
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono text-[10px] text-[hsl(var(--muted-foreground))] hidden md:table-cell">{h.weight?.toFixed(1)}%</td>
+                  <td className="px-3 py-2 text-left hidden lg:table-cell">
+                    <p className="text-[10px] text-[hsl(var(--muted-foreground))] line-clamp-2 max-w-xs">{h.rationale?.slice(0, 100)}</p>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {portfolio.portfolio_thesis && (
+            <div className="px-4 py-3 border-t border-[hsl(var(--border))] bg-[hsl(var(--surface-2))]">
+              <p className="text-xs font-semibold text-[hsl(var(--muted-foreground))] mb-1">Portfolio Thesis</p>
+              <p className="text-xs text-[hsl(var(--foreground))]">{portfolio.portfolio_thesis}</p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RebalanceLog({ logs }) {
+  if (!logs || logs.length === 0) return null;
+
+  return (
+    <div className="space-y-3" data-testid="rebalance-log">
+      <h3 className="text-sm font-semibold text-[hsl(var(--foreground))]">Rebalance Activity</h3>
+      {logs.map((log, i) => (
+        <div key={i} className={`p-3 rounded-lg border ${log.action === 'REBALANCE' ? 'bg-amber-500/5 border-amber-500/20' : 'bg-[hsl(var(--surface-2))] border-[hsl(var(--border))]'}`} data-testid={`rebalance-entry-${i}`}>
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              {log.action === 'REBALANCE' ? (
+                <ArrowRightLeft className="w-4 h-4 text-amber-400" />
+              ) : (
+                <Shield className="w-4 h-4 text-emerald-400" />
+              )}
+              <span className={`text-xs font-semibold ${log.action === 'REBALANCE' ? 'text-amber-400' : 'text-emerald-400'}`}>
+                {log.action === 'REBALANCE' ? 'Rebalanced' : 'No Change Needed'}
+              </span>
+              <span className="text-[10px] text-[hsl(var(--muted-foreground))]">{log.portfolio_type?.replace(/_/g, ' ')}</span>
+            </div>
+            <span className="text-[10px] text-[hsl(var(--muted-foreground))]">
+              {log.timestamp ? new Date(log.timestamp).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''}
+            </span>
+          </div>
+          {log.analysis_summary && (
+            <p className="text-xs text-[hsl(var(--foreground))] mb-2 line-clamp-3">{log.analysis_summary}</p>
+          )}
+          {log.changes && log.changes.length > 0 && (
+            <div className="space-y-2">
+              {log.changes.map((ch, j) => (
+                <div key={j} className="flex items-stretch gap-2 text-xs">
+                  <div className="flex-1 p-2 rounded bg-red-500/10 border border-red-500/20">
+                    <p className="font-mono font-bold text-red-400">{ch.outgoing?.symbol?.replace('.NS', '')} OUT</p>
+                    <p className="text-[10px] text-[hsl(var(--muted-foreground))] mt-1">{ch.outgoing?.rationale?.slice(0, 120)}</p>
+                    {ch.outgoing?.pnl_pct !== undefined && (
+                      <p className={`text-[10px] mt-1 font-mono ${ch.outgoing.pnl_pct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        P&L: {ch.outgoing.pnl_pct >= 0 ? '+' : ''}{ch.outgoing.pnl_pct?.toFixed(2)}%
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center">
+                    <ArrowRightLeft className="w-4 h-4 text-[hsl(var(--muted-foreground))]" />
+                  </div>
+                  <div className="flex-1 p-2 rounded bg-emerald-500/10 border border-emerald-500/20">
+                    <p className="font-mono font-bold text-emerald-400">{ch.incoming?.symbol?.replace('.NS', '')} IN</p>
+                    <p className="text-[10px] text-[hsl(var(--muted-foreground))] mt-1">{ch.incoming?.rationale?.slice(0, 120)}</p>
+                    <p className="text-[10px] mt-1 font-mono text-[hsl(var(--muted-foreground))]">Entry: {ch.incoming?.entry_price?.toFixed(2)}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 }
 
 export default function Watchlist() {
-  const [summary, setSummary] = useState(null);
+  const [overview, setOverview] = useState(null);
+  const [portfolios, setPortfolios] = useState([]);
+  const [strategies, setStrategies] = useState({});
+  const [rebalanceLogs, setRebalanceLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [stocks, setStocks] = useState([]);
-  const [showAdd, setShowAdd] = useState(false);
+  const [expanded, setExpanded] = useState(null);
 
-  const fetchSummary = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/watchlist/summary`);
-      const data = await res.json();
-      setSummary(data);
-    } catch (e) { console.error(e); }
+      const [ovRes, pfRes, logRes] = await Promise.all([
+        fetch(`${BACKEND_URL}/api/portfolios/overview`),
+        fetch(`${BACKEND_URL}/api/portfolios`),
+        fetch(`${BACKEND_URL}/api/portfolios/rebalance-log-all/recent?limit=10`),
+      ]);
+      const ovData = await ovRes.json();
+      const pfData = await pfRes.json();
+      const logData = await logRes.json();
+
+      setOverview(ovData);
+      setPortfolios(pfData.portfolios || []);
+      setStrategies(pfData.strategies || {});
+      setRebalanceLogs(logData.logs || []);
+    } catch (e) {
+      console.error(e);
+    }
     setLoading(false);
   }, []);
 
-  const fetchStocks = async () => {
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/guidance/stocks`);
-      const data = await res.json();
-      setStocks(data.stocks || []);
-    } catch (e) {}
-  };
+  useEffect(() => { fetchData(); }, [fetchData]);
 
-  useEffect(() => { fetchSummary(); fetchStocks(); }, [fetchSummary]);
+  // Auto-refresh every 30s
+  useEffect(() => {
+    const interval = setInterval(fetchData, 30000);
+    return () => clearInterval(interval);
+  }, [fetchData]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await fetchSummary();
+    await fetchData();
     setRefreshing(false);
   };
 
-  const handleAdd = async (item) => {
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/watchlist/add`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(item),
-      });
-      const data = await res.json();
-      toast.success(`${item.symbol} ${data.status === 'added' ? 'added to' : 'updated in'} watchlist`);
-      fetchSummary();
-    } catch (e) {
-      toast.error('Failed to add stock');
-    }
+  const toggleExpand = (type) => {
+    setExpanded(prev => prev === type ? null : type);
   };
 
-  const handleRemove = async (symbol) => {
-    try {
-      await fetch(`${BACKEND_URL}/api/watchlist/${symbol}`, { method: 'DELETE' });
-      toast.success(`${symbol} removed from watchlist`);
-      fetchSummary();
-    } catch (e) {
-      toast.error('Failed to remove stock');
-    }
-  };
+  const allStrategies = Object.keys(STRATEGY_ICONS);
+  const portfolioMap = {};
+  for (const p of portfolios) {
+    portfolioMap[p.type] = p;
+  }
 
-  const items = summary?.items || [];
-  const hasPortfolio = items.some(i => i.entry_price > 0 && i.quantity > 0);
+  const totalPnl = overview?.total_pnl || 0;
+  const totalPnlPct = overview?.total_pnl_pct || 0;
 
   return (
-    <div className="p-4 sm:p-6 space-y-5 max-w-[1920px]" data-testid="watchlist-page">
+    <div className="p-4 sm:p-6 space-y-5 max-w-[1920px]" data-testid="portfolio-page">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl sm:text-2xl font-display font-bold text-[hsl(var(--foreground))]" data-testid="watchlist-title">
-            Portfolio & Watchlist
+          <h1 className="text-xl sm:text-2xl font-display font-bold text-[hsl(var(--foreground))]" data-testid="portfolio-title">
+            Autonomous Portfolios
           </h1>
           <p className="text-sm text-[hsl(var(--muted-foreground))] mt-0.5">
-            Track your investments with live BSE prices
+            6 AI-managed strategies | God Mode 3-LLM consensus | Zero human intervention
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => setShowAdd(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] hover:opacity-90"
-            data-testid="add-stock-btn">
-            <Plus className="w-4 h-4" /> Add Stock
-          </button>
-          <button onClick={handleRefresh} disabled={refreshing}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))] text-[hsl(var(--foreground))] hover:bg-[hsl(var(--surface-3))] disabled:opacity-50"
-            data-testid="refresh-prices-btn">
-            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-            {refreshing ? 'Refreshing...' : 'Refresh'}
-          </button>
-        </div>
+        <button onClick={handleRefresh} disabled={refreshing}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))] text-[hsl(var(--foreground))] hover:bg-[hsl(var(--surface-3))] disabled:opacity-50"
+          data-testid="refresh-portfolios-btn">
+          <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+          Refresh
+        </button>
       </div>
 
-      {/* Portfolio Summary */}
-      {hasPortfolio && summary && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3" data-testid="portfolio-summary">
+      {/* Global Summary */}
+      {overview && (overview.active_portfolios > 0 || overview.pending_construction > 0) && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3" data-testid="global-summary">
           <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
-            <CardContent className="p-4">
-              <p className="text-xs text-[hsl(var(--muted-foreground))]">Invested</p>
-              <p className="text-lg font-mono font-bold text-[hsl(var(--foreground))]">{summary.total_invested?.toLocaleString('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })}</p>
+            <CardContent className="p-3">
+              <p className="text-[10px] text-[hsl(var(--muted-foreground))]">Total Capital</p>
+              <p className="text-base font-mono font-bold text-[hsl(var(--foreground))]">{(overview.total_capital / 100000).toFixed(0)}L</p>
             </CardContent>
           </Card>
           <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
-            <CardContent className="p-4">
-              <p className="text-xs text-[hsl(var(--muted-foreground))]">Current Value</p>
-              <p className="text-lg font-mono font-bold text-[hsl(var(--foreground))]">{summary.total_value?.toLocaleString('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })}</p>
+            <CardContent className="p-3">
+              <p className="text-[10px] text-[hsl(var(--muted-foreground))]">Current Value</p>
+              <p className="text-base font-mono font-bold text-[hsl(var(--foreground))]">{overview.total_value > 0 ? `${(overview.total_value / 100000).toFixed(1)}L` : '--'}</p>
             </CardContent>
           </Card>
-          <Card className={`border ${summary.total_pnl >= 0 ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-red-500/30 bg-red-500/5'}`}>
-            <CardContent className="p-4">
-              <p className="text-xs text-[hsl(var(--muted-foreground))]">Total P&L</p>
-              <p className={`text-lg font-mono font-bold ${summary.total_pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                {summary.total_pnl >= 0 ? '+' : ''}{summary.total_pnl?.toLocaleString('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })}
+          <Card className={`border ${totalPnl >= 0 ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-red-500/30 bg-red-500/5'}`}>
+            <CardContent className="p-3">
+              <p className="text-[10px] text-[hsl(var(--muted-foreground))]">Total P&L</p>
+              <p className={`text-base font-mono font-bold ${totalPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                {overview.total_value > 0 ? `${totalPnl >= 0 ? '+' : ''}${(totalPnl / 100000).toFixed(2)}L` : '--'}
               </p>
             </CardContent>
           </Card>
-          <Card className={`border ${summary.total_pnl_pct >= 0 ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-red-500/30 bg-red-500/5'}`}>
-            <CardContent className="p-4">
-              <p className="text-xs text-[hsl(var(--muted-foreground))]">Return %</p>
-              <p className={`text-lg font-mono font-bold ${summary.total_pnl_pct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                {summary.total_pnl_pct >= 0 ? '+' : ''}{summary.total_pnl_pct?.toFixed(2)}%
+          <Card className={`border ${totalPnlPct >= 0 ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-red-500/30 bg-red-500/5'}`}>
+            <CardContent className="p-3">
+              <p className="text-[10px] text-[hsl(var(--muted-foreground))]">Return %</p>
+              <p className={`text-base font-mono font-bold ${totalPnlPct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                {overview.total_value > 0 ? `${totalPnlPct >= 0 ? '+' : ''}${totalPnlPct.toFixed(2)}%` : '--'}
               </p>
             </CardContent>
           </Card>
           <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
-            <CardContent className="p-4">
-              <p className="text-xs text-[hsl(var(--muted-foreground))]">Winners</p>
-              <p className="text-lg font-mono font-bold text-emerald-400">{summary.winners}</p>
+            <CardContent className="p-3">
+              <p className="text-[10px] text-[hsl(var(--muted-foreground))]">Active</p>
+              <p className="text-base font-mono font-bold text-emerald-400">{overview.active_portfolios}/6</p>
             </CardContent>
           </Card>
           <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
-            <CardContent className="p-4">
-              <p className="text-xs text-[hsl(var(--muted-foreground))]">Losers</p>
-              <p className="text-lg font-mono font-bold text-red-400">{summary.losers}</p>
+            <CardContent className="p-3">
+              <p className="text-[10px] text-[hsl(var(--muted-foreground))]">Constructing</p>
+              <p className="text-base font-mono font-bold text-amber-400">{overview.pending_construction}</p>
             </CardContent>
           </Card>
         </div>
       )}
 
-      {/* Watchlist Items */}
+      {/* Portfolio Cards */}
       {loading ? (
-        <div className="space-y-3" data-testid="watchlist-loading">
-          {[...Array(4)].map((_, i) => <div key={i} className="h-20 rounded-lg bg-[hsl(var(--surface-2))] animate-pulse" />)}
+        <div className="space-y-3" data-testid="loading-portfolios">
+          {[...Array(6)].map((_, i) => <div key={i} className="h-28 rounded-xl bg-[hsl(var(--surface-2))] animate-pulse" />)}
         </div>
-      ) : items.length === 0 ? (
-        <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
-          <CardContent className="p-12 text-center">
-            <Briefcase className="w-12 h-12 mx-auto mb-4 text-[hsl(var(--muted-foreground))]/40" />
-            <h3 className="text-lg font-semibold text-[hsl(var(--foreground))] mb-2" data-testid="empty-watchlist-msg">No Stocks Yet</h3>
-            <p className="text-sm text-[hsl(var(--muted-foreground))] mb-4">Start building your portfolio by adding stocks to your watchlist.</p>
-            <button onClick={() => setShowAdd(true)}
-              className="px-6 py-2.5 rounded-lg text-sm font-medium bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]"
-              data-testid="add-first-stock-btn">
-              <Plus className="w-4 h-4 inline mr-2" /> Add First Stock
-            </button>
-          </CardContent>
-        </Card>
       ) : (
-        <div className="space-y-2" data-testid="watchlist-items">
-          {items.map((item, idx) => (
-            <div key={item.symbol}
-              className="group flex items-center gap-4 p-4 rounded-lg bg-[hsl(var(--card))] border border-[hsl(var(--border))] hover:border-[hsl(var(--primary))]/30 transition-colors"
-              data-testid={`watchlist-item-${idx}`}>
-
-              {/* Symbol & Name */}
-              <div className="min-w-0 flex-shrink-0 w-36">
-                <span className="font-mono text-sm font-bold text-[hsl(var(--primary))]">{item.symbol}</span>
-                {item.name && <p className="text-xs text-[hsl(var(--muted-foreground))] truncate">{item.name.slice(0, 25)}</p>}
-              </div>
-
-              {/* LTP & Change */}
-              <div className="flex-shrink-0 w-28 text-right">
-                {item.ltp ? (
-                  <>
-                    <p className="text-sm font-mono font-semibold text-[hsl(var(--foreground))]">
-                      <IndianRupee className="w-3 h-3 inline" />{item.ltp?.toFixed(2)}
-                    </p>
-                    <p className={`text-xs font-mono flex items-center justify-end gap-0.5 ${item.change >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                      {item.change >= 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-                      {item.change >= 0 ? '+' : ''}{item.change_pct?.toFixed(2)}%
-                    </p>
-                  </>
-                ) : (
-                  <p className="text-xs text-[hsl(var(--muted-foreground))]">No price</p>
-                )}
-              </div>
-
-              {/* Entry Price */}
-              <div className="hidden sm:block flex-shrink-0 w-24 text-right">
-                {item.entry_price > 0 ? (
-                  <>
-                    <p className="text-xs text-[hsl(var(--muted-foreground))]">Entry</p>
-                    <p className="text-sm font-mono text-[hsl(var(--foreground))]">{item.entry_price?.toFixed(2)}</p>
-                  </>
-                ) : null}
-              </div>
-
-              {/* Qty */}
-              <div className="hidden sm:block flex-shrink-0 w-16 text-right">
-                {item.quantity > 0 && (
-                  <>
-                    <p className="text-xs text-[hsl(var(--muted-foreground))]">Qty</p>
-                    <p className="text-sm font-mono text-[hsl(var(--foreground))]">{item.quantity}</p>
-                  </>
-                )}
-              </div>
-
-              {/* P&L */}
-              <div className="flex-1 text-right">
-                {item.total_pnl !== undefined ? (
-                  <>
-                    <p className={`text-sm font-mono font-semibold ${item.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                      {item.pnl >= 0 ? '+' : ''}{item.total_pnl?.toLocaleString('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })}
-                    </p>
-                    <p className={`text-xs font-mono ${item.pnl_pct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                      {item.pnl_pct >= 0 ? '+' : ''}{item.pnl_pct?.toFixed(2)}%
-                    </p>
-                  </>
-                ) : item.ltp ? (
-                  <div className="flex items-center justify-end gap-1">
-                    {item.change_pct >= 0 ?
-                      <TrendingUp className="w-4 h-4 text-emerald-400" /> :
-                      <TrendingDown className="w-4 h-4 text-red-400" />
-                    }
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4" data-testid="portfolio-grid">
+          {allStrategies.map(type => {
+            const p = portfolioMap[type];
+            if (!p) {
+              // Not yet started
+              const cfg = strategies[type] || PORTFOLIO_STRATEGIES_FALLBACK[type] || {};
+              const Icon = STRATEGY_ICONS[type] || BarChart3;
+              const colors = STRATEGY_COLORS[type] || '';
+              return (
+                <div key={type} className={`p-4 rounded-xl border bg-gradient-to-br ${colors} opacity-50`} data-testid={`portfolio-card-${type}`}>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-[hsl(var(--surface-1))] flex items-center justify-center">
+                      <Icon className="w-5 h-5 text-[hsl(var(--muted-foreground))]" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-semibold text-[hsl(var(--foreground))]">{cfg.name || type.replace(/_/g, ' ')}</h3>
+                      <div className="flex items-center gap-2 mt-1">
+                        <Loader2 className="w-3 h-3 animate-spin text-amber-400" />
+                        <span className="text-xs text-amber-400">Queued for construction...</span>
+                      </div>
+                    </div>
                   </div>
-                ) : null}
-              </div>
-
-              {/* Notes */}
-              {item.notes && (
-                <div className="hidden lg:block flex-shrink-0 max-w-32">
-                  <p className="text-xs text-[hsl(var(--muted-foreground))] truncate">{item.notes}</p>
                 </div>
-              )}
-
-              {/* Delete */}
-              <button onClick={() => handleRemove(item.symbol)}
-                className="flex-shrink-0 p-2 rounded-lg text-[hsl(var(--muted-foreground))] hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-opacity"
-                data-testid={`remove-${item.symbol}`}>
-                <Trash2 className="w-4 h-4" />
-              </button>
-            </div>
-          ))}
+              );
+            }
+            return (
+              <PortfolioCard
+                key={type}
+                portfolio={p}
+                strategies={strategies}
+                onExpand={toggleExpand}
+                expanded={expanded === type}
+              />
+            );
+          })}
         </div>
       )}
 
-      <AddStockModal open={showAdd} onClose={() => setShowAdd(false)} stocks={stocks} onAdd={handleAdd} />
+      {/* Rebalance Activity Log */}
+      {rebalanceLogs.length > 0 && <RebalanceLog logs={rebalanceLogs} />}
     </div>
   );
 }
+
+const PORTFOLIO_STRATEGIES_FALLBACK = {
+  bespoke_forward_looking: { name: 'Bespoke Forward Looking' },
+  quick_entry: { name: 'Quick Entry' },
+  long_term: { name: 'Long Term Compounder' },
+  swing: { name: 'Swing Trader' },
+  alpha_generator: { name: 'Alpha Generator' },
+  value_stocks: { name: 'Value Stocks' },
+};

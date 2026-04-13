@@ -44,9 +44,10 @@ from services.bse_price_service import (
     get_bse_quote, get_bse_bulk_quotes, get_bse_gainers, get_bse_losers,
     get_bse_near_52w, get_bse_advance_decline, get_scrip_code_map,
 )
-from services.watchlist_service import (
-    add_to_watchlist, remove_from_watchlist, get_watchlist,
-    get_watchlist_with_prices, update_watchlist_item, get_watchlist_summary,
+from services.portfolio_engine import (
+    get_all_portfolios, get_portfolio, get_rebalance_log,
+    get_portfolio_overview, construct_portfolio, update_portfolio_prices,
+    evaluate_rebalancing, start_portfolio_daemon, PORTFOLIO_STRATEGIES,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -126,6 +127,11 @@ async def lifespan(app: FastAPI):
         start_pdf_extraction_daemon(MONGO_URL, DB_NAME)
     except Exception as e:
         logger.error(f"PDF extraction daemon start failed (non-fatal): {e}")
+    # Start autonomous portfolio daemon
+    try:
+        start_portfolio_daemon(MONGO_URL, DB_NAME)
+    except Exception as e:
+        logger.error(f"Portfolio daemon start failed (non-fatal): {e}")
     yield
     app.mongodb_client.close()
 
@@ -1097,60 +1103,67 @@ async def bse_advance_decline():
     return get_bse_advance_decline()
 
 
-# ── Watchlist / Portfolio Endpoints ──────────────────────────────────────────
+# ── Autonomous Portfolio Endpoints ────────────────────────────────────────────
 
-class WatchlistAddRequest(BaseModel):
-    symbol: str
-    scrip_code: str = ""
-    name: str = ""
-    notes: str = ""
-    entry_price: float = 0
-    quantity: int = 0
-
-
-class WatchlistUpdateRequest(BaseModel):
-    notes: Optional[str] = None
-    entry_price: Optional[float] = None
-    quantity: Optional[int] = None
-
-
-@app.post("/api/watchlist/add")
-async def watchlist_add(req: WatchlistAddRequest):
-    """Add a stock to the watchlist."""
+@app.get("/api/portfolios/overview")
+async def portfolio_overview():
+    """Get high-level overview of all 6 autonomous portfolios."""
     db = app.db
-    return await add_to_watchlist(
-        db, req.symbol, req.scrip_code, req.name, req.notes, req.entry_price, req.quantity
-    )
+    return await get_portfolio_overview(db)
 
 
-@app.delete("/api/watchlist/{symbol}")
-async def watchlist_remove(symbol: str):
-    """Remove a stock from the watchlist."""
+@app.get("/api/portfolios")
+async def portfolios_list():
+    """Get all portfolios with holdings."""
     db = app.db
-    return await remove_from_watchlist(db, symbol)
+    portfolios = await get_all_portfolios(db)
+    return {"portfolios": portfolios, "strategies": PORTFOLIO_STRATEGIES}
 
 
-@app.put("/api/watchlist/{symbol}")
-async def watchlist_update(symbol: str, req: WatchlistUpdateRequest):
-    """Update a watchlist item."""
+@app.get("/api/portfolios/{strategy_type}")
+async def portfolio_detail(strategy_type: str):
+    """Get a specific portfolio with all holdings."""
     db = app.db
-    return await update_watchlist_item(db, symbol, req.notes, req.entry_price, req.quantity)
+    p = await get_portfolio(db, strategy_type)
+    if not p:
+        raise HTTPException(status_code=404, detail="Portfolio not found")
+    return p
 
 
-@app.get("/api/watchlist")
-async def watchlist_list(with_prices: bool = False):
-    """Get watchlist items, optionally with live BSE prices."""
+@app.post("/api/portfolios/{strategy_type}/refresh-prices")
+async def portfolio_refresh_prices(strategy_type: str):
+    """Manually trigger price refresh for a portfolio."""
     db = app.db
-    if with_prices:
-        return {"items": await get_watchlist_with_prices(db)}
-    return {"items": await get_watchlist(db)}
+    result = await update_portfolio_prices(db, strategy_type)
+    if not result:
+        raise HTTPException(status_code=404, detail="Portfolio not found or not active")
+    return result
 
 
-@app.get("/api/watchlist/summary")
-async def watchlist_summary():
-    """Get portfolio summary with P&L calculations."""
+@app.post("/api/portfolios/{strategy_type}/construct")
+async def portfolio_construct(strategy_type: str):
+    """Manually trigger portfolio construction (normally automatic)."""
     db = app.db
-    return await get_watchlist_summary(db)
+    if strategy_type not in PORTFOLIO_STRATEGIES:
+        raise HTTPException(status_code=400, detail="Invalid strategy type")
+    result = await construct_portfolio(db, strategy_type)
+    return result
+
+
+@app.get("/api/portfolios/rebalance-log/{strategy_type}")
+async def portfolio_rebalance_log(strategy_type: str, limit: int = 20):
+    """Get rebalancing history for a portfolio."""
+    db = app.db
+    logs = await get_rebalance_log(db, strategy_type, limit)
+    return {"logs": logs}
+
+
+@app.get("/api/portfolios/rebalance-log-all/recent")
+async def all_rebalance_logs(limit: int = 30):
+    """Get recent rebalancing logs across all portfolios."""
+    db = app.db
+    logs = await get_rebalance_log(db, limit=limit)
+    return {"logs": logs}
 
 
 # ── Signal Alerts Endpoint ───────────────────────────────────────────────────
