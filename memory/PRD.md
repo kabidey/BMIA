@@ -1,86 +1,65 @@
 # BMIA - Bharat Market Intel Agent
 
 ## Problem Statement
-Build a Tier-1 Quant Analyst specializing in Indian Equity and Commodity markets. Process massive market data to provide high-conviction investment recommendations by synthesizing Technical, Fundamental, and Sentiment data using yfinance, nselib, real-time news scraping, and LLMs.
-
-## Core Requirements
-- Real-time market intelligence dashboard (Market Cockpit)
-- Symbol analysis with 25+ technical and 30+ fundamental indicators
-- AI-driven signal generation using LLMs
-- God Mode: Multi-LLM consensus (OpenAI GPT-4.1 + Claude Sonnet + Gemini Flash)
-- Full-market NSE scanner (2400+ stocks with pre-filtering)
-- Signal tracking, evaluation, and performance reporting
-- BSE Corporate Filings scraping with AI RAG analysis
-- 6 Autonomous AI-managed portfolios with hardened screening & auto-rebalancing
-- Portfolio analytics dashboard with sector allocation, risk metrics, performance comparison
-
-## Tech Stack
-- **Frontend**: React, Tailwind CSS, Shadcn UI, Recharts
-- **Backend**: FastAPI, Python
-- **Database**: MongoDB
-- **APIs**: yfinance, nselib, bse, pdfplumber, Emergent LLM Key (OpenAI/Anthropic/Gemini)
+Build a Tier-1 Quant Analyst specializing in Indian Equity and Commodity markets with autonomous AI-managed portfolios backed by quantitative guardrails and historical evidence.
 
 ## What's Implemented
 
-### Phase 1-8: Core → AI → Cockpit → God Mode → Scanner → Guidance → RAG ✅
-### Phase 9: PDF Extraction (Simplified) ✅
-### Phase 10: Autonomous Portfolio Engine ✅
-### Server Refactoring ✅ (Apr 13, 2026)
-### Hardened God Mode Pipeline v2 ✅ (Apr 13, 2026)
+### Phase 1-10: Core Intelligence Platform ✅
+- Market Cockpit, Symbol Analysis, God Mode 3-LLM, Full Market Scanner, Signal Tracking, BSE Guidance AI RAG, PDF Extraction, Autonomous Portfolio Engine
 
-### Full Portfolio Rebuild with Hardened Pipeline ✅ (Apr 13, 2026)
-- All 6 portfolios deleted and reconstructed using hardened v2 pipeline
-- Each portfolio: NSE Universe (2456) → Advanced Screener → Deep Enrichment → BSE Guidance → 3-LLM Consensus
-- All holdings have: technical_signal, fundamental_grade, filing_insight, risk_flag, consensus_votes
-- All 6 active: bespoke_forward_looking, quick_entry, long_term, swing, alpha_generator, value_stocks
+### Server Refactoring ✅ — server.py from 1200→90 lines, 7 route modules, 2 daemon modules
+
+### Hardened God Mode Pipeline v3 ✅ (Apr 13, 2026)
+**5 Quantitative Guardrails (code enforces, not LLM):**
+1. **Data Validation** — Sanitizes yfinance garbage BEFORE LLM sees it (dividend yield capped at 20%, P/E 0-500, NaN/Inf removed)
+2. **Sector Diversification** — Code enforces max 3 stocks per sector, no exceptions
+3. **Volatility-Based Sizing** — Inverse ATR weighting (less volatile = higher weight, 5-20% range)
+4. **Quantitative Factor Scoring** — Value/Quality/Growth/Momentum composite per strategy
+5. **Stop-Loss Enforcement** — Programmatic 8% hard stop + 20% auto-take-profit in rebalancing daemon
+
+### 5-Year Backtest Engine ✅ (Apr 13, 2026)
+- Lookback analysis for each portfolio's holdings vs Nifty 50 benchmark
+- Metrics: CAGR, Sharpe Ratio, Max Drawdown, Alpha, Win Rate, Annual Volatility
+- Cumulative return chart with benchmark comparison
+- Cached for 24h in `portfolio_backtests` collection
+- **Results**: All 6 strategies show positive alpha vs Nifty 50
 
 ### Portfolio Analytics Dashboard ✅ (Apr 13, 2026)
-- New `/analytics` page with full sector allocation, risk metrics, performance comparison
-- **Global Sector Allocation** pie chart (Recharts) showing all sectors across 6 portfolios
-- **P&L by Strategy** horizontal bar chart comparing returns
-- **Risk Radar** chart (beta vs win rate) when data available
-- **Risk Metrics Table**: Strategy, Invested, Value, Return, Beta, Volatility, Win%, Top3 Concentration, Best/Worst performers, Pipeline version
-- **Per-portfolio sector breakdowns** (6 individual pie charts)
-- **Aggregate metrics**: Total Invested, Current Value, Total Return, P&L, Avg Beta, Active count
+- Sector allocation pie charts (global + per-portfolio)
+- P&L comparison bar chart, Risk radar
+- Risk metrics table (Beta, Volatility, Win%, Concentration, Pipeline version)
+- 5-Year Backtest Evidence section with area charts and Nifty 50 benchmark
 
-### Deployment Bug Fixes ✅ (Apr 13, 2026)
-- Fixed `NoneType has no attribute 'upper'` — None guards in market_service
-- Fixed `Out of range float values not JSON compliant` — NaN/Infinity sanitizer
-- Fixed BSE API parameter change (`group` → `name`)
+## Key Backtest Results (5Y Lookback)
+| Strategy | CAGR | Alpha | Sharpe | Max DD |
+|----------|------|-------|--------|--------|
+| Bespoke Forward Looking | 52.4% | +41.7% | 2.43 | -5.2% |
+| Quick Entry | 41.4% | +30.7% | 1.15 | -13.6% |
+| Long Term Compounder | 32.9% | +22.2% | 2.05 | -7.5% |
+| Alpha Generator | 32.4% | +20.8% | 1.25 | -7.5% |
+| Value Stocks | 31.6% | +22.6% | 1.12 | -21.8% |
+| Swing Trader | 12.4% | +6.3% | 0.41 | -9.5% |
 
 ## Architecture
 ```
 /app/backend/
-  server.py                       # FastAPI entry (slim ~90 lines)
-  routes/
-    symbols.py, market.py, analysis.py, signals.py, guidance.py, bse.py, portfolios.py (+ analytics endpoint)
-  daemons/
-    evaluation_scheduler.py, market_cache.py
+  server.py                       # FastAPI entry (~90 lines)
+  routes/ (7 modules)
+  daemons/ (2 modules)
   services/
-    portfolio_engine.py           # HARDENED v2 — 6-stage autonomous pipeline
-    intelligence_engine.py, full_market_scanner.py, dashboard_service.py
-    signal_service.py, guidance_service.py, guidance_ai_service.py
-    pdf_extractor_service.py, bse_price_service.py, market_service.py
+    portfolio_engine.py           # HARDENED v3 — 6-stage pipeline with guardrails
+    portfolio_hardening.py        # NEW — validation, factor scoring, constraints, backtesting
+    intelligence_engine.py, full_market_scanner.py, dashboard_service.py, etc.
 /app/frontend/src/
   pages/
+    PortfolioAnalytics.js         # Analytics + 5Y Backtest Evidence
     Watchlist.js                  # Autonomous Portfolios with enriched data
-    PortfolioAnalytics.js         # NEW — Analytics dashboard
-    MarketOverview.js, SymbolAnalysis.js, BatchScanner.js, etc.
-  components/layout/
-    Sidebar.js (8 nav items now), SignalAlerts.js, SearchCommand.js
 ```
 
-## Key API Endpoints
-- `GET /api/portfolios/overview` - All 6 portfolios summary
-- `GET /api/portfolios/analytics` - Sector allocation, risk metrics, performance comparison
-- `GET /api/portfolios/{type}` - Portfolio with enriched holdings
-- `GET /api/portfolios/rebalance-log-all/recent` - Rebalance history
-- `GET /api/market/cockpit` - Dashboard metrics
-- `POST /api/batch/god-scan` - Full market scan
-- `POST /api/guidance/ask` - BSE filings RAG
-
 ## Backlog
-- P1: Monitor continuous rebalancing execution (daemon runs daily 4-6 PM IST)
-- P2: WebSocket/SSE for real-time Market Cockpit streaming
-- P2: CSV/PDF export for analysis/signals
-- Future: Benchmark comparison (portfolio returns vs NIFTY 50)
+- P1: Rebuild all 6 portfolios with hardened v3 pipeline (current portfolios use v2)
+- P2: CSV/PDF export for portfolio reports
+- P2: WebSocket/SSE for real-time Market Cockpit
+- Future: Walk-forward strategy backtest (not just lookback)
+- Future: Benchmark comparison dashboard (returns vs Nifty 50 ETF)
