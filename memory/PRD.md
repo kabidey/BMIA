@@ -51,17 +51,36 @@ Build a Tier-1 Quant Analyst specializing in Indian Equity and Commodity markets
 - Rebalance history log with incoming/outgoing stock rationale
 
 ### BSE Price Data ✅ (Apr 13, 2026)
-- Live quotes via `bse` library (gainers, losers, 52-week H/L, advance/decline)
-
 ### Signal Alert Notifications ✅ (Apr 13, 2026)
-- Toast popups for TARGET_HIT / STOP_LOSS_HIT via polling
-
 ### Auto-Evaluation Scheduler ✅
+
+### Server Refactoring ✅ (Apr 13, 2026)
+- `server.py` reduced from ~1200 lines to ~90 lines
+- Routes extracted to `/app/backend/routes/` (7 modules: symbols, market, analysis, signals, guidance, bse, portfolios)
+- Background daemons extracted to `/app/backend/daemons/` (evaluation_scheduler, market_cache)
+- All endpoints fully functional and tested
+
+### Enhanced Portfolio UI ✅ (Apr 13, 2026)
+- Tabbed interface per portfolio: Holdings tab + Rebalance History tab
+- SwapCard component showing incoming/outgoing stock rationales side-by-side
+- Per-portfolio rebalance history with AI analysis summaries
+- Global rebalance activity feed at bottom of page
 
 ## Architecture
 ```
 /app/backend/
-  server.py                       # FastAPI main
+  server.py                       # FastAPI entry (slim ~90 lines)
+  routes/
+    symbols.py                    # Symbol & sector lookup
+    market.py                     # Cockpit, overview, heatmap
+    analysis.py                   # Stock analysis, batch, god-scan
+    signals.py                    # Signal CRUD, evaluation, alerts
+    guidance.py                   # BSE filings, AI RAG, PDF
+    bse.py                        # BSE price data
+    portfolios.py                 # Autonomous portfolio endpoints
+  daemons/
+    evaluation_scheduler.py       # Auto-evaluate signals every 60s
+    market_cache.py               # Background overview/heatmap refresh
   services/
     portfolio_engine.py           # Autonomous 6-portfolio engine
     intelligence_engine.py        # God Mode multi-LLM
@@ -72,7 +91,6 @@ Build a Tier-1 Quant Analyst specializing in Indian Equity and Commodity markets
     guidance_ai_service.py        # RAG analysis
     pdf_extractor_service.py      # Inline PDF text extraction
     bse_price_service.py          # BSE live prices
-    ...
 /app/frontend/src/
   pages/                          # MarketOverview, SymbolAnalysis, BatchScanner,
                                   # SignalDashboard, TrackRecord, Guidance, Watchlist (Portfolios)
@@ -91,6 +109,8 @@ Build a Tier-1 Quant Analyst specializing in Indian Equity and Commodity markets
 - `GET /api/bse/quote/{scrip_code}` - Live BSE prices
 
 ## Backlog
+- P1: Verify continuous rebalancing execution over multiple days (daemon runs daily 4-6 PM IST)
 - P2: WebSocket/SSE for real-time Market Cockpit streaming
 - P2: CSV/PDF export for analysis/signals
-- P3: server.py refactoring (move daemons to workers/ module)
+- Future: Portfolio analytics dashboard (sector allocation, risk metrics, beta, volatility)
+- Future: Benchmark comparison (portfolio returns vs NIFTY 50)
