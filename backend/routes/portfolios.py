@@ -1,5 +1,6 @@
 """Autonomous portfolio routes."""
 import math
+import threading
 from datetime import datetime, timezone
 from collections import defaultdict
 from fastapi import APIRouter, HTTPException, Request
@@ -11,6 +12,9 @@ from services.portfolio_engine import (
 )
 
 router = APIRouter(prefix="/api", tags=["portfolios"])
+
+# Track in-progress background simulations
+_simulation_locks = {}  # strategy_type -> bool
 
 
 @router.get("/portfolios/overview")
@@ -197,6 +201,99 @@ async def portfolio_backtest(strategy_type: str, request: Request):
     )
 
     return result
+
+
+@router.get("/portfolios/simulation/{strategy_type}")
+async def portfolio_simulation(strategy_type: str, request: Request):
+    """Run LSTM + Monte Carlo forward simulation for a portfolio.
+    Returns cached result if available, otherwise triggers background computation."""
+    from services.portfolio_simulation import run_portfolio_simulation
+    import logging
+    logger = logging.getLogger(__name__)
+
+    db = request.app.db
+    portfolio = await get_portfolio(db, strategy_type)
+    if not portfolio:
+        raise HTTPException(status_code=404, detail="Portfolio not found")
+
+    # Check cache (12h TTL)
+    cached = await db.portfolio_simulations.find_one(
+        {"portfolio_type": strategy_type}, {"_id": 0}
+    )
+    if cached:
+        cached_at = cached.get("computed_at", "")
+        try:
+            ct = datetime.fromisoformat(cached_at)
+            if (datetime.now(timezone.utc) - ct.replace(tzinfo=timezone.utc)).total_seconds() < 43200:
+                cached["status"] = "complete"
+                return cached
+        except Exception:
+            pass
+
+    # If already computing, return status
+    if _simulation_locks.get(strategy_type):
+        return {"status": "computing", "portfolio_type": strategy_type,
+                "message": f"LSTM + Monte Carlo simulation in progress for {strategy_type}..."}
+
+    # Trigger background computation
+    holdings = portfolio.get("holdings", [])
+    symbols = [h["symbol"] for h in holdings if h.get("symbol")]
+    weights = [h.get("weight", 10.0) / 100.0 for h in holdings]
+    portfolio_value = portfolio.get("current_value") or portfolio.get("actual_invested") or INITIAL_CAPITAL
+    strategy_name = portfolio.get("name", strategy_type)
+
+    from motor.motor_asyncio import AsyncIOMotorClient
+    import os
+    mongo_url = os.environ["MONGO_URL"]
+    db_name = os.environ["DB_NAME"]
+
+    def _run_simulation_bg():
+        """Background thread to run simulation and store result."""
+        import pymongo
+        try:
+            _simulation_locks[strategy_type] = True
+            result = run_portfolio_simulation(symbols, weights, portfolio_value, strategy_name)
+            if result.get("error"):
+                logger.error(f"Simulation failed for {strategy_type}: {result['error']}")
+                return
+
+            result["portfolio_type"] = strategy_type
+            result["computed_at"] = datetime.now(timezone.utc).isoformat()
+            result["status"] = "complete"
+
+            # Sanitize NaN/Inf
+            def _sanitize(obj):
+                if isinstance(obj, dict):
+                    return {k: _sanitize(v) for k, v in obj.items()}
+                if isinstance(obj, list):
+                    return [_sanitize(v) for v in obj]
+                if isinstance(obj, float):
+                    if math.isnan(obj) or math.isinf(obj):
+                        return 0.0
+                return obj
+
+            result = _sanitize(result)
+
+            # Store in MongoDB using sync client
+            client = pymongo.MongoClient(mongo_url)
+            sync_db = client[db_name]
+            sync_db.portfolio_simulations.update_one(
+                {"portfolio_type": strategy_type},
+                {"$set": result},
+                upsert=True,
+            )
+            client.close()
+            logger.info(f"Simulation stored for {strategy_type}")
+        except Exception as e:
+            logger.error(f"Background simulation error for {strategy_type}: {e}")
+        finally:
+            _simulation_locks[strategy_type] = False
+
+    thread = threading.Thread(target=_run_simulation_bg, daemon=True)
+    thread.start()
+
+    return {"status": "computing", "portfolio_type": strategy_type,
+            "message": f"LSTM + Monte Carlo simulation started for {strategy_type}. Poll again in ~60s."}
 
 
 @router.get("/portfolios/rebalance-log/{strategy_type}")

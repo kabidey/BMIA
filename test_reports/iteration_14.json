@@ -1,0 +1,118 @@
+{
+  "summary": "Iteration 14 testing completed successfully. Verified new LSTM + Monte Carlo forward simulation engine. All 6 portfolios have working simulation endpoints returning complete data with fan charts, distribution histograms, and risk metrics. Frontend Analytics page displays 'Forward Simulation Engine' section with 'LSTM + Monte Carlo' badge and 6 simulation cards. 42/42 backend tests passed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "Backend: GET /api/health returns {status: 'ok'}",
+    "Backend: GET /api/portfolios/simulation/{strategy_type} returns status='complete' for all 6 strategies",
+    "Backend: Simulation response contains lstm_forecast with method='lstm' and annualized_expected_return_pct",
+    "Backend: LSTM expected returns are clamped to reasonable bounds (not >100% annualized)",
+    "Backend: Simulation response contains monte_carlo.fan_chart with ~52 weekly data points",
+    "Backend: Fan chart points have p5/p25/p50/p75/p95/mean fields in correct order",
+    "Backend: Simulation response contains monte_carlo.distribution_chart (histogram bins)",
+    "Backend: Simulation response contains monte_carlo.risk_metrics with var_95_pct, cvar_95_pct, probability_of_profit_pct, expected_return_pct, max_expected_drawdown_pct",
+    "Backend: CVaR is correctly <= VaR (more extreme tail risk)",
+    "Backend: Simulation response contains monte_carlo.terminal_stats with mean_value, median_value, worst_case_value, best_case_value",
+    "Backend: Swing Trader shows negative expected return (-0.02%) reflecting weak strategy",
+    "Backend: All 6 simulations are cached and complete",
+    "Backend: Simulation metadata includes strategy, stocks_simulated, portfolio_value, simulation_horizon, computation_time_sec",
+    "Backend: Monte Carlo simulation_params shows n_paths=10000, horizon_days=252",
+    "Backend: Fan chart progression from day 0 to day 252 with correct initial value",
+    "Frontend: Analytics page loads with 'Portfolio Analytics' title",
+    "Frontend: 'Forward Simulation Engine' header visible",
+    "Frontend: 'LSTM + Monte Carlo' badge visible",
+    "Frontend: 6 simulation cards visible (value_stocks, long_term, bespoke_forward_looking, quick_entry, swing, alpha_generator)",
+    "Frontend: 6 fan charts visible with 1-Year Forward Projection",
+    "Frontend: 6 distribution histograms visible (Terminal Return Distribution)",
+    "Frontend: 6 risk metrics grids visible with VaR(95%), CVaR(95%), Max Exp DD, Median Return, Range(25-75), P(Profit)",
+    "Frontend: Fan chart legends show Median (cyan solid), Mean (amber dashed), 25-75th, 5-95th percentile bands",
+    "Frontend: Terminal value summary shows Worst/Median/Best values",
+    "Frontend: LSTM volatility and compute time displayed for each card",
+    "Frontend: Expected return badges show correct values (Value Stocks: +63.2%, Swing: -0.02%, etc.)"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration14_simulation.py",
+    "/app/test_reports/pytest/iteration14_results.xml",
+    "/app/.screenshots/iteration14_analytics_top.png",
+    "/app/.screenshots/iteration14_simulation_section.png",
+    "/app/.screenshots/iteration14_simulation_cards.png",
+    "/app/.screenshots/iteration14_final_verification.png"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "LSTM model correctly implements ReturnLSTM with mu/log_sigma output for probabilistic forecasting",
+    "LSTM returns are properly clamped to ±0.002 daily (±50% annualized) to prevent hallucination",
+    "Monte Carlo uses GBM formula: S(t+1) = S(t) * exp((mu - sigma^2/2)*dt + sigma*sqrt(dt)*Z)",
+    "10,000 paths with 252-day horizon provides statistically robust simulation",
+    "Risk metrics correctly computed: VaR at 5th percentile, CVaR as mean of worst 5%",
+    "Simulation results cached in MongoDB with 12h TTL for performance",
+    "Background threading used for simulation computation to avoid blocking API"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration14_simulation.py"
+  ],
+  "success_rate": {
+    "backend": "100% (42/42 tests passed)",
+    "frontend": "100% (All simulation UI elements working)"
+  },
+  "test_credentials": "No auth required. Backend at https://bharat-quant-engine.preview.emergentagent.com",
+  "seed_data_creation": "Simulation data cached for all 6 portfolios in portfolio_simulations collection",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 14 verified the LSTM + Monte Carlo forward simulation feature. Key findings: (1) All 6 portfolios have working simulation endpoints at /api/portfolios/simulation/{strategy_type}. (2) Simulation returns: lstm_forecast (method, annualized_expected_return_pct, annualized_volatility_pct), monte_carlo (fan_chart, distribution_chart, risk_metrics, terminal_stats, simulation_params). (3) Frontend shows simulation cards with fan charts (median cyan, mean amber dashed), distribution histograms, and risk metrics grid. (4) Swing Trader correctly shows negative expected return (-0.02%) reflecting weak strategy. (5) Simulation results are cached for 12h in portfolio_simulations collection.",
+  "iteration_14_assessment": {
+    "simulation_feature": {
+      "status": "✅ FULLY WORKING",
+      "endpoints_tested": [
+        "/api/portfolios/simulation/value_stocks - E[R]=+63.2%, VaR95=19.31%, P(profit)=99.6%",
+        "/api/portfolios/simulation/long_term - E[R]=+45.72%, VaR95=4.5%, P(profit)=97%",
+        "/api/portfolios/simulation/bespoke_forward_looking - E[R]=+65.27%, VaR95=21.52%, P(profit)=99.7%",
+        "/api/portfolios/simulation/quick_entry - E[R]=+65.03%, VaR95=-3.33%, P(profit)=93.9%",
+        "/api/portfolios/simulation/swing - E[R]=-0.02%, VaR95=-28.24%, P(profit)=46.1%",
+        "/api/portfolios/simulation/alpha_generator - E[R]=+18.92%, VaR95=-21.02%, P(profit)=74.6%"
+      ],
+      "response_fields": [
+        "lstm_forecast: method, annualized_expected_return_pct, annualized_volatility_pct, historical_annual_return_pct, training_epochs, training_loss",
+        "monte_carlo.fan_chart: ~52 weekly points with day, week, p5, p25, p50, p75, p95, mean",
+        "monte_carlo.distribution_chart: histogram bins with return_pct, frequency",
+        "monte_carlo.risk_metrics: var_95_pct, cvar_95_pct, probability_of_profit_pct, expected_return_pct, max_expected_drawdown_pct, median_return_pct, return_range_25_75",
+        "monte_carlo.terminal_stats: mean_value, median_value, worst_case_value, best_case_value",
+        "monte_carlo.simulation_params: n_paths=10000, horizon_days=252, daily_mu, daily_sigma"
+      ]
+    },
+    "frontend_simulation_ui": {
+      "status": "✅ VERIFIED",
+      "components": [
+        "Forward Simulation Engine header with 'LSTM + Monte Carlo' badge",
+        "6 SimulationCard components with Brain icon",
+        "Fan charts showing 1-Year Forward Projection with percentile bands",
+        "Median line (cyan solid) and Mean line (amber dashed)",
+        "Terminal Return Distribution histograms",
+        "Risk metrics grid: VaR(95%), CVaR(95%), Max Exp DD, Median Return, Range(25-75), P(Profit)",
+        "Terminal value summary: Worst/Median/Best",
+        "LSTM volatility and compute time display"
+      ]
+    },
+    "lstm_model_review": {
+      "architecture": "2-layer LSTM with hidden_size=64, dropout=0.2",
+      "output": "Probabilistic (mu, log_sigma) for Gaussian return distribution",
+      "training": "100 epochs max with early stopping (patience=15)",
+      "clamping": "Daily mu capped at ±0.002 (~±50% annualized)",
+      "fallback": "Uses historical stats if <90 data points for LSTM"
+    },
+    "monte_carlo_review": {
+      "model": "Geometric Brownian Motion (GBM)",
+      "paths": "10,000 simulations",
+      "horizon": "252 trading days (1 year)",
+      "risk_free_rate": "6.5% (India 10Y)",
+      "seed": "Fixed seed=42 for reproducibility"
+    }
+  }
+}
