@@ -963,14 +963,21 @@ async def construct_portfolio(db, strategy_type: str):
     for name, result in zip(model_names, results):
         if isinstance(result, Exception):
             model_results[name] = {"error": str(result)}
+            logger.error(f"PORTFOLIO [{strategy_type}]: LLM {name} exception: {result}")
             continue
         if isinstance(result, dict) and "selections" in result:
             model_results[name] = result
             all_selections.append((name, result))
+            logger.info(f"PORTFOLIO [{strategy_type}]: LLM {name} returned {len(result.get('selections', []))} selections")
         elif isinstance(result, dict) and "error" in result:
             model_results[name] = result
+            logger.warning(f"PORTFOLIO [{strategy_type}]: LLM {name} returned error: {result.get('error', '')[:100]}")
+        else:
+            model_results[name] = {"error": f"Unexpected response type: {type(result)}"}
+            logger.warning(f"PORTFOLIO [{strategy_type}]: LLM {name} unexpected: {str(result)[:100]}")
 
     if not all_selections:
+        logger.error(f"PORTFOLIO [{strategy_type}]: All LLMs failed. Details: {json.dumps({k: v.get('error', 'no error key') if isinstance(v, dict) else str(v)[:50] for k, v in model_results.items()})}")
         return {"error": "All LLMs failed for portfolio construction", "details": model_results}
 
     # CONSENSUS: Count how many LLMs picked each stock
@@ -1578,7 +1585,7 @@ def start_portfolio_daemon(mongo_url: str, db_name: str):
     from motor.motor_asyncio import AsyncIOMotorClient
 
     def _daemon_loop():
-        logger.info("PORTFOLIO DAEMON: Started — Autonomous Mode (Hardened Pipeline v2)")
+        logger.info("PORTFOLIO DAEMON: Started — Autonomous Mode (Hardened Pipeline v3)")
         time.sleep(60)
 
         while True:
@@ -1599,7 +1606,7 @@ def start_portfolio_daemon(mongo_url: str, db_name: str):
 
                 if missing:
                     strategy = missing[0]
-                    logger.info(f"PORTFOLIO DAEMON: Constructing '{strategy}' with hardened pipeline...")
+                    logger.info(f"PORTFOLIO DAEMON: Constructing '{strategy}' with hardened v3 pipeline...")
                     loop.run_until_complete(db.portfolios.update_one(
                         {"type": strategy},
                         {"$set": {"type": strategy, "status": "constructing", "name": PORTFOLIO_STRATEGIES[strategy]["name"]}},
@@ -1617,6 +1624,10 @@ def start_portfolio_daemon(mongo_url: str, db_name: str):
                         loop.run_until_complete(db.portfolios.delete_one({"type": strategy}))
 
                     client.close()
+                    try:
+                        loop.run_until_complete(loop.shutdown_default_executor())
+                    except Exception:
+                        pass
                     loop.close()
                     time.sleep(60)
                     continue

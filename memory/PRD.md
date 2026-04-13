@@ -10,80 +10,73 @@ Build a Tier-1 Quant Analyst specializing in Indian Equity and Commodity markets
 
 ### Server Refactoring ✅ — server.py from 1200→90 lines, 7 route modules, 2 daemon modules
 
-### Hardened God Mode Pipeline v3 ✅ (Apr 13, 2026)
+### Hardened God Mode Pipeline v3 ✅
 **5 Quantitative Guardrails (code enforces, not LLM):**
-1. **Data Validation** — Sanitizes yfinance garbage BEFORE LLM sees it (dividend yield capped at 20%, P/E 0-500, NaN/Inf removed)
-2. **Sector Diversification** — Code enforces max 3 stocks per sector, no exceptions
-3. **Volatility-Based Sizing** — Inverse ATR weighting (less volatile = higher weight, 5-20% range)
-4. **Quantitative Factor Scoring** — Value/Quality/Growth/Momentum composite per strategy
-5. **Stop-Loss Enforcement** — Programmatic 8% hard stop + 20% auto-take-profit in rebalancing daemon
+1. Data Validation — Sanitizes yfinance garbage BEFORE LLM sees it
+2. Sector Diversification — max 3 stocks per sector
+3. Volatility-Based Sizing — Inverse ATR weighting
+4. Quantitative Factor Scoring — Value/Quality/Growth/Momentum composite
+5. Stop-Loss Enforcement — 8% hard stop + 20% auto-take-profit
 
-### 5-Year Backtest Engine ✅ (Apr 13, 2026)
-- Lookback analysis for each portfolio's holdings vs Nifty 50 benchmark
-- Metrics: CAGR, Sharpe Ratio, Max Drawdown, Alpha, Win Rate, Annual Volatility
-- Cached for 24h in `portfolio_backtests` collection
+### 5-Year Backtest Engine ✅
+- CAGR, Sharpe, Max Drawdown, Alpha vs Nifty 50 | Cached 24h
 
-### LSTM + Monte Carlo Forward Simulation Engine ✅ (Apr 13, 2026)
-- **LSTM Neural Network**: 2-layer LSTM (hidden=64, dropout=0.2) trained on 5Y daily portfolio returns
-- **Monte Carlo (GBM)**: 10,000 paths, 252 trading days, fan chart with percentile bands
-- **Risk Metrics**: VaR (95%/99%), CVaR, Probability of Profit, Max Expected Drawdown
-- Background computation (~100s), 12h MongoDB cache
+### LSTM + Monte Carlo Forward Simulation ✅
+- 2-layer LSTM + 10,000 GBM paths | VaR, CVaR, P(Profit) | 12h cache
 
-### Deep Hardening: Batch Scanner ✅ (Apr 13, 2026)
-- **ThreadPoolExecutor** with max_workers=5 for parallel stock fetching (was sequential)
-- **Per-stock 8s timeout** prevents yfinance hangs from stalling scan
-- **Overall 90s batch timeout** on shortlist building
-- **120s asyncio.wait_for** on LLM ensemble — prevents "runs forever" bug
-- **Data sanitization**: `validate_fundamentals()` + `validate_technical()` applied before LLM sees data
-- **Factor scoring** attached to scanner results
+### Deep Hardening: Batch Scanner ✅
+- ThreadPoolExecutor (8s/stock), 120s LLM timeout, data sanitization, factor scoring
 
-### Deep Hardening: AI Signal Dashboard ✅ (Apr 13, 2026)
-- **Code-enforced signal bounds** (`_validate_signal_bounds()`):
-  - BUY targets must be > entry, SELL targets must be < entry (auto-fixed if violated)
-  - Stop-loss correctly positioned relative to entry (auto-fixed)
-  - Targets capped at ±30% from entry (no moonshot hallucinations)
-  - Stop-loss max 15% distance from entry
-  - Confidence clamped 10-95, horizon clamped 1-90 days
-  - Risk/reward ratio computed from validated values
-- **Input sanitization**: Raw data to LLMs goes through `validate_fundamentals()`/`validate_technical()`
-- **Return clamping**: ±100% max on evaluated returns
+### Deep Hardening: AI Signals ✅
+- Code-enforced signal bounds (targets, stops, confidence, R/R)
 
-### Deep Hardening: Track Record ✅ (Apr 13, 2026)
-- **`_sf()` sanitizer**: All float values NaN/Inf-safe before metrics computation
-- **Data quality field**: `data_quality.status` (good/insufficient/no_data), `closed_count`, `stale_open_signals`, `zero_return_closed`
-- **Return sanitization**: All `return_pct` values sanitized upfront before any calculation
+### Deep Hardening: Track Record ✅
+- NaN/Inf-safe metrics, data quality field
 
-### Portfolio Analytics Dashboard ✅
-- Sector allocation pie charts, P&L bar chart, Risk radar
-- Risk metrics table, 5-Year Backtest Evidence, Forward Simulation Engine
+### Portfolio v3 Rebuild ✅ (Apr 13, 2026)
+- POST /api/portfolios/rebuild-all: Deletes all portfolios + caches, daemon auto-reconstructs with v3 pipeline
+- Daemon updated with proper executor shutdown to prevent event loop issues
+- bespoke_forward_looking constructed with v3 (10 stocks, volatility-based weights), 5 remaining auto-constructing
+
+### Walk-Forward Simulation Tracking ✅ (Apr 13, 2026)
+- GET /api/portfolios/walk-forward — all tracking records
+- GET /api/portfolios/walk-forward/{strategy_type} — per-portfolio forecast vs actual
+- Auto-creates first snapshot from simulation cache + live portfolio state
+- Frontend: WalkForwardSection shows Forecast (MC Expected Return, P(Profit)) vs Actual (Live PnL, Portfolio Value) + Deviation
+
+### Scanner History ✅ (Apr 13, 2026)
+- Completed God Mode scans auto-saved to MongoDB (scanner_history collection)
+- GET /api/batch/scan-history — expandable past scan records
+- Frontend: ScannerHistory component with expandable cards showing full results table per scan
+- Tracks scan_id, models_succeeded, pipeline stats, results_summary per scan
 
 ## Architecture
 ```
 /app/backend/
   server.py                       # FastAPI entry (~90 lines)
-  routes/ (7 modules)
-  daemons/ (2 modules)
+  routes/ (7 modules)             # portfolios.py has rebuild-all + walk-forward
+  daemons/ (2 modules)            # evaluation_scheduler, market_cache
   services/
-    portfolio_engine.py           # HARDENED v3 — 6-stage pipeline
-    portfolio_hardening.py        # Validation, factor scoring, constraints, backtesting
-    portfolio_simulation.py       # LSTM + Monte Carlo forward simulation
-    full_market_scanner.py        # HARDENED — timeouts, sanitization, factor scoring
-    signal_service.py             # HARDENED — code-enforced signal bounds
-    performance_service.py        # HARDENED — NaN-safe, data quality
-    intelligence_engine.py, dashboard_service.py, etc.
-/app/frontend/src/
-  pages/
-    PortfolioAnalytics.js         # Analytics + Backtests + Simulations
-    BatchScanner.js               # HARDENED — timeout-safe polling
-    SignalDashboard.js            # Signal tracking
-    TrackRecord.js                # Performance history
-    Watchlist.js, MarketOverview.js, etc.
+    portfolio_engine.py           # v3 daemon with proper executor shutdown
+    portfolio_hardening.py        # Validation, factor scoring, backtesting
+    portfolio_simulation.py       # LSTM + Monte Carlo
+    full_market_scanner.py        # Hardened with timeouts + sanitization
+    signal_service.py             # Code-enforced signal bounds
+    performance_service.py        # NaN-safe track record
+/app/frontend/src/pages/
+    PortfolioAnalytics.js         # Analytics + Backtests + Simulations + Walk-Forward + Rebuild v3 button
+    BatchScanner.js               # God Mode Scanner + Scanner History
+    SignalDashboard.js, TrackRecord.js, Watchlist.js, etc.
 ```
 
+## MongoDB Collections
+- portfolios, portfolio_backtests, portfolio_simulations
+- walk_forward_tracking (NEW)
+- scanner_history (NEW)
+- signals, signal_evaluations, analyses
+
 ## Backlog
-- P1: Rebuild all 6 portfolios with hardened v3 pipeline (existing use v2)
 - P2: CSV/PDF export for portfolio reports
 - P2: WebSocket/SSE for real-time Market Cockpit
-- Future: Portfolio alerts (push notifications on rebalance/P&L threshold)
-- Future: Walk-forward simulation (forward-tracking vs lookback validation)
-- Future: Benchmark comparison dashboard
+- Future: Portfolio alerts (push notifications)
+- Future: Benchmark comparison dashboard (returns vs Nifty 50 ETF)
