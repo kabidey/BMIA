@@ -1,6 +1,7 @@
 """
 Market Data Service - Fetches OHLCV data using yfinance
 """
+import math
 import yfinance as yf
 import numpy as np
 from datetime import datetime, timedelta
@@ -10,6 +11,17 @@ logger = logging.getLogger(__name__)
 
 _cache = {}
 CACHE_TTL = 300
+
+
+def _safe_float(val, default=0):
+    """Convert to float, replacing NaN/Inf with default."""
+    try:
+        f = float(val)
+        if math.isnan(f) or math.isinf(f):
+            return default
+        return round(f, 2)
+    except (TypeError, ValueError):
+        return default
 
 
 def _cache_key(symbol, period, interval):
@@ -40,11 +52,11 @@ def get_market_snapshot(symbol: str, period: str = "6mo", interval: str = "1d"):
         for idx, row in hist.iterrows():
             ohlcv.append({
                 "time": idx.strftime("%Y-%m-%d"),
-                "open": round(float(row["Open"]), 2),
-                "high": round(float(row["High"]), 2),
-                "low": round(float(row["Low"]), 2),
-                "close": round(float(row["Close"]), 2),
-                "volume": int(row["Volume"]),
+                "open": _safe_float(row["Open"]),
+                "high": _safe_float(row["High"]),
+                "low": _safe_float(row["Low"]),
+                "close": _safe_float(row["Close"]),
+                "volume": int(row["Volume"]) if not (isinstance(row["Volume"], float) and math.isnan(row["Volume"])) else 0,
             })
         
         latest = ohlcv[-1] if ohlcv else {}
@@ -72,6 +84,9 @@ def get_market_snapshot(symbol: str, period: str = "6mo", interval: str = "1d"):
 
 
 def get_ticker_info(symbol: str):
+    if not symbol:
+        return {"symbol": symbol, "error": "No symbol provided"}
+
     try:
         ticker = yf.Ticker(symbol)
         info = ticker.info

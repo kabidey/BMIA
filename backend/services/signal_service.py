@@ -207,6 +207,8 @@ async def evaluate_all_signals(db):
 
     for signal in open_signals:
         symbol = signal.get("symbol")
+        if not symbol:
+            continue
         try:
             market = get_market_snapshot(symbol, "5d", "1d")
             if "error" not in market:

@@ -200,18 +200,43 @@ async def signal_generate_status(job_id: str):
     return response
 
 
+import math
+
+
+def _sanitize_float(val):
+    """Replace NaN/Infinity with None for JSON safety."""
+    if val is None:
+        return None
+    if isinstance(val, float) and (math.isnan(val) or math.isinf(val)):
+        return None
+    return val
+
+
+def _sanitize_dict(d):
+    """Recursively sanitize NaN/Infinity in dicts/lists for JSON."""
+    if isinstance(d, dict):
+        return {k: _sanitize_dict(v) for k, v in d.items()}
+    if isinstance(d, list):
+        return [_sanitize_dict(item) for item in d]
+    if isinstance(d, float) and (math.isnan(d) or math.isinf(d)):
+        return None
+    return d
+
+
 @router.get("/signals/active")
 async def active_signals(request: Request, symbol: str = None):
     db = request.app.db
     signals = await get_active_signals(db, symbol)
 
     for sig in signals:
+        if not sig.get("symbol"):
+            continue
         try:
             market = get_market_snapshot(sig["symbol"], "5d", "1d")
             if "error" not in market:
                 sig["current_price"] = market["latest"]["close"]
                 entry_price = sig.get("entry_price", 0)
-                if entry_price > 0:
+                if entry_price and entry_price > 0:
                     action = sig.get("action", "HOLD")
                     if action == "BUY":
                         sig["live_return_pct"] = round((market["latest"]["close"] - entry_price) / entry_price * 100, 2)
@@ -222,7 +247,7 @@ async def active_signals(request: Request, symbol: str = None):
         except Exception:
             pass
 
-    return {"signals": signals, "total": len(signals)}
+    return _sanitize_dict({"signals": signals, "total": len(signals)})
 
 
 @router.get("/signals/history")

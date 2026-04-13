@@ -74,7 +74,7 @@ def get_bse_gainers() -> list:
     """Get top BSE gainers."""
     try:
         bse = _get_bse()
-        data = bse.gainers(by="group", group="A")
+        data = bse.gainers(by="group", name="A")
         bse.exit()
         if isinstance(data, list):
             return data[:20]
@@ -88,7 +88,7 @@ def get_bse_losers() -> list:
     """Get top BSE losers."""
     try:
         bse = _get_bse()
-        data = bse.losers(by="group", group="A")
+        data = bse.losers(by="group", name="A")
         bse.exit()
         if isinstance(data, list):
             return data[:20]
@@ -102,7 +102,7 @@ def get_bse_near_52w(type_: str = "high") -> list:
     """Get stocks near 52-week high/low."""
     try:
         bse = _get_bse()
-        data = bse.near52WeekHighLow(by="group", group="A", dir_=type_)
+        data = bse.near52WeekHighLow(by="group", name="A", dir_=type_)
         bse.exit()
         if isinstance(data, list):
             return data[:20]
