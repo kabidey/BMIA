@@ -9,6 +9,7 @@ import SignalDashboard from './pages/SignalDashboard';
 import TrackRecord from './pages/TrackRecord';
 import Guidance from './pages/Guidance';
 import Watchlist from './pages/Watchlist';
+import PortfolioAnalytics from './pages/PortfolioAnalytics';
 import SignalAlerts from './components/layout/SignalAlerts';
 import { Toaster } from './components/ui/sonner';
 
@@ -31,6 +32,7 @@ function App() {
             <Route path="/track-record" element={<TrackRecord />} />
             <Route path="/guidance" element={<Guidance />} />
             <Route path="/watchlist" element={<Watchlist />} />
+            <Route path="/analytics" element={<PortfolioAnalytics />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>

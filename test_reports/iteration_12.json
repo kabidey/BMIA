@@ -1,0 +1,113 @@
+{
+  "summary": "Iteration 12 testing completed successfully. Verified new Portfolio Analytics dashboard with sector allocation pie chart, risk metrics table, performance comparison bar chart, and v2 pipeline badges. All 6 portfolios rebuilt with hardened_v2 pipeline. 11/11 backend tests passed. Frontend Analytics and Portfolio pages fully functional.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Analytics page - Risk Radar",
+        "issues": ["Risk Radar chart not visible because all portfolios have avg_beta=None (data not available from yfinance). Component correctly handles this by not rendering - not a bug, just data availability."]
+      }
+    ]
+  },
+  "passed_tests": [
+    "Backend: GET /api/health returns {status: 'ok', service: 'BMIA'}",
+    "Backend: GET /api/portfolios/overview returns 6 active portfolios",
+    "Backend: GET /api/portfolios/analytics returns global_sector_allocation array (10 sectors)",
+    "Backend: GET /api/portfolios/analytics returns portfolios array with avg_beta, volatility, win_rate, top3_concentration",
+    "Backend: GET /api/portfolios/analytics returns top_performer and worst_performer per portfolio",
+    "Backend: GET /api/portfolios/analytics returns aggregate metrics (total_invested, total_value, total_pnl, active_count)",
+    "Backend: All 6 portfolios use hardened_v2 pipeline (construction_log.pipeline)",
+    "Backend: Each portfolio has 9-10 stocks with enriched data (technical_signal, fundamental_grade, filing_insight)",
+    "Backend: GET /api/portfolios/rebalance-log-all/recent returns logs array (0 entries - no rebalancing yet)",
+    "Backend: GET /api/bse/gainers returns BSE gainers (20 stocks with scripname, change_percent)",
+    "Backend: Analytics data structure matches frontend expectations",
+    "Frontend: Analytics page loads with 'Portfolio Analytics' title",
+    "Frontend: Sector pie chart visible with Global Sector Allocation (Financial Services 35.8%, Industrials 18.8%, etc.)",
+    "Frontend: P&L by Strategy bar chart visible",
+    "Frontend: Risk Metrics table visible with all 6 strategies",
+    "Frontend: v2 pipeline badges visible for all 6 portfolios in Risk Metrics table",
+    "Frontend: Aggregate metrics section visible (Total Invested 299L, Current Value 299.2L, Active 6/6)",
+    "Frontend: Per-portfolio sector breakdowns visible",
+    "Frontend: Refresh button functional",
+    "Frontend: Portfolio page loads with all 6 portfolio cards",
+    "Frontend: Portfolio cards expand to show Holdings tab with 10 stocks",
+    "Frontend: Holdings show technical signal badges (BULLISH/NEUTRAL), fundamental grades (A/B), AI Intelligence rationales, risk flags",
+    "Frontend: Navigation between Analytics and Portfolio pages works correctly"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration12_analytics.py",
+    "/app/test_reports/pytest/iteration12_results.xml",
+    "/app/.screenshots/iteration12_analytics_page.png",
+    "/app/.screenshots/iteration12_portfolio_page.png",
+    "/app/.screenshots/iteration12_portfolio_expanded.png"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/backend/tests/test_iteration12_analytics.py"
+  ],
+  "success_rate": {
+    "backend": "100% (11/11 tests passed)",
+    "frontend": "100% (All UI elements and interactions working)"
+  },
+  "test_credentials": "No auth required. LLM key configured in backend/.env as EMERGENT_LLM_KEY",
+  "seed_data_creation": "All 6 portfolios rebuilt with hardened_v2 pipeline. Each has 9-10 stocks with enriched data. Total capital 300L, current value 299.2L.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 12 verified the new Portfolio Analytics dashboard at /analytics route. Key features: (1) Global sector allocation pie chart showing Financial Services 35.8%, Industrials 18.8%, Technology 12.1%, etc. (2) P&L by Strategy bar chart (currently all 0% as portfolios just rebuilt). (3) Risk Metrics table with columns: Strategy, Invested, Value, Return, Beta, Vol, Win%, Top3 Conc, Best, Worst, Pipeline. (4) All 6 portfolios show 'v2' pipeline badge. (5) Per-portfolio sector breakdowns at bottom. Risk Radar chart not visible because avg_beta is None for all portfolios (yfinance data limitation). BSE gainers endpoint returns raw BSE API data with fields scripname, change_percent (not symbol, change_pct). No rebalancing has occurred yet.",
+  "iteration_12_assessment": {
+    "analytics_dashboard": {
+      "status": "✅ VERIFIED",
+      "components_working": [
+        "Global Sector Allocation pie chart",
+        "P&L by Strategy bar chart",
+        "Risk Metrics table with v2 badges",
+        "Aggregate metrics cards",
+        "Per-portfolio sector breakdowns",
+        "Refresh button"
+      ],
+      "components_not_visible": [
+        "Risk Radar (expected - no beta data available)"
+      ]
+    },
+    "hardened_v2_pipeline": {
+      "status": "✅ ALL 6 PORTFOLIOS VERIFIED",
+      "portfolios": {
+        "bespoke_forward_looking": "hardened_v2, 10 holdings",
+        "quick_entry": "hardened_v2, 10 holdings",
+        "long_term": "hardened_v2, 10 holdings",
+        "swing": "hardened_v2, 10 holdings",
+        "alpha_generator": "hardened_v2, 9 holdings",
+        "value_stocks": "hardened_v2, 10 holdings"
+      }
+    },
+    "enriched_holdings": {
+      "status": "✅ ALL FIELDS PRESENT",
+      "fields_verified": [
+        "technical_signal (BULLISH/NEUTRAL/BEARISH)",
+        "fundamental_grade (A/B/C/D)",
+        "filing_insight",
+        "risk_flag",
+        "consensus_votes",
+        "rationale with specific metrics"
+      ]
+    },
+    "api_endpoints": {
+      "status": "✅ ALL WORKING",
+      "endpoints_tested": [
+        "/api/health",
+        "/api/portfolios/overview",
+        "/api/portfolios/analytics",
+        "/api/portfolios",
+        "/api/portfolios/rebalance-log-all/recent",
+        "/api/bse/gainers"
+      ]
+    },
+    "bse_gainers_note": "BSE API returns raw data with fields: scripname, LONG_NAME, change_percent, ltradert, etc. The 'fixed from group to name parameter' mentioned in request refers to BSE API call parameter fix."
+  }
+}
