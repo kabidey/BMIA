@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
@@ -10,7 +10,7 @@ import { ScrollArea } from '../components/ui/scroll-area';
 import {
   Loader2, ArrowUpDown, Brain, Zap, TrendingUp, TrendingDown, Minus,
   AlertTriangle, Layers, Shield, Eye, CheckCircle, XCircle, MinusCircle,
-  Sparkles, BarChart3, Filter
+  Sparkles, BarChart3, Filter, History, Clock
 } from 'lucide-react';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
@@ -105,6 +105,104 @@ function PipelineTracker({ pipeline, isRunning }) {
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function ScannerHistory() {
+  const [history, setHistory] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState(null);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/batch/scan-history?limit=10`);
+        const d = await res.json();
+        setHistory(d.scans || []);
+      } catch (e) { console.error(e); }
+      setLoading(false);
+    }
+    load();
+  }, []);
+
+  if (loading) return null;
+  if (history.length === 0) return null;
+
+  return (
+    <div data-testid="scanner-history-section">
+      <div className="flex items-center gap-2 mb-3">
+        <History className="w-4 h-4 text-[hsl(var(--primary))]" />
+        <h2 className="text-base font-display font-bold text-[hsl(var(--foreground))]">Scan History</h2>
+        <span className="text-[10px] bg-[hsl(var(--surface-3))] text-[hsl(var(--muted-foreground))] px-2 py-0.5 rounded">{history.length} past scans</span>
+      </div>
+      <div className="space-y-3">
+        {history.map((scan, idx) => {
+          const isOpen = expanded === idx;
+          const buyCount = (scan.results_summary || []).filter(r => r.action === 'BUY').length;
+          const date = new Date(scan.scanned_at);
+          const dateStr = date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+          return (
+            <Card key={scan.scan_id || idx} className="bg-[hsl(var(--card))] border-[hsl(var(--border))] overflow-hidden" data-testid={`scan-history-${scan.scan_id || idx}`}>
+              <div className="p-3 cursor-pointer hover:bg-[hsl(var(--surface-2))]" style={{ transition: 'background 0.15s' }}
+                onClick={() => setExpanded(isOpen ? null : idx)}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Clock className="w-3.5 h-3.5 text-[hsl(var(--muted-foreground))]" />
+                    <span className="text-xs font-mono text-[hsl(var(--foreground))]">{dateStr}</span>
+                    {scan.god_mode && <Badge className="bg-[hsl(var(--primary))]/20 text-[hsl(var(--primary))] text-[9px]">God Mode</Badge>}
+                    <Badge variant="secondary" className="text-[9px]">{scan.total_results} analyzed</Badge>
+                    <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-[9px]">{buyCount} BUY</Badge>
+                    {scan.models_succeeded?.length > 0 && (
+                      <span className="text-[9px] text-[hsl(var(--muted-foreground))] font-mono">{scan.models_succeeded.join(', ')}</span>
+                    )}
+                  </div>
+                  <span className="text-[10px] text-[hsl(var(--muted-foreground))]">{isOpen ? 'Collapse' : 'Expand'}</span>
+                </div>
+              </div>
+              {isOpen && (
+                <div className="border-t border-[hsl(var(--border))] p-3">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-[10px] text-[hsl(var(--muted-foreground))] border-b border-[hsl(var(--border))]">
+                        <th className="py-1.5 px-2 text-left">Rank</th>
+                        <th className="py-1.5 px-2 text-left">Symbol</th>
+                        <th className="py-1.5 px-2 text-left">Sector</th>
+                        <th className="py-1.5 px-2 text-right">Price</th>
+                        <th className="py-1.5 px-2 text-right">Chg%</th>
+                        <th className="py-1.5 px-2 text-center">AI</th>
+                        <th className="py-1.5 px-2 text-center">Action</th>
+                        <th className="py-1.5 px-2 text-left">Rationale</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(scan.results_summary || []).map((r, ri) => (
+                        <tr key={ri} className="border-b border-[hsl(var(--border))]/30">
+                          <td className="py-1.5 px-2 font-mono text-[hsl(var(--primary))]">#{r.rank}</td>
+                          <td className="py-1.5 px-2 font-mono font-medium">{(r.name || r.symbol || '').replace('.NS', '')}</td>
+                          <td className="py-1.5 px-2"><Badge variant="secondary" className="text-[9px]">{r.sector || 'N/A'}</Badge></td>
+                          <td className="py-1.5 px-2 text-right font-mono">{r.price?.toLocaleString('en-IN', { maximumFractionDigits: 1 })}</td>
+                          <td className={`py-1.5 px-2 text-right font-mono ${(r.change_pct || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                            {(r.change_pct || 0) >= 0 ? '+' : ''}{r.change_pct?.toFixed(2)}%
+                          </td>
+                          <td className="py-1.5 px-2 text-center font-mono font-bold">{r.ai_score ?? '--'}</td>
+                          <td className="py-1.5 px-2 text-center">
+                            <span className={`text-[9px] px-1.5 py-0.5 rounded ${r.action === 'BUY' ? 'bg-emerald-500/15 text-emerald-400' : r.action === 'SELL' ? 'bg-red-500/15 text-red-400' : 'bg-gray-500/15 text-gray-400'}`}>
+                              {r.action}
+                            </span>
+                          </td>
+                          <td className="py-1.5 px-2 text-[hsl(var(--muted-foreground))] truncate max-w-[200px]">{r.rationale || '--'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -461,6 +559,9 @@ export default function BatchScanner() {
           </CardContent>
         </Card>
       )}
+
+      {/* Scanner History */}
+      <ScannerHistory />
 
       {/* Disclaimer */}
       <div className="bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))] rounded-lg p-4" data-testid="sebi-disclaimer-alert">

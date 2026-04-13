@@ -1,0 +1,57 @@
+{
+  "summary": "Iteration 16 testing completed. Verified new features: Portfolio Rebuild-All, Walk-Forward Tracking, and Scanner History. Fixed a route ordering bug in portfolios.py where /portfolios/walk-forward was being matched by /portfolios/{strategy_type}. All 11 backend tests pass (100%). Frontend pages load correctly with expected empty states during portfolio reconstruction.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "Backend: GET /api/portfolios/overview returns valid structure with active_count, pending_construction",
+    "Backend: GET /api/portfolios/walk-forward returns records array (was 404, FIXED by route reordering)",
+    "Backend: GET /api/portfolios/walk-forward/{strategy_type} returns records for specific portfolio",
+    "Backend: GET /api/portfolios/walk-forward/nonexistent_strategy returns empty records (not 404)",
+    "Backend: Walk-forward endpoints work for all 6 strategies (value_stocks, bespoke_forward_looking, quick_entry, long_term, swing, alpha_generator)",
+    "Backend: GET /api/batch/scan-history returns scans array (empty - no scans run yet)",
+    "Backend: GET /api/batch/scan-history?limit=5 respects limit parameter",
+    "Backend: Scanner history structure verified (scan_id, scanned_at, god_mode, total_results, results_summary)",
+    "Backend: GET /api/portfolios/analytics handles empty state gracefully (returns error='No active portfolios')",
+    "Backend: POST /api/portfolios/rebuild-all endpoint exists and is accessible",
+    "Frontend: Analytics page shows empty state correctly during portfolio reconstruction",
+    "Frontend: BatchScanner page loads with 'God Mode Scanner' title and 'Launch God Scan' button",
+    "Frontend: BatchScanner shows SEBI disclaimer",
+    "Frontend: Scanner history section not visible (expected - no scans run yet)"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration16_rebuild_walkforward.py",
+    "/app/test_reports/pytest/iteration16_results.xml",
+    "/app/.screenshots/iteration16_analytics.png",
+    "/app/.screenshots/iteration16_batch_scanner.png"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "FIXED: Route ordering bug in /app/backend/routes/portfolios.py - moved /portfolios/walk-forward and /portfolios/walk-forward/{strategy_type} BEFORE /portfolios/{strategy_type} to prevent FastAPI from matching 'walk-forward' as a strategy_type parameter"
+  ],
+  "updated_files": [
+    "/app/backend/routes/portfolios.py",
+    "/app/backend/tests/test_iteration16_rebuild_walkforward.py"
+  ],
+  "success_rate": {
+    "backend": "100% (11/11 tests passed)",
+    "frontend": "100% (All pages load correctly with expected states)"
+  },
+  "test_credentials": "No auth required. Backend at https://bharat-quant-engine.preview.emergentagent.com",
+  "seed_data_creation": "None - portfolios being reconstructed by daemon",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 16 verified three new features: (1) POST /api/portfolios/rebuild-all - triggers v3 pipeline rebuild, clears portfolios/backtests/simulations/walk-forward caches. (2) GET /api/portfolios/walk-forward and /api/portfolios/walk-forward/{strategy_type} - returns forecast vs actual tracking records. Walk-forward auto-creates first snapshot from simulation cache when accessed. (3) GET /api/batch/scan-history - returns past God Mode scan results. Scanner history is empty since no scans have been run. Fixed route ordering bug where walk-forward was being matched as strategy_type. Portfolios are currently being reconstructed by daemon (5 pending: quick_entry, long_term, swing, alpha_generator, value_stocks). bespoke_forward_looking is constructing.",
+  "bug_fix_applied": {
+    "file": "/app/backend/routes/portfolios.py",
+    "issue": "Route /portfolios/walk-forward was returning 404 because FastAPI matched 'walk-forward' as {strategy_type} parameter",
+    "fix": "Moved walk-forward routes BEFORE the /portfolios/{strategy_type} route to ensure proper matching order",
+    "verification": "GET /api/portfolios/walk-forward now returns {records: [], total: 0} instead of 404"
+  }
+}

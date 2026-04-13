@@ -284,7 +284,7 @@ async def batch_ai_scan(req: BatchAIScanRequest):
 
 
 @router.post("/batch/god-scan")
-async def batch_god_scan(req: GodScanRequest):
+async def batch_god_scan(req: GodScanRequest, request: Request):
     job_id = str(uuid.uuid4())[:8]
     logger.info(f"GOD SCAN job {job_id} initiated: market={req.market}, candidates={req.max_candidates}, shortlist={req.max_shortlist}")
 
@@ -296,6 +296,8 @@ async def batch_god_scan(req: GodScanRequest):
         "error": None,
         "started_at": datetime.now().isoformat(),
     }
+
+    db = request.app.db
 
     async def _run_scan():
         try:
@@ -312,6 +314,38 @@ async def batch_god_scan(req: GodScanRequest):
             _god_scan_jobs[job_id]["stage"] = "complete"
             _god_scan_jobs[job_id]["progress"] = 100
             _god_scan_jobs[job_id]["result"] = result
+
+            # Save to scanner history
+            try:
+                history_doc = {
+                    "scan_id": job_id,
+                    "scanned_at": datetime.now().isoformat(),
+                    "god_mode": result.get("god_mode", False),
+                    "models_succeeded": result.get("models_succeeded", []),
+                    "pipeline": result.get("pipeline", {}),
+                    "total_results": result.get("total", 0),
+                    "results_summary": [
+                        {
+                            "symbol": r.get("symbol", ""),
+                            "name": r.get("name", ""),
+                            "sector": r.get("sector", ""),
+                            "price": r.get("price", 0),
+                            "change_pct": r.get("change_pct", 0),
+                            "ai_score": r.get("ai_score"),
+                            "action": r.get("action", "N/A"),
+                            "agreement_level": r.get("agreement_level", "N/A"),
+                            "rank": r.get("rank", 99),
+                            "factor_score": r.get("factor_score"),
+                            "rationale": (r.get("rationale", "") or "")[:200],
+                        }
+                        for r in (result.get("results", []) or [])
+                    ],
+                }
+                await db.scanner_history.insert_one(history_doc)
+                logger.info(f"GOD SCAN history saved: {job_id}")
+            except Exception as he:
+                logger.error(f"Failed to save scan history: {he}")
+
         except Exception as e:
             logger.error(f"GOD SCAN job {job_id} failed: {e}")
             _god_scan_jobs[job_id]["status"] = "error"
@@ -342,6 +376,15 @@ async def batch_god_scan_status(job_id: str):
         del _god_scan_jobs[job_id]
 
     return response
+
+
+@router.get("/batch/scan-history")
+async def scan_history(request: Request, limit: int = 20):
+    """Get history of past God Mode scans."""
+    db = request.app.db
+    cursor = db.scanner_history.find({}, {"_id": 0}).sort("scanned_at", -1).limit(limit)
+    history = await cursor.to_list(length=limit)
+    return {"scans": history, "total": len(history)}
 
 
 @router.post("/ai/chat")

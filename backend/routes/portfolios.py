@@ -303,6 +303,46 @@ async def portfolio_rebalance_log(strategy_type: str, request: Request, limit: i
     return {"logs": logs}
 
 
+@router.get("/portfolios/walk-forward")
+async def walk_forward_all(request: Request):
+    """Get walk-forward tracking for all portfolios."""
+    db = request.app.db
+    records = await db.walk_forward_tracking.find(
+        {}, {"_id": 0}
+    ).sort("recorded_at", -1).to_list(length=200)
+    return {"records": records, "total": len(records)}
+
+
+@router.get("/portfolios/walk-forward/{strategy_type}")
+async def walk_forward_detail(strategy_type: str, request: Request):
+    """Get walk-forward forecast-vs-actual tracking for a specific portfolio."""
+    db = request.app.db
+
+    records = await db.walk_forward_tracking.find(
+        {"portfolio_type": strategy_type}, {"_id": 0}
+    ).sort("recorded_at", 1).to_list(length=100)
+
+    if not records:
+        # Try to create the first snapshot from current simulation + portfolio data
+        sim = await db.portfolio_simulations.find_one(
+            {"portfolio_type": strategy_type}, {"_id": 0}
+        )
+        portfolio = await get_portfolio(db, strategy_type)
+
+        if sim and portfolio:
+            snapshot = _build_walk_forward_snapshot(sim, portfolio, strategy_type)
+            if snapshot:
+                await db.walk_forward_tracking.insert_one(snapshot)
+                snapshot.pop("_id", None)
+                records = [snapshot]
+
+    return {
+        "portfolio_type": strategy_type,
+        "records": records,
+        "total": len(records),
+    }
+
+
 @router.get("/portfolios/{strategy_type}")
 async def portfolio_detail(strategy_type: str, request: Request):
     db = request.app.db
@@ -328,6 +368,77 @@ async def portfolio_construct(strategy_type: str, request: Request):
         raise HTTPException(status_code=400, detail="Invalid strategy type")
     result = await construct_portfolio(db, strategy_type)
     return result
+
+
+_rebuild_lock = {"running": False}
+
+
+@router.post("/portfolios/rebuild-all")
+async def portfolio_rebuild_all(request: Request):
+    """Delete all portfolios and trigger v3 reconstruction via daemon.
+    Clears backtest and simulation caches too."""
+    if _rebuild_lock["running"]:
+        return {"status": "already_running", "message": "Rebuild already in progress"}
+
+    db = request.app.db
+
+    # Count existing
+    existing = await db.portfolios.find({"status": "active"}).to_list(length=20)
+    existing_types = [p["type"] for p in existing]
+
+    # Delete all portfolios, backtests, simulations
+    del_p = await db.portfolios.delete_many({})
+    del_bt = await db.portfolio_backtests.delete_many({})
+    del_sim = await db.portfolio_simulations.delete_many({})
+    del_wf = await db.walk_forward_tracking.delete_many({})
+
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"REBUILD: Deleted {del_p.deleted_count} portfolios, {del_bt.deleted_count} backtests, {del_sim.deleted_count} simulations, {del_wf.deleted_count} walk-forward records")
+
+    return {
+        "status": "triggered",
+        "message": f"Deleted {del_p.deleted_count} portfolios ({', '.join(existing_types)}). The daemon will auto-reconstruct all 6 with hardened v3 pipeline. Monitor /api/portfolios/overview.",
+        "cleared_caches": {
+            "portfolios": del_p.deleted_count,
+            "backtests": del_bt.deleted_count,
+            "simulations": del_sim.deleted_count,
+            "walk_forward": del_wf.deleted_count,
+        },
+    }
+
+
+def _build_walk_forward_snapshot(sim: dict, portfolio: dict, strategy_type: str) -> dict:
+    """Build a walk-forward snapshot from simulation prediction + current portfolio state."""
+    mc = sim.get("monte_carlo", {})
+    rm = mc.get("risk_metrics", {})
+    ts = mc.get("terminal_stats", {})
+    lstm = sim.get("lstm_forecast", {})
+
+    portfolio_value = portfolio.get("current_value") or portfolio.get("actual_invested") or INITIAL_CAPITAL
+    pnl_pct = portfolio.get("total_pnl_pct", 0)
+
+    return {
+        "portfolio_type": strategy_type,
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+        "simulation_computed_at": sim.get("computed_at", ""),
+        # Forecast at time of simulation
+        "forecast": {
+            "expected_return_pct": rm.get("expected_return_pct", 0),
+            "median_return_pct": rm.get("median_return_pct", 0),
+            "var_95_pct": rm.get("var_95_pct", 0),
+            "probability_of_profit_pct": rm.get("probability_of_profit_pct", 0),
+            "median_terminal_value": ts.get("median_value", 0),
+            "lstm_annualized_return_pct": lstm.get("annualized_expected_return_pct", 0),
+            "lstm_annualized_vol_pct": lstm.get("annualized_volatility_pct", 0),
+        },
+        # Actual at time of snapshot
+        "actual": {
+            "portfolio_value": portfolio_value,
+            "total_pnl_pct": pnl_pct,
+            "holdings_count": len(portfolio.get("holdings", [])),
+        },
+    }
 
 
 @router.get("/portfolios")

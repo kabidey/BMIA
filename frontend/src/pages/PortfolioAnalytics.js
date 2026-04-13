@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { RefreshCw, BarChart3, TrendingUp, TrendingDown, Shield, Activity, Award, Loader2, History, Target, Brain, Zap, AlertTriangle, Percent, ChevronRight } from 'lucide-react';
+import { RefreshCw, BarChart3, TrendingUp, TrendingDown, Shield, Activity, Award, Loader2, History, Target, Brain, Zap, AlertTriangle, Percent, ChevronRight, RotateCcw, Crosshair } from 'lucide-react';
 import { Card, CardContent } from '../components/ui/card';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, Radar, Legend, LineChart, Line, CartesianGrid, Area, AreaChart, ComposedChart, ReferenceLine } from 'recharts';
 
@@ -551,10 +551,110 @@ function BacktestCard({ strategyType, strategyName }) {
   );
 }
 
+function WalkForwardSection({ portfolios }) {
+  const [wfData, setWfData] = useState({});
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      const results = {};
+      for (const p of portfolios) {
+        try {
+          const res = await fetch(`${BACKEND_URL}/api/portfolios/walk-forward/${p.type}`);
+          const d = await res.json();
+          if (d.records && d.records.length > 0) {
+            results[p.type] = d.records;
+          }
+        } catch (e) { /* skip */ }
+      }
+      setWfData(results);
+      setLoading(false);
+    }
+    if (portfolios?.length) load();
+  }, [portfolios]);
+
+  if (loading) return null;
+  const hasData = Object.keys(wfData).length > 0;
+  if (!hasData) return null;
+
+  return (
+    <div data-testid="walk-forward-section">
+      <div className="flex items-center gap-2 mb-1">
+        <Crosshair className="w-4 h-4 text-amber-400" />
+        <h2 className="text-base font-display font-bold text-[hsl(var(--foreground))]">Walk-Forward Tracking</h2>
+        <span className="text-[10px] bg-amber-500/10 text-amber-400 px-2 py-0.5 rounded font-mono">
+          Forecast vs Actual
+        </span>
+      </div>
+      <p className="text-[11px] text-[hsl(var(--muted-foreground))] mb-4 ml-6">
+        Tracking simulation predictions against actual portfolio performance over time
+      </p>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {portfolios.map(p => {
+          const records = wfData[p.type];
+          if (!records || records.length === 0) return null;
+          const latest = records[records.length - 1];
+          const forecast = latest.forecast || {};
+          const actual = latest.actual || {};
+          const deviation = forecast.expected_return_pct - (actual.total_pnl_pct || 0);
+
+          return (
+            <Card key={p.type} className="bg-[hsl(var(--card))] border-[hsl(var(--border))] p-4" data-testid={`walk-forward-${p.type}`}>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs font-semibold text-[hsl(var(--foreground))]">{p.name}</p>
+                <span className="text-[9px] text-[hsl(var(--muted-foreground))] font-mono">{records.length} snapshots</span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 mb-3">
+                <div className="bg-cyan-500/5 rounded-lg p-2 border border-cyan-500/10">
+                  <p className="text-[9px] text-cyan-400 uppercase tracking-wider mb-1">Forecast (MC)</p>
+                  <p className="text-sm font-mono font-bold text-cyan-400">
+                    {forecast.expected_return_pct >= 0 ? '+' : ''}{forecast.expected_return_pct?.toFixed(1)}%
+                  </p>
+                  <p className="text-[9px] text-[hsl(var(--muted-foreground))] mt-0.5">
+                    P(Profit): {forecast.probability_of_profit_pct?.toFixed(0)}%
+                  </p>
+                </div>
+                <div className="bg-emerald-500/5 rounded-lg p-2 border border-emerald-500/10">
+                  <p className="text-[9px] text-emerald-400 uppercase tracking-wider mb-1">Actual (Live)</p>
+                  <p className={`text-sm font-mono font-bold ${(actual.total_pnl_pct || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {(actual.total_pnl_pct || 0) >= 0 ? '+' : ''}{(actual.total_pnl_pct || 0).toFixed(2)}%
+                  </p>
+                  <p className="text-[9px] text-[hsl(var(--muted-foreground))] mt-0.5">
+                    Value: {actual.portfolio_value ? `₹${(actual.portfolio_value / 1e5).toFixed(1)}L` : '--'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-2 border-t border-[hsl(var(--border))]/50">
+                <div>
+                  <p className="text-[9px] text-[hsl(var(--muted-foreground))]">Deviation</p>
+                  <p className={`text-xs font-mono font-bold ${Math.abs(deviation) < 10 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                    {deviation >= 0 ? '+' : ''}{deviation.toFixed(1)}%
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[9px] text-[hsl(var(--muted-foreground))]">LSTM Vol</p>
+                  <p className="text-xs font-mono text-[hsl(var(--foreground))]">{forecast.lstm_annualized_vol_pct?.toFixed(1)}%</p>
+                </div>
+                <div>
+                  <p className="text-[9px] text-[hsl(var(--muted-foreground))]">VaR 95%</p>
+                  <p className="text-xs font-mono text-red-400">{forecast.var_95_pct?.toFixed(1)}%</p>
+                </div>
+              </div>
+            </Card>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function PortfolioAnalytics() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [rebuilding, setRebuilding] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -580,6 +680,20 @@ export default function PortfolioAnalytics() {
     setRefreshing(false);
   };
 
+  const handleRebuild = async () => {
+    if (!window.confirm('This will delete all 6 portfolios and reconstruct them with the hardened v3 pipeline. Backtests and simulations will be cleared. Continue?')) return;
+    setRebuilding(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/portfolios/rebuild-all`, { method: 'POST' });
+      const d = await res.json();
+      alert(`${d.message}\n\nCleared: ${d.cleared_caches?.portfolios || 0} portfolios, ${d.cleared_caches?.backtests || 0} backtests, ${d.cleared_caches?.simulations || 0} simulations`);
+      await fetchData();
+    } catch (e) {
+      alert('Rebuild failed: ' + e.message);
+    }
+    setRebuilding(false);
+  };
+
   if (loading) {
     return (
       <div className="p-6 flex items-center justify-center h-64" data-testid="analytics-loading">
@@ -593,8 +707,9 @@ export default function PortfolioAnalytics() {
       <div className="p-6 text-center" data-testid="analytics-empty">
         <Activity className="w-8 h-8 text-[hsl(var(--muted-foreground))] mx-auto mb-2" />
         <p className="text-sm text-[hsl(var(--muted-foreground))]">
-          {data?.error || 'Portfolios are being constructed by God Mode AI. Check back shortly.'}
+          {data?.error || 'Portfolios are being constructed by God Mode AI with hardened v3 pipeline. This takes ~5-10 min per portfolio.'}
         </p>
+        <p className="text-xs text-[hsl(var(--muted-foreground))] mt-2">Auto-refreshing every 60s. The daemon constructs them one by one.</p>
       </div>
     );
   }
@@ -613,12 +728,20 @@ export default function PortfolioAnalytics() {
             Sector allocation, risk metrics, performance comparison across {active_count} AI strategies
           </p>
         </div>
-        <button onClick={handleRefresh} disabled={refreshing}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))] text-[hsl(var(--foreground))] hover:bg-[hsl(var(--surface-3))] disabled:opacity-50"
-          data-testid="refresh-analytics-btn">
-          <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={handleRebuild} disabled={rebuilding}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-amber-500/10 border border-amber-500/30 text-amber-400 hover:bg-amber-500/20 disabled:opacity-50"
+            data-testid="rebuild-portfolios-btn">
+            <RotateCcw className={`w-4 h-4 ${rebuilding ? 'animate-spin' : ''}`} />
+            Rebuild v3
+          </button>
+          <button onClick={handleRefresh} disabled={refreshing}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))] text-[hsl(var(--foreground))] hover:bg-[hsl(var(--surface-3))] disabled:opacity-50"
+            data-testid="refresh-analytics-btn">
+            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* Aggregate Metrics */}
@@ -702,6 +825,9 @@ export default function PortfolioAnalytics() {
           ))}
         </div>
       </div>
+
+      {/* Walk-Forward Tracking */}
+      <WalkForwardSection portfolios={portfolios} />
     </div>
   );
 }
