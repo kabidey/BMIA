@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { RefreshCw, TrendingUp, TrendingDown, ChevronDown, ChevronUp, ArrowRightLeft, Clock, Zap, Target, Shield, Rocket, BarChart3, Gem, Loader2, IndianRupee, ArrowUpRight, ArrowDownRight, ExternalLink } from 'lucide-react';
+import { RefreshCw, TrendingUp, TrendingDown, ChevronDown, ChevronUp, ArrowRightLeft, Clock, Zap, Target, Shield, Rocket, BarChart3, Gem, Loader2, IndianRupee, ArrowUpRight, ArrowDownRight, History, CheckCircle2 } from 'lucide-react';
 import { Card, CardContent } from '../components/ui/card';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -31,7 +31,108 @@ const STRATEGY_ACCENT = {
   value_stocks: 'text-teal-400',
 };
 
-function PortfolioCard({ portfolio, strategies, onExpand, expanded }) {
+function HoldingsTable({ holdings, accent }) {
+  return (
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="text-xs text-[hsl(var(--muted-foreground))] border-b border-[hsl(var(--border))]">
+          <th className="px-3 py-2 text-left">Stock</th>
+          <th className="px-3 py-2 text-right hidden sm:table-cell">Entry</th>
+          <th className="px-3 py-2 text-right">Current</th>
+          <th className="px-3 py-2 text-right hidden sm:table-cell">Qty</th>
+          <th className="px-3 py-2 text-right">P&L</th>
+          <th className="px-3 py-2 text-right hidden md:table-cell">Weight</th>
+          <th className="px-3 py-2 text-left hidden lg:table-cell">Rationale</th>
+        </tr>
+      </thead>
+      <tbody>
+        {holdings.map((h, i) => (
+          <tr key={h.symbol || i} className="border-b border-[hsl(var(--border))]/50 hover:bg-[hsl(var(--surface-2))]" data-testid={`holding-${i}`}>
+            <td className="px-3 py-2">
+              <span className={`font-mono font-semibold text-xs ${accent}`}>{h.symbol?.replace('.NS', '')}</span>
+              {h.sector && <p className="text-[10px] text-[hsl(var(--muted-foreground))]">{h.sector}</p>}
+            </td>
+            <td className="px-3 py-2 text-right font-mono text-xs text-[hsl(var(--foreground))] hidden sm:table-cell">{h.entry_price?.toFixed(2)}</td>
+            <td className="px-3 py-2 text-right font-mono text-xs text-[hsl(var(--foreground))]">{h.current_price?.toFixed(2)}</td>
+            <td className="px-3 py-2 text-right font-mono text-xs text-[hsl(var(--muted-foreground))] hidden sm:table-cell">{h.quantity}</td>
+            <td className="px-3 py-2 text-right">
+              <span className={`font-mono text-xs font-semibold ${(h.pnl_pct || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                {(h.pnl_pct || 0) >= 0 ? '+' : ''}{(h.pnl_pct || 0).toFixed(2)}%
+              </span>
+              <p className={`font-mono text-[10px] ${(h.pnl || 0) >= 0 ? 'text-emerald-400/70' : 'text-red-400/70'}`}>
+                {(h.pnl || 0) >= 0 ? '+' : ''}{(h.pnl || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+              </p>
+            </td>
+            <td className="px-3 py-2 text-right font-mono text-[10px] text-[hsl(var(--muted-foreground))] hidden md:table-cell">{h.weight?.toFixed(1)}%</td>
+            <td className="px-3 py-2 text-left hidden lg:table-cell">
+              <p className="text-[10px] text-[hsl(var(--muted-foreground))] line-clamp-2 max-w-xs">{h.rationale?.slice(0, 100)}</p>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function SwapCard({ change, index }) {
+  const outgoing = change.outgoing || {};
+  const incoming = change.incoming || {};
+
+  return (
+    <div className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--surface-1))] overflow-hidden" data-testid={`swap-card-${index}`}>
+      <div className="grid grid-cols-[1fr_auto_1fr] gap-0">
+        {/* Outgoing */}
+        <div className="p-3 border-r border-[hsl(var(--border))] bg-red-500/5">
+          <div className="flex items-center gap-1.5 mb-2">
+            <ArrowDownRight className="w-3.5 h-3.5 text-red-400" />
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-red-400">Removed</span>
+          </div>
+          <p className="font-mono font-bold text-sm text-red-300">{outgoing.symbol?.replace('.NS', '')}</p>
+          {outgoing.name && <p className="text-[10px] text-[hsl(var(--muted-foreground))] mt-0.5">{outgoing.name}</p>}
+          {outgoing.pnl_pct !== undefined && (
+            <p className={`text-xs font-mono mt-1 ${outgoing.pnl_pct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+              Exit P&L: {outgoing.pnl_pct >= 0 ? '+' : ''}{outgoing.pnl_pct?.toFixed(2)}%
+            </p>
+          )}
+          {outgoing.entry_price && outgoing.exit_price && (
+            <p className="text-[10px] font-mono text-[hsl(var(--muted-foreground))] mt-0.5">
+              {outgoing.entry_price?.toFixed(2)} → {outgoing.exit_price?.toFixed(2)}
+            </p>
+          )}
+          {outgoing.rationale && (
+            <p className="text-[10px] text-[hsl(var(--muted-foreground))] mt-2 leading-relaxed border-t border-red-500/10 pt-2">{outgoing.rationale}</p>
+          )}
+        </div>
+
+        {/* Arrow */}
+        <div className="flex items-center justify-center px-2 bg-[hsl(var(--surface-2))]">
+          <ArrowRightLeft className="w-4 h-4 text-[hsl(var(--muted-foreground))]" />
+        </div>
+
+        {/* Incoming */}
+        <div className="p-3 border-l border-[hsl(var(--border))] bg-emerald-500/5">
+          <div className="flex items-center gap-1.5 mb-2">
+            <ArrowUpRight className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-400">Added</span>
+          </div>
+          <p className="font-mono font-bold text-sm text-emerald-300">{incoming.symbol?.replace('.NS', '')}</p>
+          {incoming.name && <p className="text-[10px] text-[hsl(var(--muted-foreground))] mt-0.5">{incoming.name}</p>}
+          {incoming.sector && (
+            <p className="text-[10px] text-[hsl(var(--muted-foreground))]">{incoming.sector}</p>
+          )}
+          <p className="text-xs font-mono text-[hsl(var(--foreground))] mt-1">
+            Entry: {incoming.entry_price?.toFixed(2)} | Qty: {incoming.quantity} | W: {incoming.weight?.toFixed(1)}%
+          </p>
+          {incoming.rationale && (
+            <p className="text-[10px] text-[hsl(var(--muted-foreground))] mt-2 leading-relaxed border-t border-emerald-500/10 pt-2">{incoming.rationale}</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PortfolioCard({ portfolio, strategies, onExpand, expanded, rebalanceLogs }) {
   const type = portfolio.type;
   const cfg = strategies[type] || {};
   const Icon = STRATEGY_ICONS[type] || BarChart3;
@@ -40,10 +141,13 @@ function PortfolioCard({ portfolio, strategies, onExpand, expanded }) {
   const isConstructing = portfolio.status === 'constructing';
   const isError = portfolio.status === 'error';
   const isActive = portfolio.status === 'active';
+  const [activeTab, setActiveTab] = useState('holdings');
 
   const pnl = portfolio.total_pnl || 0;
   const pnlPct = portfolio.total_pnl_pct || 0;
   const holdings = portfolio.holdings || [];
+  const portfolioLogs = rebalanceLogs.filter(l => l.portfolio_type === type);
+  const hasSwaps = portfolioLogs.some(l => l.action === 'REBALANCE' && l.changes?.length > 0);
 
   return (
     <div className="space-y-0" data-testid={`portfolio-card-${type}`}>
@@ -59,7 +163,15 @@ function PortfolioCard({ portfolio, strategies, onExpand, expanded }) {
             <div>
               <h3 className="text-base font-semibold text-[hsl(var(--foreground))]">{cfg.name || portfolio.name}</h3>
               <p className="text-xs text-[hsl(var(--muted-foreground))] mt-0.5">{cfg.description?.slice(0, 80) || ''}</p>
-              <p className="text-[10px] text-[hsl(var(--muted-foreground))] mt-1">{cfg.horizon || portfolio.horizon}</p>
+              <div className="flex items-center gap-3 mt-1">
+                <p className="text-[10px] text-[hsl(var(--muted-foreground))]">{cfg.horizon || portfolio.horizon}</p>
+                {portfolio.last_rebalanced && (
+                  <span className="text-[10px] text-amber-400/80 flex items-center gap-0.5">
+                    <History className="w-2.5 h-2.5" />
+                    Rebalanced {new Date(portfolio.last_rebalanced).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 
@@ -82,7 +194,7 @@ function PortfolioCard({ portfolio, strategies, onExpand, expanded }) {
                   <span className="ml-1 text-xs">({pnl >= 0 ? '+' : ''}{pnl.toLocaleString('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })})</span>
                 </p>
                 <p className="text-[10px] text-[hsl(var(--muted-foreground))] mt-1">
-                  {holdings.length} stocks | W:{portfolio.winners || 0} L:{portfolio.losers || 0}
+                  {holdings.length} stocks | W:{portfolio.winners || holdings.filter(h => (h.pnl_pct||0) > 0).length} L:{portfolio.losers || holdings.filter(h => (h.pnl_pct||0) < 0).length}
                 </p>
               </>
             )}
@@ -94,51 +206,102 @@ function PortfolioCard({ portfolio, strategies, onExpand, expanded }) {
         </div>
       </div>
 
-      {/* Expanded: Holdings Table */}
-      {expanded && isActive && holdings.length > 0 && (
-        <div className="mx-2 -mt-1 rounded-b-xl bg-[hsl(var(--surface-1))] border border-t-0 border-[hsl(var(--border))] overflow-hidden" data-testid={`holdings-${type}`}>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-xs text-[hsl(var(--muted-foreground))] border-b border-[hsl(var(--border))]">
-                <th className="px-3 py-2 text-left">Stock</th>
-                <th className="px-3 py-2 text-right hidden sm:table-cell">Entry</th>
-                <th className="px-3 py-2 text-right">Current</th>
-                <th className="px-3 py-2 text-right hidden sm:table-cell">Qty</th>
-                <th className="px-3 py-2 text-right">P&L</th>
-                <th className="px-3 py-2 text-right hidden md:table-cell">Weight</th>
-                <th className="px-3 py-2 text-left hidden lg:table-cell">Rationale</th>
-              </tr>
-            </thead>
-            <tbody>
-              {holdings.map((h, i) => (
-                <tr key={h.symbol || i} className="border-b border-[hsl(var(--border))]/50 hover:bg-[hsl(var(--surface-2))]" data-testid={`holding-${i}`}>
-                  <td className="px-3 py-2">
-                    <span className={`font-mono font-semibold text-xs ${accent}`}>{h.symbol?.replace('.NS', '')}</span>
-                    {h.sector && <p className="text-[10px] text-[hsl(var(--muted-foreground))]">{h.sector}</p>}
-                  </td>
-                  <td className="px-3 py-2 text-right font-mono text-xs text-[hsl(var(--foreground))] hidden sm:table-cell">{h.entry_price?.toFixed(2)}</td>
-                  <td className="px-3 py-2 text-right font-mono text-xs text-[hsl(var(--foreground))]">{h.current_price?.toFixed(2)}</td>
-                  <td className="px-3 py-2 text-right font-mono text-xs text-[hsl(var(--muted-foreground))] hidden sm:table-cell">{h.quantity}</td>
-                  <td className="px-3 py-2 text-right">
-                    <span className={`font-mono text-xs font-semibold ${(h.pnl_pct || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                      {(h.pnl_pct || 0) >= 0 ? '+' : ''}{(h.pnl_pct || 0).toFixed(2)}%
-                    </span>
-                    <p className={`font-mono text-[10px] ${(h.pnl || 0) >= 0 ? 'text-emerald-400/70' : 'text-red-400/70'}`}>
-                      {(h.pnl || 0) >= 0 ? '+' : ''}{(h.pnl || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-                    </p>
-                  </td>
-                  <td className="px-3 py-2 text-right font-mono text-[10px] text-[hsl(var(--muted-foreground))] hidden md:table-cell">{h.weight?.toFixed(1)}%</td>
-                  <td className="px-3 py-2 text-left hidden lg:table-cell">
-                    <p className="text-[10px] text-[hsl(var(--muted-foreground))] line-clamp-2 max-w-xs">{h.rationale?.slice(0, 100)}</p>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {portfolio.portfolio_thesis && (
-            <div className="px-4 py-3 border-t border-[hsl(var(--border))] bg-[hsl(var(--surface-2))]">
-              <p className="text-xs font-semibold text-[hsl(var(--muted-foreground))] mb-1">Portfolio Thesis</p>
-              <p className="text-xs text-[hsl(var(--foreground))]">{portfolio.portfolio_thesis}</p>
+      {/* Expanded Panel */}
+      {expanded && isActive && (
+        <div className="mx-2 -mt-1 rounded-b-xl bg-[hsl(var(--surface-1))] border border-t-0 border-[hsl(var(--border))] overflow-hidden" data-testid={`expanded-${type}`}>
+          {/* Tab Navigation */}
+          <div className="flex border-b border-[hsl(var(--border))]" data-testid={`tabs-${type}`}>
+            <button
+              onClick={(e) => { e.stopPropagation(); setActiveTab('holdings'); }}
+              className={`px-4 py-2 text-xs font-semibold transition-colors ${activeTab === 'holdings' ? 'text-[hsl(var(--primary))] border-b-2 border-[hsl(var(--primary))]' : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]'}`}
+              data-testid={`tab-holdings-${type}`}
+            >
+              Holdings ({holdings.length})
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); setActiveTab('rebalance'); }}
+              className={`px-4 py-2 text-xs font-semibold transition-colors flex items-center gap-1.5 ${activeTab === 'rebalance' ? 'text-[hsl(var(--primary))] border-b-2 border-[hsl(var(--primary))]' : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]'}`}
+              data-testid={`tab-rebalance-${type}`}
+            >
+              <History className="w-3 h-3" />
+              Rebalance History ({portfolioLogs.length})
+            </button>
+          </div>
+
+          {/* Holdings Tab */}
+          {activeTab === 'holdings' && holdings.length > 0 && (
+            <>
+              <HoldingsTable holdings={holdings} accent={accent} />
+              {portfolio.portfolio_thesis && (
+                <div className="px-4 py-3 border-t border-[hsl(var(--border))] bg-[hsl(var(--surface-2))]">
+                  <p className="text-xs font-semibold text-[hsl(var(--muted-foreground))] mb-1">Portfolio Thesis</p>
+                  <p className="text-xs text-[hsl(var(--foreground))]">{portfolio.portfolio_thesis}</p>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Rebalance History Tab */}
+          {activeTab === 'rebalance' && (
+            <div className="p-4 space-y-4" data-testid={`rebalance-history-${type}`}>
+              {portfolioLogs.length === 0 ? (
+                <div className="text-center py-6">
+                  <CheckCircle2 className="w-8 h-8 text-emerald-400/40 mx-auto mb-2" />
+                  <p className="text-sm text-[hsl(var(--muted-foreground))]">No rebalancing activity yet</p>
+                  <p className="text-[10px] text-[hsl(var(--muted-foreground))] mt-1">
+                    AI evaluates this portfolio daily after market close (4-6 PM IST)
+                  </p>
+                </div>
+              ) : (
+                portfolioLogs.map((log, i) => (
+                  <div key={i} className="space-y-3" data-testid={`rebalance-log-entry-${i}`}>
+                    {/* Header */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        {log.action === 'REBALANCE' ? (
+                          <div className="w-6 h-6 rounded-full bg-amber-500/20 flex items-center justify-center">
+                            <ArrowRightLeft className="w-3.5 h-3.5 text-amber-400" />
+                          </div>
+                        ) : (
+                          <div className="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                          </div>
+                        )}
+                        <span className={`text-xs font-bold ${log.action === 'REBALANCE' ? 'text-amber-400' : 'text-emerald-400'}`}>
+                          {log.action === 'REBALANCE' ? `Rebalanced (${log.changes?.length || 0} swap${(log.changes?.length || 0) !== 1 ? 's' : ''})` : 'Reviewed — No Change'}
+                        </span>
+                        {log.confidence && (
+                          <span className="text-[10px] font-mono text-[hsl(var(--muted-foreground))] bg-[hsl(var(--surface-2))] px-1.5 py-0.5 rounded">
+                            {log.confidence}% confidence
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[10px] text-[hsl(var(--muted-foreground))] font-mono">
+                        {log.timestamp ? new Date(log.timestamp).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
+                      </span>
+                    </div>
+
+                    {/* Analysis Summary */}
+                    {log.analysis_summary && (
+                      <div className="bg-[hsl(var(--surface-2))] rounded-lg p-3 border border-[hsl(var(--border))]">
+                        <p className="text-[10px] font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wider mb-1">AI Analysis</p>
+                        <p className="text-xs text-[hsl(var(--foreground))] leading-relaxed">{log.analysis_summary}</p>
+                      </div>
+                    )}
+
+                    {/* Swap Cards */}
+                    {log.changes && log.changes.length > 0 && (
+                      <div className="space-y-2">
+                        {log.changes.map((ch, j) => (
+                          <SwapCard key={j} change={ch} index={j} />
+                        ))}
+                      </div>
+                    )}
+
+                    {i < portfolioLogs.length - 1 && <div className="border-b border-[hsl(var(--border))]" />}
+                  </div>
+                ))
+              )}
             </div>
           )}
         </div>
@@ -147,58 +310,31 @@ function PortfolioCard({ portfolio, strategies, onExpand, expanded }) {
   );
 }
 
-function RebalanceLog({ logs }) {
-  if (!logs || logs.length === 0) return null;
+function GlobalRebalanceActivity({ logs }) {
+  const rebalancedLogs = logs.filter(l => l.action === 'REBALANCE' && l.changes?.length > 0);
+  if (rebalancedLogs.length === 0) return null;
 
   return (
-    <div className="space-y-3" data-testid="rebalance-log">
-      <h3 className="text-sm font-semibold text-[hsl(var(--foreground))]">Rebalance Activity</h3>
-      {logs.map((log, i) => (
-        <div key={i} className={`p-3 rounded-lg border ${log.action === 'REBALANCE' ? 'bg-amber-500/5 border-amber-500/20' : 'bg-[hsl(var(--surface-2))] border-[hsl(var(--border))]'}`} data-testid={`rebalance-entry-${i}`}>
+    <div className="space-y-3" data-testid="global-rebalance-activity">
+      <div className="flex items-center gap-2">
+        <History className="w-4 h-4 text-amber-400" />
+        <h3 className="text-sm font-semibold text-[hsl(var(--foreground))]">Recent Rebalancing Activity</h3>
+        <span className="text-[10px] bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded-full font-mono">{rebalancedLogs.length} swap{rebalancedLogs.length !== 1 ? 's' : ''}</span>
+      </div>
+      {rebalancedLogs.slice(0, 5).map((log, i) => (
+        <div key={i} className="p-3 rounded-lg bg-[hsl(var(--surface-1))] border border-amber-500/20" data-testid={`global-rebalance-${i}`}>
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
-              {log.action === 'REBALANCE' ? (
-                <ArrowRightLeft className="w-4 h-4 text-amber-400" />
-              ) : (
-                <Shield className="w-4 h-4 text-emerald-400" />
-              )}
-              <span className={`text-xs font-semibold ${log.action === 'REBALANCE' ? 'text-amber-400' : 'text-emerald-400'}`}>
-                {log.action === 'REBALANCE' ? 'Rebalanced' : 'No Change Needed'}
-              </span>
-              <span className="text-[10px] text-[hsl(var(--muted-foreground))]">{log.portfolio_type?.replace(/_/g, ' ')}</span>
+              <ArrowRightLeft className="w-3.5 h-3.5 text-amber-400" />
+              <span className="text-xs font-semibold text-amber-400 capitalize">{log.portfolio_type?.replace(/_/g, ' ')}</span>
             </div>
-            <span className="text-[10px] text-[hsl(var(--muted-foreground))]">
+            <span className="text-[10px] text-[hsl(var(--muted-foreground))] font-mono">
               {log.timestamp ? new Date(log.timestamp).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''}
             </span>
           </div>
-          {log.analysis_summary && (
-            <p className="text-xs text-[hsl(var(--foreground))] mb-2 line-clamp-3">{log.analysis_summary}</p>
-          )}
-          {log.changes && log.changes.length > 0 && (
-            <div className="space-y-2">
-              {log.changes.map((ch, j) => (
-                <div key={j} className="flex items-stretch gap-2 text-xs">
-                  <div className="flex-1 p-2 rounded bg-red-500/10 border border-red-500/20">
-                    <p className="font-mono font-bold text-red-400">{ch.outgoing?.symbol?.replace('.NS', '')} OUT</p>
-                    <p className="text-[10px] text-[hsl(var(--muted-foreground))] mt-1">{ch.outgoing?.rationale?.slice(0, 120)}</p>
-                    {ch.outgoing?.pnl_pct !== undefined && (
-                      <p className={`text-[10px] mt-1 font-mono ${ch.outgoing.pnl_pct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                        P&L: {ch.outgoing.pnl_pct >= 0 ? '+' : ''}{ch.outgoing.pnl_pct?.toFixed(2)}%
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex items-center">
-                    <ArrowRightLeft className="w-4 h-4 text-[hsl(var(--muted-foreground))]" />
-                  </div>
-                  <div className="flex-1 p-2 rounded bg-emerald-500/10 border border-emerald-500/20">
-                    <p className="font-mono font-bold text-emerald-400">{ch.incoming?.symbol?.replace('.NS', '')} IN</p>
-                    <p className="text-[10px] text-[hsl(var(--muted-foreground))] mt-1">{ch.incoming?.rationale?.slice(0, 120)}</p>
-                    <p className="text-[10px] mt-1 font-mono text-[hsl(var(--muted-foreground))]">Entry: {ch.incoming?.entry_price?.toFixed(2)}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+          {log.changes?.map((ch, j) => (
+            <SwapCard key={j} change={ch} index={j} />
+          ))}
         </div>
       ))}
     </div>
@@ -219,7 +355,7 @@ export default function Watchlist() {
       const [ovRes, pfRes, logRes] = await Promise.all([
         fetch(`${BACKEND_URL}/api/portfolios/overview`),
         fetch(`${BACKEND_URL}/api/portfolios`),
-        fetch(`${BACKEND_URL}/api/portfolios/rebalance-log-all/recent?limit=10`),
+        fetch(`${BACKEND_URL}/api/portfolios/rebalance-log-all/recent?limit=30`),
       ]);
       const ovData = await ovRes.json();
       const pfData = await pfRes.json();
@@ -237,7 +373,6 @@ export default function Watchlist() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // Auto-refresh every 30s
   useEffect(() => {
     const interval = setInterval(fetchData, 30000);
     return () => clearInterval(interval);
@@ -321,8 +456,8 @@ export default function Watchlist() {
           </Card>
           <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
             <CardContent className="p-3">
-              <p className="text-[10px] text-[hsl(var(--muted-foreground))]">Constructing</p>
-              <p className="text-base font-mono font-bold text-amber-400">{overview.pending_construction}</p>
+              <p className="text-[10px] text-[hsl(var(--muted-foreground))]">Rebalance Logs</p>
+              <p className="text-base font-mono font-bold text-amber-400">{rebalanceLogs.length}</p>
             </CardContent>
           </Card>
         </div>
@@ -338,7 +473,6 @@ export default function Watchlist() {
           {allStrategies.map(type => {
             const p = portfolioMap[type];
             if (!p) {
-              // Not yet started
               const cfg = strategies[type] || PORTFOLIO_STRATEGIES_FALLBACK[type] || {};
               const Icon = STRATEGY_ICONS[type] || BarChart3;
               const colors = STRATEGY_COLORS[type] || '';
@@ -366,14 +500,15 @@ export default function Watchlist() {
                 strategies={strategies}
                 onExpand={toggleExpand}
                 expanded={expanded === type}
+                rebalanceLogs={rebalanceLogs}
               />
             );
           })}
         </div>
       )}
 
-      {/* Rebalance Activity Log */}
-      {rebalanceLogs.length > 0 && <RebalanceLog logs={rebalanceLogs} />}
+      {/* Global Rebalance Activity */}
+      <GlobalRebalanceActivity logs={rebalanceLogs} />
     </div>
   );
 }
