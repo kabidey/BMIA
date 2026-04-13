@@ -7,6 +7,7 @@ import SymbolAnalysis from './pages/SymbolAnalysis';
 import BatchScanner from './pages/BatchScanner';
 import SignalDashboard from './pages/SignalDashboard';
 import TrackRecord from './pages/TrackRecord';
+import Guidance from './pages/Guidance';
 import { Toaster } from './components/ui/sonner';
 
 function App() {
@@ -26,6 +27,7 @@ function App() {
             <Route path="/scanner" element={<BatchScanner />} />
             <Route path="/signals" element={<SignalDashboard />} />
             <Route path="/track-record" element={<TrackRecord />} />
+            <Route path="/guidance" element={<Guidance />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>

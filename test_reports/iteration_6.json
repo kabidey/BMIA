@@ -1,0 +1,90 @@
+{
+  "summary": "Phase 7 Guidance Page testing completed - BSE Corporate Announcements scraping, filtering, pagination all working. Track Record and Learning Context endpoints verified. 1,100+ announcements from 150+ stocks in database.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "/api/signals/track-record",
+        "issue": "Intermittent 502 timeout during heavy scraping load",
+        "priority": "LOW",
+        "note": "Transient issue - endpoint works when retried"
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Guidance page",
+        "issues": ["Stats cards not visible when page first loads (shows 0 results briefly before data loads) - minor UX issue"]
+      }
+    ]
+  },
+  "passed_tests": [
+    "Backend: GET /api/health returns {status: 'ok', service: 'BMIA'}",
+    "Backend: GET /api/guidance returns paginated items with total, page, limit, pages fields",
+    "Backend: GET /api/guidance?symbol=HDFCBANK filters by stock symbol correctly",
+    "Backend: GET /api/guidance?category=Board%20Meeting filters by category correctly",
+    "Backend: GET /api/guidance?search=dividend searches headlines correctly",
+    "Backend: GET /api/guidance pagination works (page 1 and page 2 have different items)",
+    "Backend: GET /api/guidance/stats returns total_announcements (1100+), total_stocks (150+), categories (7), recent_7d",
+    "Backend: GET /api/guidance/stocks returns list of stocks with announcement counts",
+    "Backend: POST /api/guidance/scrape returns job_id with status 'started'",
+    "Backend: GET /api/guidance/scrape/{job_id} polls job status correctly",
+    "Backend: Invalid job_id returns 404",
+    "Backend: GET /api/signals/track-record returns metrics (win_rate, avg_return, equity_curve, by_sector, by_confidence)",
+    "Backend: GET /api/signals/learning-context returns AI learning data (lessons, sector_stats, timeframe_stats)",
+    "Backend: PDF URLs follow BSE format (https://www.bseindia.com/xml-data/corpfiling/AttachLive/...)",
+    "Frontend: Guidance page accessible at /guidance",
+    "Frontend: Stats cards show Total Filings, Stocks Covered, Last 7 Days, Categories",
+    "Frontend: Guidance items list shows stock symbol, category badge, headline, date, PDF link",
+    "Frontend: Stock filter dropdown opens and filters items correctly",
+    "Frontend: Category filter dropdown works",
+    "Frontend: Search headlines filter works",
+    "Frontend: Pagination works (prev/next buttons, page indicator)",
+    "Frontend: 'Guidance' nav item appears in sidebar with BookOpen icon",
+    "Frontend: PDF download links are clickable and point to bseindia.com",
+    "Frontend: Track Record page shows metrics, equity curve, performance by sector/confidence"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_phase7_guidance.py",
+    "/app/test_reports/pytest/phase7_results.xml",
+    "/app/.screenshots/phase7_guidance_page.png",
+    "/app/.screenshots/phase7_track_record.png"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/backend/tests/test_phase7_guidance.py"
+  ],
+  "success_rate": {
+    "backend": "100% (13/13 tests passed - 1 transient 502 on retry)",
+    "frontend": "100% (All UI elements and interactions working)"
+  },
+  "test_credentials": "No auth required",
+  "seed_data_creation": "BSE scraper populated 1,100+ announcements from 150+ stocks automatically",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Phase 7 Guidance page fully tested. BSE scraper is actively running and adding more data. Current stats: 1,100+ announcements, 150+ stocks, 7 categories. Daily scheduler runs at 5 AM IST. Track Record and Learning Context endpoints working. All Phase 6 features (God Mode, Full Market Scanner) remain functional.",
+  "phase_7_assessment": {
+    "guidance_stats_endpoint": "✅ WORKING - Returns total_announcements, total_stocks, categories, recent_7d",
+    "guidance_items_endpoint": "✅ WORKING - Paginated items with filters (symbol, category, search)",
+    "guidance_stocks_endpoint": "✅ WORKING - Returns stocks with announcement counts",
+    "guidance_scrape_endpoint": "✅ WORKING - Background job with polling",
+    "track_record_endpoint": "✅ WORKING - Returns comprehensive metrics",
+    "learning_context_endpoint": "✅ WORKING - Returns AI learning data",
+    "frontend_guidance_page": "✅ WORKING - Stats cards, items list, filters, pagination",
+    "frontend_sidebar_nav": "✅ WORKING - Guidance nav item with BookOpen icon",
+    "frontend_pdf_links": "✅ WORKING - Links to bseindia.com PDFs",
+    "bse_scraper": "✅ WORKING - 1,100+ announcements scraped from 150+ stocks",
+    "daily_scheduler": "✅ CONFIGURED - Runs at 5 AM IST"
+  },
+  "guidance_data_stats": {
+    "total_announcements": 1100,
+    "total_stocks": 150,
+    "categories": 7,
+    "recent_7d": 1100,
+    "top_categories": ["Company Update", "Insider Trading / SAST", "AGM/EGM", "Board Meeting", "Others", "Corp. Action"]
+  }
+}

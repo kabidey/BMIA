@@ -32,6 +32,10 @@ from services.learning_service import build_learning_context, get_cached_learnin
 from services.performance_service import get_track_record
 from services.dashboard_service import get_full_cockpit, get_slow_cockpit_modules, get_cached_cockpit, get_cached_cockpit_slow, start_background_cache
 from services.full_market_scanner import god_mode_scan
+from services.guidance_service import (
+    get_guidance_items, get_guidance_stats, get_stock_list,
+    run_full_scrape, start_guidance_scheduler,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -100,6 +104,11 @@ async def lifespan(app: FastAPI):
         _start_evaluation_scheduler()
     except Exception as e:
         logger.error(f"Evaluation scheduler start failed (non-fatal): {e}")
+    # Start guidance scraper (daily at 5 AM IST)
+    try:
+        start_guidance_scheduler(MONGO_URL, DB_NAME)
+    except Exception as e:
+        logger.error(f"Guidance scheduler start failed (non-fatal): {e}")
     yield
     app.mongodb_client.close()
 
@@ -924,6 +933,74 @@ async def learning_context():
     """Get current learning context (what the AI has learned)."""
     db = app.db
     return await get_cached_learning_context(db)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GUIDANCE — BSE Corporate Announcements & Filings
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/guidance")
+async def guidance_items(
+    symbol: Optional[str] = None,
+    category: Optional[str] = None,
+    search: Optional[str] = None,
+    page: int = 1,
+    limit: int = 50,
+):
+    """Get guidance items with filters and pagination."""
+    db = app.db
+    return await get_guidance_items(db, symbol=symbol, category=category, search=search, page=page, limit=limit)
+
+
+@app.get("/api/guidance/stats")
+async def guidance_stats():
+    """Get guidance dashboard stats."""
+    db = app.db
+    return await get_guidance_stats(db)
+
+
+@app.get("/api/guidance/stocks")
+async def guidance_stocks():
+    """Get all stocks that have guidance data."""
+    db = app.db
+    stocks = await get_stock_list(db)
+    return {"stocks": stocks, "total": len(stocks)}
+
+
+@app.post("/api/guidance/scrape")
+async def trigger_guidance_scrape(days_back: int = 7):
+    """Manually trigger a guidance scrape (background task)."""
+    db = app.db
+    job_id = str(uuid.uuid4())[:8]
+    _god_scan_jobs[job_id] = {"status": "running", "result": None, "error": None}
+
+    async def _run():
+        try:
+            result = await run_full_scrape(db, days_back=days_back)
+            _god_scan_jobs[job_id]["status"] = "complete"
+            _god_scan_jobs[job_id]["result"] = result
+        except Exception as e:
+            _god_scan_jobs[job_id]["status"] = "error"
+            _god_scan_jobs[job_id]["error"] = str(e)
+
+    asyncio.create_task(_run())
+    return {"job_id": job_id, "status": "started"}
+
+
+@app.get("/api/guidance/scrape/{job_id}")
+async def guidance_scrape_status(job_id: str):
+    """Poll guidance scrape job status."""
+    job = _god_scan_jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    response = {"job_id": job_id, "status": job["status"]}
+    if job["status"] == "complete" and job["result"]:
+        response.update(job["result"])
+        del _god_scan_jobs[job_id]
+    elif job["status"] == "error":
+        response["error"] = job.get("error")
+        del _god_scan_jobs[job_id]
+    return response
 
 
 if __name__ == "__main__":
