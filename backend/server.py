@@ -42,12 +42,15 @@ async def lifespan(app: FastAPI):
     logger.info("Connected to MongoDB")
 
     # Start background daemons (all non-blocking)
+    # Portfolio daemon DISABLED — user requested kill to prevent production queue
+    # for name, starter, args in [
+    #     ("Portfolio daemon", start_portfolio_daemon, (MONGO_URL, DB_NAME)),
+    # ]:
     for name, starter, args in [
         ("Background cache", start_background_cache, ()),
         ("Evaluation scheduler", start_evaluation_scheduler, (MONGO_URL, DB_NAME)),
         ("Guidance scheduler", start_guidance_scheduler, (MONGO_URL, DB_NAME)),
         ("PDF extraction daemon", start_pdf_extraction_daemon, (MONGO_URL, DB_NAME)),
-        ("Portfolio daemon", start_portfolio_daemon, (MONGO_URL, DB_NAME)),
     ]:
         try:
             starter(*args)
