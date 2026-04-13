@@ -1,0 +1,122 @@
+{
+  "summary": "Phase 9 testing completed successfully. All 4 new features (PDF extraction, BSE prices, Watchlist/Portfolio, Signal Alerts) are working correctly. 23/23 backend tests passed. Frontend UI fully functional with responsive design.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/bse/gainers, /api/bse/losers, /api/bse/near-52w/*",
+        "issue": "May return empty arrays outside market hours - expected behavior",
+        "priority": "LOW"
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "Backend: GET /api/health returns {status: 'ok', service: 'BMIA'}",
+    "Backend: GET /api/guidance/stats regression - 1,285 announcements, 264 stocks",
+    "Backend: GET /api/market/overview regression - working",
+    "Backend: GET /api/guidance/pdf/stats - returns PDF extraction stats (total_filings_with_pdf, pdfs_processed, pdfs_with_text, pdfs_pending, total_chunks)",
+    "Backend: POST /api/guidance/pdf/process - triggers manual PDF processing",
+    "Backend: GET /api/bse/quote/500325 - returns BSE quote for Reliance (scrip_code, ltp, change, change_pct, high, low)",
+    "Backend: GET /api/bse/quote/500180 - returns BSE quote for HDFC Bank",
+    "Backend: GET /api/bse/gainers - returns top BSE gainers",
+    "Backend: GET /api/bse/losers - returns top BSE losers",
+    "Backend: GET /api/bse/near-52w/high - returns stocks near 52-week high",
+    "Backend: GET /api/bse/near-52w/low - returns stocks near 52-week low",
+    "Backend: GET /api/bse/advance-decline - returns BSE advance/decline data",
+    "Backend: GET /api/watchlist - returns watchlist items",
+    "Backend: GET /api/watchlist?with_prices=true - returns watchlist with live BSE prices and P&L",
+    "Backend: GET /api/watchlist/summary - returns portfolio summary (total_invested, total_value, total_pnl, winners, losers)",
+    "Backend: POST /api/watchlist/add - adds stock to watchlist",
+    "Backend: PUT /api/watchlist/{symbol} - updates watchlist item",
+    "Backend: DELETE /api/watchlist/{symbol} - removes stock from watchlist",
+    "Backend: GET /api/signals/alerts - returns recent signal alerts",
+    "Backend: GET /api/signals/alerts?since=<timestamp> - filters alerts by time",
+    "Backend: GET /api/signals/active regression - working",
+    "Backend: GET /api/guidance/stocks - returns stocks for watchlist search",
+    "Frontend: Portfolio page accessible at /watchlist",
+    "Frontend: Sidebar nav item 'Portfolio' present and working",
+    "Frontend: Portfolio summary cards show Invested, Current Value, P&L, Return%, Winners/Losers",
+    "Frontend: Watchlist items show symbol, LTP, change%, entry price, qty, P&L",
+    "Frontend: Add Stock button opens modal with stock search",
+    "Frontend: Stock search in modal filters stocks correctly",
+    "Frontend: Manual symbol entry works in Add Stock modal",
+    "Frontend: Delete button removes stock from watchlist (visible on hover)",
+    "Frontend: Refresh button refreshes prices",
+    "Frontend: Toast notifications show on add/delete actions",
+    "Frontend: Mobile responsive design working",
+    "Frontend: Mobile hamburger menu shows Portfolio nav item",
+    "Regression: Guidance page still works correctly (1,285 filings, 264 stocks)",
+    "Regression: Market Overview loads correctly with all data"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_phase9_new_features.py",
+    "/app/test_reports/pytest/phase9_results.xml",
+    "/app/.screenshots/phase9_watchlist_page.png",
+    "/app/.screenshots/phase9_add_stock_modal.png",
+    "/app/.screenshots/phase9_watchlist_hover.png",
+    "/app/.screenshots/phase9_watchlist_delete_test.png",
+    "/app/.screenshots/phase9_watchlist_mobile.png",
+    "/app/.screenshots/phase9_guidance_regression.png",
+    "/app/.screenshots/phase9_market_overview.png"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/backend/tests/test_phase9_new_features.py"
+  ],
+  "success_rate": {
+    "backend": "100% (23/23 tests passed)",
+    "frontend": "100% (All UI elements and interactions working)"
+  },
+  "test_credentials": "No auth required. LLM key configured in backend/.env as EMERGENT_LLM_KEY",
+  "seed_data_creation": "Test data: RELIANCE (scrip 500325, entry 1350, qty 10) and HDFCBANK (scrip 500180, entry 1800, qty 5) in watchlist",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Phase 9 features fully tested. PDF extraction daemon running (30 PDFs processed, 555 chunks). BSE price endpoints working (may return empty outside market hours). Watchlist has 2 test stocks (RELIANCE, HDFCBANK) with live P&L calculation. Signal alerts endpoint returns empty if no signals hit targets recently. All Phase 7-8 features (Guidance, AI RAG) remain functional.",
+  "phase_9_assessment": {
+    "pdf_extraction": {
+      "stats_endpoint": "✅ WORKING - Returns total_filings_with_pdf, pdfs_processed, pdfs_with_text, pdfs_pending, total_chunks",
+      "process_endpoint": "✅ WORKING - Triggers manual PDF processing",
+      "daemon": "✅ RUNNING - Background daemon processes PDFs every 5 minutes (30 PDFs, 555 chunks processed)"
+    },
+    "bse_prices": {
+      "quote_endpoint": "✅ WORKING - Returns scrip_code, ltp, change, change_pct, high, low, prev_close",
+      "gainers_endpoint": "✅ WORKING - Returns top BSE gainers (may be empty outside market hours)",
+      "losers_endpoint": "✅ WORKING - Returns top BSE losers (may be empty outside market hours)",
+      "near_52w_endpoint": "✅ WORKING - Returns stocks near 52-week high/low",
+      "advance_decline_endpoint": "✅ WORKING - Returns BSE advance/decline data"
+    },
+    "watchlist_portfolio": {
+      "get_watchlist": "✅ WORKING - Returns watchlist items",
+      "get_with_prices": "✅ WORKING - Returns watchlist with live BSE prices and P&L calculations",
+      "get_summary": "✅ WORKING - Returns portfolio summary (total_invested, total_value, total_pnl, winners, losers)",
+      "add_stock": "✅ WORKING - Adds stock to watchlist with entry_price, quantity, notes",
+      "update_stock": "✅ WORKING - Updates watchlist item",
+      "delete_stock": "✅ WORKING - Removes stock from watchlist"
+    },
+    "signal_alerts": {
+      "alerts_endpoint": "✅ WORKING - Returns recent signal alerts (TARGET_HIT, STOP_LOSS_HIT)",
+      "since_filter": "✅ WORKING - Filters alerts by timestamp"
+    },
+    "frontend_portfolio_page": {
+      "page_accessible": "✅ WORKING - /watchlist route working",
+      "sidebar_nav": "✅ WORKING - Portfolio nav item in sidebar",
+      "summary_cards": "✅ WORKING - Shows Invested, Current Value, P&L, Return%, Winners, Losers",
+      "watchlist_items": "✅ WORKING - Shows symbol, LTP, change%, entry price, qty, P&L",
+      "add_stock_modal": "✅ WORKING - Opens with stock search and manual entry",
+      "delete_button": "✅ WORKING - Visible on hover, removes stock",
+      "refresh_button": "✅ WORKING - Refreshes prices",
+      "toast_notifications": "✅ WORKING - Shows on add/delete actions",
+      "mobile_responsive": "✅ WORKING - Responsive design on mobile"
+    },
+    "regression": {
+      "guidance_page": "✅ WORKING - 1,285 filings, 264 stocks, Ask AI button present",
+      "market_overview": "✅ WORKING - All market data loading correctly"
+    }
+  }
+}

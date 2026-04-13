@@ -37,6 +37,17 @@ from services.guidance_service import (
     run_full_scrape, start_guidance_scheduler,
 )
 from services.guidance_ai_service import ask_guidance_ai, get_suggested_questions
+from services.pdf_extractor_service import (
+    process_unprocessed_pdfs, get_pdf_extraction_stats, start_pdf_extraction_daemon,
+)
+from services.bse_price_service import (
+    get_bse_quote, get_bse_bulk_quotes, get_bse_gainers, get_bse_losers,
+    get_bse_near_52w, get_bse_advance_decline, get_scrip_code_map,
+)
+from services.watchlist_service import (
+    add_to_watchlist, remove_from_watchlist, get_watchlist,
+    get_watchlist_with_prices, update_watchlist_item, get_watchlist_summary,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -110,6 +121,11 @@ async def lifespan(app: FastAPI):
         start_guidance_scheduler(MONGO_URL, DB_NAME)
     except Exception as e:
         logger.error(f"Guidance scheduler start failed (non-fatal): {e}")
+    # Start PDF extraction daemon
+    try:
+        start_pdf_extraction_daemon(MONGO_URL, DB_NAME)
+    except Exception as e:
+        logger.error(f"PDF extraction daemon start failed (non-fatal): {e}")
     yield
     app.mongodb_client.close()
 
@@ -1025,6 +1041,145 @@ async def guidance_suggestions():
     db = app.db
     suggestions = await get_suggested_questions(db)
     return {"suggestions": suggestions}
+
+
+# ── PDF Extraction Endpoints ──────────────────────────────────────────────────
+
+@app.get("/api/guidance/pdf/stats")
+async def pdf_extraction_stats():
+    """Get PDF extraction pipeline statistics."""
+    db = app.db
+    return await get_pdf_extraction_stats(db)
+
+
+@app.post("/api/guidance/pdf/process")
+async def trigger_pdf_processing(limit: int = 30):
+    """Manually trigger PDF text extraction for unprocessed filings."""
+    db = app.db
+    result = await process_unprocessed_pdfs(db, limit=limit)
+    return result
+
+
+# ── BSE Price Data Endpoints ─────────────────────────────────────────────────
+
+@app.get("/api/bse/quote/{scrip_code}")
+async def bse_quote(scrip_code: str):
+    """Get live BSE quote for a stock."""
+    data = get_bse_quote(scrip_code)
+    if not data:
+        raise HTTPException(status_code=404, detail="Quote not found")
+    return data
+
+
+@app.get("/api/bse/gainers")
+async def bse_gainers():
+    """Get top BSE gainers."""
+    return {"gainers": get_bse_gainers()}
+
+
+@app.get("/api/bse/losers")
+async def bse_losers():
+    """Get top BSE losers."""
+    return {"losers": get_bse_losers()}
+
+
+@app.get("/api/bse/near-52w/{direction}")
+async def bse_near_52w(direction: str):
+    """Get stocks near 52-week high/low. direction: 'high' or 'low'."""
+    if direction not in ("high", "low"):
+        raise HTTPException(status_code=400, detail="direction must be 'high' or 'low'")
+    return {"stocks": get_bse_near_52w(direction)}
+
+
+@app.get("/api/bse/advance-decline")
+async def bse_advance_decline():
+    """Get BSE advance/decline data."""
+    return get_bse_advance_decline()
+
+
+# ── Watchlist / Portfolio Endpoints ──────────────────────────────────────────
+
+class WatchlistAddRequest(BaseModel):
+    symbol: str
+    scrip_code: str = ""
+    name: str = ""
+    notes: str = ""
+    entry_price: float = 0
+    quantity: int = 0
+
+
+class WatchlistUpdateRequest(BaseModel):
+    notes: Optional[str] = None
+    entry_price: Optional[float] = None
+    quantity: Optional[int] = None
+
+
+@app.post("/api/watchlist/add")
+async def watchlist_add(req: WatchlistAddRequest):
+    """Add a stock to the watchlist."""
+    db = app.db
+    return await add_to_watchlist(
+        db, req.symbol, req.scrip_code, req.name, req.notes, req.entry_price, req.quantity
+    )
+
+
+@app.delete("/api/watchlist/{symbol}")
+async def watchlist_remove(symbol: str):
+    """Remove a stock from the watchlist."""
+    db = app.db
+    return await remove_from_watchlist(db, symbol)
+
+
+@app.put("/api/watchlist/{symbol}")
+async def watchlist_update(symbol: str, req: WatchlistUpdateRequest):
+    """Update a watchlist item."""
+    db = app.db
+    return await update_watchlist_item(db, symbol, req.notes, req.entry_price, req.quantity)
+
+
+@app.get("/api/watchlist")
+async def watchlist_list(with_prices: bool = False):
+    """Get watchlist items, optionally with live BSE prices."""
+    db = app.db
+    if with_prices:
+        return {"items": await get_watchlist_with_prices(db)}
+    return {"items": await get_watchlist(db)}
+
+
+@app.get("/api/watchlist/summary")
+async def watchlist_summary():
+    """Get portfolio summary with P&L calculations."""
+    db = app.db
+    return await get_watchlist_summary(db)
+
+
+# ── Signal Alerts Endpoint ───────────────────────────────────────────────────
+
+@app.get("/api/signals/alerts")
+async def signal_alerts(since: Optional[str] = None):
+    """Get recent signal alerts (targets/stops hit)."""
+    db = app.db
+    query = {"status": {"$in": ["TARGET_HIT", "STOP_LOSS_HIT"]}}
+    if since:
+        query["evaluated_at"] = {"$gte": since}
+
+    signals = await db.signals.find(query, {"_id": 0}).sort("evaluated_at", -1).limit(20).to_list(length=20)
+
+    alerts = []
+    for sig in signals:
+        alert_type = "success" if sig.get("status") == "TARGET_HIT" else "danger"
+        alerts.append({
+            "symbol": sig.get("symbol", ""),
+            "action": sig.get("action", ""),
+            "status": sig.get("status", ""),
+            "entry_price": sig.get("entry_price", 0),
+            "current_price": sig.get("current_price", 0),
+            "return_pct": sig.get("return_pct", 0),
+            "alert_type": alert_type,
+            "evaluated_at": sig.get("evaluated_at", ""),
+        })
+
+    return {"alerts": alerts}
 
 
 if __name__ == "__main__":

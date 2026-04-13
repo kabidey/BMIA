@@ -8,6 +8,8 @@ import BatchScanner from './pages/BatchScanner';
 import SignalDashboard from './pages/SignalDashboard';
 import TrackRecord from './pages/TrackRecord';
 import Guidance from './pages/Guidance';
+import Watchlist from './pages/Watchlist';
+import SignalAlerts from './components/layout/SignalAlerts';
 import { Toaster } from './components/ui/sonner';
 
 function App() {
@@ -28,9 +30,11 @@ function App() {
             <Route path="/signals" element={<SignalDashboard />} />
             <Route path="/track-record" element={<TrackRecord />} />
             <Route path="/guidance" element={<Guidance />} />
+            <Route path="/watchlist" element={<Watchlist />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
+        <SignalAlerts />
         <Toaster position="top-right" theme="dark" />
       </div>
     </Router>

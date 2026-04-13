@@ -170,6 +170,24 @@ async def _retrieve_relevant_filings(db, question: str, context: dict, max_resul
     return filings
 
 
+async def _retrieve_pdf_chunks(db, context: dict, question: str, max_chunks: int = 15):
+    """Retrieve relevant PDF text chunks for deeper RAG context."""
+    try:
+        from services.pdf_extractor_service import get_pdf_chunks_for_query
+        keywords = [w for w in question.lower().split() if len(w) > 3]
+        chunks = await get_pdf_chunks_for_query(
+            db,
+            stock_symbols=context.get("stocks"),
+            categories=context.get("categories"),
+            keywords=keywords,
+            max_chunks=max_chunks,
+        )
+        return chunks
+    except Exception as e:
+        logger.debug(f"PDF chunk retrieval failed: {e}")
+        return []
+
+
 def _build_context_text(filings: list, max_chars: int = 30000) -> str:
     """Convert filings to structured text for LLM context."""
     if not filings:
@@ -255,8 +273,22 @@ async def ask_guidance_ai(db, question: str, conversation_history: list = None):
     filings = await _retrieve_relevant_filings(db, question, context)
     logger.info(f"GUIDANCE AI: Retrieved {len(filings)} relevant filings")
 
+    # Step 2b: Retrieve PDF text chunks for deeper analysis
+    pdf_chunks = await _retrieve_pdf_chunks(db, context, question)
+    logger.info(f"GUIDANCE AI: Retrieved {len(pdf_chunks)} PDF text chunks")
+
     # Step 3: Build context text
     context_text = _build_context_text(filings)
+
+    # Append PDF text chunks
+    if pdf_chunks:
+        pdf_context = "\n\n=== EXTRACTED PDF CONTENT ===\n"
+        for i, chunk in enumerate(pdf_chunks):
+            pdf_context += (
+                f"\n[PDF-{i+1}] {chunk.get('stock_symbol','')} | {chunk.get('headline','')[:80]}\n"
+                f"  {chunk.get('text','')[:600]}\n"
+            )
+        context_text += pdf_context
 
     # Step 4: Build the prompt
     user_prompt = (
