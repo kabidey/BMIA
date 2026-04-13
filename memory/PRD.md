@@ -65,6 +65,21 @@ Build a Tier-1 Quant Analyst specializing in Indian Equity and Commodity markets
 - Dashboard loads in ~2s (was 15-20s)
 - All API responses < 300ms from cache
 
+### Phase 7: Guidance — BSE Corporate Filings ✅
+- Scrapes bseindia.com for all BSE Group A stocks (728+ covering NSE 500)
+- Fetches corporate announcements, filings, regulatory updates with PDF links
+- 1,100+ announcements from 150+ stocks in database
+- New "Guidance" page with stock selector, category filter, headline search, pagination
+- PDF download links to bseindia.com
+- Background scheduler runs daily at 5 AM IST
+- Manual "Refresh Data" button for on-demand scraping
+
+### Auto-Evaluation Scheduler ✅
+- Background daemon auto-evaluates all open signals every 60s
+- Tracks live P&L, peak return, max drawdown
+- Auto-closes signals when targets/stops hit
+- Rebuilds AI learning context after each evaluation
+
 ## Architecture
 ```
 /app/backend/
