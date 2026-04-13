@@ -10,12 +10,14 @@ Build a Tier-1 Quant Analyst specializing in Indian Equity and Commodity markets
 - God Mode: Multi-LLM consensus (OpenAI GPT-4.1 + Claude Sonnet + Gemini Flash)
 - Full-market NSE scanner (2400+ stocks with pre-filtering)
 - Signal tracking, evaluation, and performance reporting
+- BSE Corporate Filings scraping with AI RAG analysis
+- Portfolio tracking with live BSE prices
 
 ## Tech Stack
 - **Frontend**: React, Tailwind CSS, Shadcn UI, Recharts
 - **Backend**: FastAPI, Python
 - **Database**: MongoDB
-- **APIs**: yfinance, nselib, Emergent LLM Key (OpenAI/Anthropic/Gemini)
+- **APIs**: yfinance, nselib, bse, Emergent LLM Key (OpenAI/Anthropic/Gemini)
 
 ## What's Implemented
 
@@ -32,83 +34,78 @@ Build a Tier-1 Quant Analyst specializing in Indian Equity and Commodity markets
 - AI batch scanning across sectors
 - Signal generation with entry/targets/stop-loss
 - Learning context from past signals
-- numpy boolean JSON serialization fix
 
 ### Phase 5: Market Intelligence Cockpit ✅
 - Major Indices (NSE/BSE live data)
-- FII & DII Flows
-- India VIX tracker
-- Advance/Decline breadth
-- Sectoral Heatmap
-- Volume Shockers
-- 52-Week High/Low Clusters
-- Put-Call Ratio (PCR)
-- Open Interest (OI) Buildup
-- Corporate Actions/Block Deals
+- FII & DII Flows, India VIX, Advance/Decline
+- Sectoral Heatmap, Volume Shockers
+- Put-Call Ratio, OI Buildup, Corporate Actions
 
 ### Phase 6: God Mode & Full Market Scanner ✅
-- Full NSE universe scanner (2400+ stocks via nselib bhav copy)
-- Statistical pre-filtering pipeline
-- 3-LLM parallel consensus (GPT-4.1 + Claude Sonnet + Gemini Flash)
-- Background task pattern (prevents proxy timeout)
-- Frontend polling for long-running scans
-- God Mode toggle for single-stock analysis
-- Pipeline tracker UI with stage progression
-- Model votes & agreement level display
-- Mobile responsive sidebar (hamburger menu)
-- Removed "Made with Emergent" badge
+- Full NSE universe scanner (2400+ stocks)
+- 3-LLM parallel consensus
+- Background task pattern, Frontend polling
+- Pipeline tracker UI
 
 ### Performance: Background Cache ✅
-- Background daemon thread pre-fetches cockpit data every 30s
-- Slow modules (volume shockers, OI quadrant) refresh every 120s
-- Market overview & heatmap cached with 60s TTL
 - Dashboard loads in ~2s (was 15-20s)
-- All API responses < 300ms from cache
 
 ### Phase 7: Guidance — BSE Corporate Filings ✅
-- Scrapes bseindia.com for all BSE Group A stocks (728+ covering NSE 500)
-- Fetches corporate announcements, filings, regulatory updates with PDF links
-- 1,100+ announcements from 150+ stocks in database
-- New "Guidance" page with stock selector, category filter, headline search, pagination
-- PDF download links to bseindia.com
-- Background scheduler runs daily at 5 AM IST
-- Manual "Refresh Data" button for on-demand scraping
+- Scrapes bseindia.com for Group A stocks
+- 1,285+ announcements from 264+ stocks
+- Filters, pagination, PDF download links
+- Daily 5 AM IST scheduler
+
+### Phase 8: Intelligent Guidance AI (RAG) ✅
+- RAG pipeline: Question → Retrieve → Contextualize → LLM → Answer
+- GPT-4.1 via Emergent LLM Key
+- Source citations with filing references
+- Conversation history for follow-ups
+
+### Phase 9: New Features ✅ (Apr 13, 2026)
+- **PDF Text Extraction**: Background daemon extracts text from BSE PDFs using pdfplumber, chunks for RAG
+- **BSE Price Data**: Live quotes, gainers/losers, 52-week H/L, advance/decline via `bse` library
+- **Portfolio & Watchlist**: Full CRUD with live BSE prices, P&L calculation, portfolio summary
+- **Signal Alert Notifications**: Toast popups polling /api/signals/alerts for TARGET_HIT/STOP_LOSS_HIT
 
 ### Auto-Evaluation Scheduler ✅
-- Background daemon auto-evaluates all open signals every 60s
-- Tracks live P&L, peak return, max drawdown
-- Auto-closes signals when targets/stops hit
-- Rebuilds AI learning context after each evaluation
+- Background daemon auto-evaluates open signals every 60s
 
 ## Architecture
 ```
 /app/backend/
-  server.py                    # FastAPI main
+  server.py                       # FastAPI main
   services/
-    intelligence_engine.py     # God Mode multi-LLM logic
-    full_market_scanner.py     # 2400+ stock scanning
-    dashboard_service.py       # Market cockpit data
-    signal_service.py          # Signal CRUD & evaluation
-    technical_service.py       # 25+ indicators
-    fundamental_service.py     # 30+ metrics
+    intelligence_engine.py        # God Mode multi-LLM
+    full_market_scanner.py        # 2400+ stock scanning
+    dashboard_service.py          # Market cockpit data
+    signal_service.py             # Signal CRUD & evaluation
+    guidance_service.py           # BSE scraper
+    guidance_ai_service.py        # RAG analysis
+    pdf_extractor_service.py      # PDF text extraction daemon
+    bse_price_service.py          # BSE live prices
+    watchlist_service.py          # Portfolio/watchlist
     ...
 /app/frontend/src/
-  pages/                       # MarketOverview, SymbolAnalysis, BatchScanner, SignalDashboard, TrackRecord
-  components/layout/           # Sidebar (responsive), TerminalPanel
-  hooks/useApi.js             # API layer with polling for god mode
+  pages/                          # MarketOverview, SymbolAnalysis, BatchScanner,
+                                  # SignalDashboard, TrackRecord, Guidance, Watchlist
+  components/layout/              # Sidebar, TerminalPanel, SignalAlerts, SearchCommand
+  hooks/useApi.js                 # API layer
 ```
 
 ## Key API Endpoints
 - `GET /api/market/cockpit` - Full dashboard metrics
-- `POST /api/batch/god-scan` → `GET /api/batch/god-scan/{job_id}` - Background batch scan
-- `POST /api/signals/generate` → `GET /api/signals/generate-status/{job_id}` - Background god mode signal
-- `POST /api/signals/generate` (god_mode=false) - Synchronous signal
-- `GET /api/signals/active` / `GET /api/signals/history`
-- `POST /api/ai/chat` - AI analysis chat
+- `POST /api/batch/god-scan` → `GET /api/batch/god-scan/{job_id}` - Batch scan
+- `POST /api/signals/generate` → `GET /api/signals/generate-status/{job_id}` - God mode signal
+- `GET /api/signals/active` / `GET /api/signals/history` / `GET /api/signals/alerts`
+- `GET /api/guidance/stats` / `GET /api/guidance` / `POST /api/guidance/ask`
+- `GET /api/guidance/pdf/stats` / `POST /api/guidance/pdf/process`
+- `GET /api/bse/quote/{scrip_code}` / `GET /api/bse/gainers` / `GET /api/bse/losers`
+- `GET /api/watchlist` / `POST /api/watchlist/add` / `DELETE /api/watchlist/{symbol}`
+- `GET /api/watchlist/summary`
 
 ## Backlog
-- P1: Automated evaluation scheduler (cron/background task)
 - P2: WebSocket/SSE for real-time streaming of Market Cockpit
 - P2: CSV/PDF export for analysis/signals
-- P3: BSE integration via bselib (currently unstable/timing out)
-- P3: Portfolio tracking / watchlist persistence
+- P3: Portfolio watchlist improvements (alerts for watchlist stocks)
+- P3: server.py refactoring (move daemons to workers/ module)
