@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { BarChart3, Search, TrendingUp, LayoutGrid, ChevronLeft, ChevronRight, Zap, Trophy, Menu, X, BookOpen, Briefcase, PieChart } from 'lucide-react';
+import { BarChart3, Search, TrendingUp, LayoutGrid, ChevronLeft, ChevronRight, Zap, Trophy, Menu, X, BookOpen, Briefcase, PieChart, FileText } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import SearchCommand from './SearchCommand';
 
@@ -13,6 +13,7 @@ const navItems = [
   { to: '/guidance', icon: BookOpen, label: 'Guidance', shortcut: '6' },
   { to: '/watchlist', icon: Briefcase, label: 'Portfolio', shortcut: '7' },
   { to: '/analytics', icon: PieChart, label: 'Analytics', shortcut: '8' },
+  { to: '/how-it-works', icon: FileText, label: 'How It Works', shortcut: '9' },
 ];
 
 export default function Sidebar() {
