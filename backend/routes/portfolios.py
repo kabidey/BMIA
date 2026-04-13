@@ -1,5 +1,6 @@
 """Autonomous portfolio routes."""
 import math
+from datetime import datetime, timezone
 from collections import defaultdict
 from fastapi import APIRouter, HTTPException, Request
 
@@ -155,6 +156,47 @@ async def all_rebalance_logs(request: Request, limit: int = 30):
     db = request.app.db
     logs = await get_rebalance_log(db, limit=limit)
     return {"logs": logs}
+
+
+@router.get("/portfolios/backtest/{strategy_type}")
+async def portfolio_backtest(strategy_type: str, request: Request):
+    """Run 5-year lookback backtest for a portfolio's holdings vs Nifty 50."""
+    from services.portfolio_hardening import compute_backtest
+
+    db = request.app.db
+    portfolio = await get_portfolio(db, strategy_type)
+    if not portfolio:
+        raise HTTPException(status_code=404, detail="Portfolio not found")
+
+    # Check cache
+    cached = await db.portfolio_backtests.find_one(
+        {"portfolio_type": strategy_type}, {"_id": 0}
+    )
+    if cached:
+        # Return cached if less than 24h old
+        cached_at = cached.get("computed_at", "")
+        try:
+            ct = datetime.fromisoformat(cached_at)
+            if (datetime.now(timezone.utc) - ct.replace(tzinfo=timezone.utc)).total_seconds() < 86400:
+                return cached
+        except Exception:
+            pass
+
+    symbols = [h["symbol"] for h in portfolio.get("holdings", []) if h.get("symbol")]
+    strategy_name = portfolio.get("name", strategy_type)
+
+    result = compute_backtest(symbols, strategy_name)
+    result["portfolio_type"] = strategy_type
+    result["computed_at"] = datetime.now(timezone.utc).isoformat()
+
+    # Cache result
+    await db.portfolio_backtests.update_one(
+        {"portfolio_type": strategy_type},
+        {"$set": result},
+        upsert=True,
+    )
+
+    return result
 
 
 @router.get("/portfolios/rebalance-log/{strategy_type}")

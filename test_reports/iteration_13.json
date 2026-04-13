@@ -1,0 +1,96 @@
+{
+  "summary": "Iteration 13 testing completed successfully. Verified new portfolio hardening features: 5-year backtest with CAGR, Sharpe, Max DD, Alpha vs Nifty 50 benchmark. All 6 portfolios have working backtest endpoints returning chart_data with portfolio and nifty50 cumulative return series. Frontend Analytics page displays backtest cards with Alpha badges, area charts, and all metrics. 20/20 backend tests passed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "/api/portfolios/value_stocks",
+        "issue": "Existing portfolios have pipeline=hardened_v2 and factor_score=None because they were built before the v3 update. New portfolios will have hardened_v3 and factor_score computed.",
+        "priority": "LOW"
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "Backend: GET /api/health returns {status: 'ok', service: 'BMIA'}",
+    "Backend: GET /api/portfolios/overview returns 6 active portfolios",
+    "Backend: GET /api/portfolios/analytics returns analytics data with global_sector_allocation",
+    "Backend: GET /api/portfolios/backtest/value_stocks returns 5Y backtest with cagr_pct=31.61, sharpe_ratio=1.12, max_drawdown_pct=21.75, alpha_pct=22.58",
+    "Backend: GET /api/portfolios/backtest/long_term returns 5Y backtest with cagr_pct=32.92, sharpe_ratio=2.05, max_drawdown_pct=7.53, alpha_pct=22.15",
+    "Backend: GET /api/portfolios/backtest/bespoke_forward_looking returns backtest with cagr_pct=52.39, sharpe_ratio=2.43, alpha_pct=41.71",
+    "Backend: Backtest response has benchmark='Nifty 50' with benchmark_total_return_pct and benchmark_cagr_pct",
+    "Backend: Backtest chart_data has portfolio and nifty50 cumulative return series (60 data points for value_stocks)",
+    "Backend: GET /api/portfolios/value_stocks has construction_log with pipeline field",
+    "Backend: Holdings have weight field with values between 5-20% summing to ~100%",
+    "Backend: Sharpe ratio values are reasonable (-3 to 5 range)",
+    "Backend: Max drawdown values are positive (representing loss)",
+    "Backend: Win rate values are between 0-100%",
+    "Backend: All 6 strategy backtest endpoints working (value_stocks, long_term, bespoke_forward_looking, quick_entry, swing, alpha_generator)",
+    "Frontend: Analytics page loads with 'Portfolio Analytics' title",
+    "Frontend: '5-Year Backtest Evidence' header visible with 'Lookback analysis vs Nifty 50 benchmark' subtitle",
+    "Frontend: 6 backtest cards visible with Alpha badges (+41.71%, +30.7%, +22.15%, +6.33%, +20.8%, +22.58%)",
+    "Frontend: Backtest cards show CAGR, Max DD, Sharpe, Win Rate metrics",
+    "Frontend: Backtest cards show cumulative return area charts with Nifty 50 line (orange dashed)",
+    "Frontend: 7 'Nifty 50' references found on page (benchmark comparison)"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration13_hardening.py",
+    "/app/test_reports/pytest/iteration13_results.xml",
+    "/app/.screenshots/iteration13_analytics_page.png",
+    "/app/.screenshots/iteration13_backtest_section.png",
+    "/app/.screenshots/iteration13_backtest_cards.png"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Code correctly implements hardened_v3 pipeline with factor_score computation, sector enforcement (max 3), and volatility-based sizing",
+    "Existing portfolios in DB have hardened_v2 - they were built before the v3 update. To see v3 features, portfolios need to be reconstructed",
+    "Backtest caching works correctly (24h TTL) - results are stored in portfolio_backtests collection"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration13_hardening.py"
+  ],
+  "success_rate": {
+    "backend": "100% (20/20 tests passed)",
+    "frontend": "100% (All backtest UI elements working)"
+  },
+  "test_credentials": "No auth required. LLM key configured in backend/.env as EMERGENT_LLM_KEY",
+  "seed_data_creation": "Backtest data cached for all 6 portfolios in portfolio_backtests collection",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 13 verified the 5-year backtest feature. Key findings: (1) All 6 portfolios have working backtest endpoints at /api/portfolios/backtest/{strategy_type}. (2) Backtest returns: cagr_pct, sharpe_ratio, max_drawdown_pct, alpha_pct, benchmark='Nifty 50', chart_data with portfolio and nifty50 series. (3) Frontend shows backtest cards with Alpha badges, area charts, and metrics. (4) Existing portfolios have hardened_v2 pipeline - new constructions will use hardened_v3 with factor_score. (5) Backtest results are cached for 24h in portfolio_backtests collection.",
+  "iteration_13_assessment": {
+    "backtest_feature": {
+      "status": "✅ FULLY WORKING",
+      "endpoints_tested": [
+        "/api/portfolios/backtest/value_stocks - CAGR=31.61%, Sharpe=1.12, MaxDD=21.75%, Alpha=22.58%",
+        "/api/portfolios/backtest/long_term - CAGR=32.92%, Sharpe=2.05, MaxDD=7.53%, Alpha=22.15%",
+        "/api/portfolios/backtest/bespoke_forward_looking - CAGR=52.39%, Sharpe=2.43, MaxDD=5.19%, Alpha=41.71%",
+        "/api/portfolios/backtest/quick_entry - CAGR=41.39%, Sharpe=1.15, MaxDD=13.55%, Alpha=30.7%",
+        "/api/portfolios/backtest/swing - CAGR=12.4%, Sharpe=0.41, MaxDD=9.48%, Alpha=6.33%",
+        "/api/portfolios/backtest/alpha_generator - CAGR=32.37%, Sharpe=1.25, MaxDD=7.54%, Alpha=20.8%"
+      ],
+      "response_fields": ["cagr_pct", "sharpe_ratio", "max_drawdown_pct", "alpha_pct", "benchmark", "benchmark_cagr_pct", "chart_data", "win_rate_monthly_pct", "annual_volatility_pct", "best_month_pct", "worst_month_pct"]
+    },
+    "frontend_backtest_ui": {
+      "status": "✅ VERIFIED",
+      "components": [
+        "5-Year Backtest Evidence header with Nifty 50 benchmark subtitle",
+        "6 BacktestCard components with Alpha badges",
+        "Area charts showing cumulative returns",
+        "Nifty 50 benchmark line (orange dashed)",
+        "Metrics grid: CAGR, Max DD, Sharpe, Win Rate, Total, Nifty 50, Volatility, Best Mo"
+      ]
+    },
+    "hardening_code_review": {
+      "data_validation": "✅ validate_fundamentals() sanitizes yfinance data (dividend_yield capped at 20%, PE capped at 500, etc.)",
+      "sector_enforcement": "✅ enforce_sector_limits() caps at max 3 per sector",
+      "volatility_sizing": "✅ volatility_based_weights() uses inverse ATR weighting (5-20% range)",
+      "factor_scoring": "✅ compute_factor_score() calculates value/quality/growth/momentum scores",
+      "stop_loss": "✅ STOP_LOSS_PCT = -8.0 in evaluate_rebalancing()"
+    }
+  }
+}

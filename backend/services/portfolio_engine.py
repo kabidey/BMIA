@@ -28,6 +28,12 @@ import threading
 from datetime import datetime, date, timedelta, timezone
 from typing import Optional
 
+from services.portfolio_hardening import (
+    validate_fundamentals, validate_technical,
+    compute_factor_score, enforce_sector_limits,
+    volatility_based_weights, compute_backtest,
+)
+
 logger = logging.getLogger(__name__)
 IST = timezone(timedelta(hours=5, minutes=30))
 
@@ -581,6 +587,10 @@ def _deep_enrich(candidates, max_shortlist=20):
             technical = full_technical_analysis(ohlcv)
             fundamentals = get_fundamentals(sym)
 
+            # HARDENING: Validate data before it reaches any LLM
+            fundamentals = validate_fundamentals(fundamentals) if isinstance(fundamentals, dict) else fundamentals
+            technical = validate_technical(technical) if isinstance(technical, dict) else technical
+
             # Volume ratio
             if len(hist) >= 11:
                 current_vol = float(hist["Volume"].iloc[-1])
@@ -1004,10 +1014,59 @@ async def construct_portfolio(db, strategy_type: str):
     if len(selections) < 5:
         return {"error": f"Consensus yielded only {len(selections)} stocks, need at least 5"}
 
-    # Normalize weights
-    total_weight = sum(s.get("weight", 10) for s in selections)
-    for s in selections:
-        s["weight"] = round(s.get("weight", 10) / total_weight * 100, 1)
+    # ══════════════════════════════════════════════════════════════════════════
+    # HARDENING LAYER 1: Compute factor scores for each selection
+    # ══════════════════════════════════════════════════════════════════════════
+    shortlist_map = {s["symbol"]: s for s in shortlist}
+    for sel in selections:
+        sym = sel.get("symbol", "")
+        sl_data = shortlist_map.get(sym, {})
+        sel["factor_score"] = compute_factor_score(sl_data, strategy_type)
+        if not sel.get("sector"):
+            sel["sector"] = sl_data.get("sector", "Other")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # HARDENING LAYER 2: Enforce sector diversification (max 3 per sector)
+    # ══════════════════════════════════════════════════════════════════════════
+    compliant, overflow = enforce_sector_limits(selections, max_per_sector=3)
+    if len(compliant) < 10 and overflow:
+        # Replace overflow slots with remaining candidates from other sectors
+        remaining_syms = {s.get("symbol") for s in compliant}
+        for sv_item in sorted(stock_votes.items(), key=lambda x: x[1]["count"], reverse=True):
+            sv_sym, sv_data = sv_item
+            if sv_sym in remaining_syms:
+                continue
+            # Check sector
+            sl_d = shortlist_map.get(sv_sym, {})
+            sec = sl_d.get("sector", "Other") or "Other"
+            sec_count = sum(1 for c in compliant if (c.get("sector") or "Other") == sec)
+            if sec_count < 3:
+                best_sel = max(sv_data["selections"], key=lambda s: len(s.get("rationale", "")))
+                best_sel["sector"] = sec
+                best_sel["factor_score"] = compute_factor_score(sl_d, strategy_type)
+                best_sel["consensus_votes"] = sv_data["count"]
+                best_sel["consensus_models"] = sv_data["models"]
+                compliant.append(best_sel)
+                remaining_syms.add(sv_sym)
+            if len(compliant) >= 10:
+                break
+
+    selections = compliant[:10]
+    logger.info(f"PORTFOLIO [{strategy_type}]: {len(selections)} stocks after sector enforcement")
+
+    if len(selections) < 5:
+        return {"error": f"After sector enforcement, only {len(selections)} stocks remain"}
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # HARDENING LAYER 3: Volatility-based sizing (code decides weights)
+    # ══════════════════════════════════════════════════════════════════════════
+    for sel in selections:
+        sym = sel.get("symbol", "")
+        sl_data = shortlist_map.get(sym, {})
+        sel["technical"] = sl_data.get("technical", {})
+
+    selections = volatility_based_weights(selections, min_weight=5.0, max_weight=20.0)
+    logger.info(f"PORTFOLIO [{strategy_type}]: Volatility-based weights applied")
 
     # Allocate capital and calculate quantities
     holdings = []
@@ -1050,6 +1109,7 @@ async def construct_portfolio(db, strategy_type: str):
             "technical_signal": s.get("technical_signal", ""),
             "fundamental_grade": s.get("fundamental_grade", ""),
             "filing_insight": s.get("filing_insight", ""),
+            "factor_score": s.get("factor_score", 0),
             "consensus_votes": s.get("consensus_votes", 1),
             "consensus_models": s.get("consensus_models", []),
             "entry_date": datetime.now(IST).isoformat(),
@@ -1080,13 +1140,16 @@ async def construct_portfolio(db, strategy_type: str):
         "sector_allocation": best_result.get("sector_allocation", ""),
         "data_quality_note": best_result.get("data_quality_note", ""),
         "construction_log": {
-            "pipeline": "hardened_v2",
+            "pipeline": "hardened_v3",
             "universe_size": len(universe),
             "screened_candidates": len(candidates),
             "deep_enriched": len(shortlist),
             "guidance_stocks": len(guidance_data),
             "models_used": [n for n, r in model_results.items() if "error" not in r],
             "consensus_multi_vote": len(multi_vote),
+            "sector_enforcement": True,
+            "volatility_sizing": True,
+            "data_validated": True,
             "constructed_at": datetime.now(IST).isoformat(),
         },
     }
@@ -1168,6 +1231,22 @@ async def evaluate_rebalancing(db, strategy_type: str):
 
     cfg = PORTFOLIO_STRATEGIES[strategy_type]
     holdings = portfolio.get("holdings", [])
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # HARDENING: Programmatic stop-loss check BEFORE consulting LLMs
+    # ══════════════════════════════════════════════════════════════════════════
+    STOP_LOSS_PCT = -8.0   # Hard stop-loss
+    TARGET_HIT_PCT = 20.0  # Auto-take-profit threshold
+    auto_removes = []
+    for h in holdings:
+        pnl_pct = h.get("pnl_pct", 0) or 0
+        if pnl_pct <= STOP_LOSS_PCT:
+            auto_removes.append({"symbol": h["symbol"], "reason": f"STOP-LOSS breached ({pnl_pct:.1f}% < {STOP_LOSS_PCT}%)", "pnl_pct": pnl_pct})
+            logger.info(f"REBALANCE [{strategy_type}]: Auto-stop {h['symbol']} at {pnl_pct:.1f}%")
+        elif pnl_pct >= TARGET_HIT_PCT:
+            # Check if momentum fading (RSI > 75 or declining trend)
+            auto_removes.append({"symbol": h["symbol"], "reason": f"TARGET HIT ({pnl_pct:.1f}% > {TARGET_HIT_PCT}%), consider profit booking", "pnl_pct": pnl_pct})
+            logger.info(f"REBALANCE [{strategy_type}]: Auto-target {h['symbol']} at {pnl_pct:.1f}%")
 
     # Build current holdings summary with detailed data
     holdings_text = ""

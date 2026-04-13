@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { RefreshCw, BarChart3, PieChart as PieChartIcon, TrendingUp, TrendingDown, Shield, Activity, Award, AlertTriangle, Loader2 } from 'lucide-react';
+import { RefreshCw, BarChart3, TrendingUp, TrendingDown, Shield, Activity, Award, Loader2, History, Target } from 'lucide-react';
 import { Card, CardContent } from '../components/ui/card';
-import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, Radar, Legend } from 'recharts';
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, Radar, Legend, LineChart, Line, CartesianGrid, Area, AreaChart } from 'recharts';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -192,6 +192,131 @@ function PortfolioRiskTable({ portfolios }) {
   );
 }
 
+function BacktestCard({ strategyType, strategyName }) {
+  const [bt, setBt] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const runBacktest = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/portfolios/backtest/${strategyType}`);
+      const d = await res.json();
+      if (d.error) {
+        setError(d.error);
+      } else {
+        setBt(d);
+      }
+    } catch (e) {
+      setError('Failed to load backtest');
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { runBacktest(); }, [strategyType]);
+
+  if (loading) return (
+    <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))] p-4">
+      <div className="flex items-center gap-2">
+        <Loader2 className="w-4 h-4 animate-spin text-[hsl(var(--primary))]" />
+        <span className="text-xs text-[hsl(var(--muted-foreground))]">Running 5Y backtest for {strategyName}...</span>
+      </div>
+    </Card>
+  );
+
+  if (error || !bt) return (
+    <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))] p-4">
+      <p className="text-xs text-[hsl(var(--muted-foreground))]">{strategyName}: {error || 'No data'}</p>
+    </Card>
+  );
+
+  const isAlpha = bt.alpha_pct > 0;
+
+  return (
+    <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))] p-4" data-testid={`backtest-${strategyType}`}>
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <p className="text-xs font-semibold text-[hsl(var(--foreground))]">{bt.strategy}</p>
+          <p className="text-[10px] text-[hsl(var(--muted-foreground))]">{bt.years}Y lookback | {bt.stocks_tested} stocks | {bt.months} months</p>
+        </div>
+        <span className={`text-xs font-bold font-mono px-2 py-0.5 rounded ${isAlpha ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
+          Alpha: {bt.alpha_pct >= 0 ? '+' : ''}{bt.alpha_pct}%
+        </span>
+      </div>
+
+      {/* Cumulative return chart */}
+      {bt.chart_data && bt.chart_data.length > 2 && (
+        <ResponsiveContainer width="100%" height={140}>
+          <AreaChart data={bt.chart_data} margin={{ top: 5, right: 5, bottom: 5, left: -15 }}>
+            <defs>
+              <linearGradient id={`grad-${strategyType}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#10b981" stopOpacity={0.15}/>
+                <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="hsl(222 14% 14%)" />
+            <XAxis dataKey="month" tick={{ fontSize: 8, fill: 'hsl(215 16% 70%)' }} tickFormatter={v => `M${v}`} interval={Math.floor((bt.chart_data?.length || 12) / 6)} />
+            <YAxis tick={{ fontSize: 8, fill: 'hsl(215 16% 70%)' }} tickFormatter={v => `${v}%`} />
+            <Tooltip
+              contentStyle={{ background: 'hsl(222 18% 8%)', border: '1px solid hsl(222 14% 18%)', borderRadius: '8px', fontSize: '10px' }}
+              formatter={(val, name) => [`${val}%`, name === 'portfolio' ? 'Strategy' : 'Nifty 50']}
+            />
+            <Area type="monotone" dataKey="portfolio" stroke="#10b981" fill={`url(#grad-${strategyType})`} strokeWidth={1.5} name="portfolio" />
+            {bt.chart_data[0]?.nifty50 !== undefined && (
+              <Line type="monotone" dataKey="nifty50" stroke="#f59e0b" strokeWidth={1} strokeDasharray="4 4" dot={false} name="nifty50" />
+            )}
+          </AreaChart>
+        </ResponsiveContainer>
+      )}
+
+      {/* Metrics grid */}
+      <div className="grid grid-cols-4 gap-2 mt-3">
+        <div>
+          <p className="text-[9px] text-[hsl(var(--muted-foreground))]">CAGR</p>
+          <p className={`text-xs font-mono font-bold ${bt.cagr_pct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+            {bt.cagr_pct >= 0 ? '+' : ''}{bt.cagr_pct}%
+          </p>
+        </div>
+        <div>
+          <p className="text-[9px] text-[hsl(var(--muted-foreground))]">Max DD</p>
+          <p className="text-xs font-mono font-bold text-red-400">-{bt.max_drawdown_pct}%</p>
+        </div>
+        <div>
+          <p className="text-[9px] text-[hsl(var(--muted-foreground))]">Sharpe</p>
+          <p className={`text-xs font-mono font-bold ${bt.sharpe_ratio >= 1 ? 'text-emerald-400' : bt.sharpe_ratio >= 0.5 ? 'text-amber-400' : 'text-red-400'}`}>
+            {bt.sharpe_ratio}
+          </p>
+        </div>
+        <div>
+          <p className="text-[9px] text-[hsl(var(--muted-foreground))]">Win Rate</p>
+          <p className="text-xs font-mono font-bold text-[hsl(var(--foreground))]">{bt.win_rate_monthly_pct}%</p>
+        </div>
+      </div>
+      <div className="grid grid-cols-4 gap-2 mt-1">
+        <div>
+          <p className="text-[9px] text-[hsl(var(--muted-foreground))]">Total</p>
+          <p className={`text-xs font-mono ${bt.total_return_pct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+            {bt.total_return_pct >= 0 ? '+' : ''}{bt.total_return_pct}%
+          </p>
+        </div>
+        <div>
+          <p className="text-[9px] text-[hsl(var(--muted-foreground))]">Nifty 50</p>
+          <p className="text-xs font-mono text-amber-400">{bt.benchmark_total_return_pct >= 0 ? '+' : ''}{bt.benchmark_total_return_pct}%</p>
+        </div>
+        <div>
+          <p className="text-[9px] text-[hsl(var(--muted-foreground))]">Volatility</p>
+          <p className="text-xs font-mono text-[hsl(var(--foreground))]">{bt.annual_volatility_pct}%</p>
+        </div>
+        <div>
+          <p className="text-[9px] text-[hsl(var(--muted-foreground))]">Best Mo</p>
+          <p className="text-xs font-mono text-emerald-400">+{bt.best_month_pct}%</p>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 export default function PortfolioAnalytics() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -307,6 +432,22 @@ export default function PortfolioAnalytics() {
             <SectorPieChart data={p.sector_allocation} title={p.name} />
           </Card>
         ))}
+      </div>
+
+      {/* 5-Year Backtest Results */}
+      <div data-testid="backtest-section">
+        <div className="flex items-center gap-2 mb-4">
+          <History className="w-4 h-4 text-[hsl(var(--primary))]" />
+          <h2 className="text-base font-display font-bold text-[hsl(var(--foreground))]">5-Year Backtest Evidence</h2>
+          <span className="text-[10px] bg-[hsl(var(--surface-3))] text-[hsl(var(--muted-foreground))] px-2 py-0.5 rounded">
+            Lookback analysis vs Nifty 50 benchmark
+          </span>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {portfolios.map(p => (
+            <BacktestCard key={p.type} strategyType={p.type} strategyName={p.name} />
+          ))}
+        </div>
       </div>
     </div>
   );
