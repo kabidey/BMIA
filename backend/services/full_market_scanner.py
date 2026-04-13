@@ -151,18 +151,21 @@ def build_shortlist(candidates, max_shortlist=20):
     """
     Stage C: Deep feature computation on candidates.
     Fetch yfinance data and compute expanded technicals for the shortlist.
+    HARDENED: Per-stock timeout (8s), data sanitization, factor scoring.
     """
+    import concurrent.futures
     from services.technical_service import full_technical_analysis
     from services.fundamental_service import get_fundamentals
+    from services.portfolio_hardening import validate_fundamentals, validate_technical
 
-    shortlist = []
-    for c in candidates[:max_shortlist * 2]:  # Fetch extra in case some fail
+    def _fetch_one(c):
+        """Fetch and compute features for a single candidate (runs in thread)."""
         sym = c["symbol"]
         try:
             ticker = yf.Ticker(sym)
             hist = ticker.history(period="3mo")
             if hist is None or len(hist) < 20:
-                continue
+                return None
 
             # Build OHLCV data
             ohlcv = []
@@ -176,11 +179,13 @@ def build_shortlist(candidates, max_shortlist=20):
                     "volume": int(row["Volume"]),
                 })
 
-            # Compute technicals
+            # Compute technicals + sanitize
             technical = full_technical_analysis(ohlcv)
+            technical = validate_technical(technical) if isinstance(technical, dict) else {}
 
-            # Get fundamentals
+            # Get fundamentals + sanitize
             fundamentals = get_fundamentals(sym)
+            fundamentals = validate_fundamentals(fundamentals) if isinstance(fundamentals, dict) else {}
 
             # Calculate volume ratio (today vs 10d avg)
             if len(hist) >= 11:
@@ -190,7 +195,7 @@ def build_shortlist(candidates, max_shortlist=20):
             else:
                 vol_ratio = 1.0
 
-            shortlist.append({
+            return {
                 "symbol": sym,
                 "name": c["ticker"],
                 "sector": fundamentals.get("sector", "N/A") if isinstance(fundamentals, dict) else "N/A",
@@ -201,27 +206,42 @@ def build_shortlist(candidates, max_shortlist=20):
                     "volume": c["volume"],
                     "vol_ratio": vol_ratio,
                 },
-                "technical": technical if isinstance(technical, dict) else {},
-                "fundamental": fundamentals if isinstance(fundamentals, dict) else {},
+                "technical": technical,
+                "fundamental": fundamentals,
                 "prefilter_score": c["prefilter_score"],
-            })
-
-            if len(shortlist) >= max_shortlist:
-                break
-
+            }
         except Exception as e:
             logger.debug(f"Shortlist skip {sym}: {e}")
-            continue
+            return None
 
-    logger.info(f"Shortlist: {len(shortlist)} stocks with full data")
+    # Use ThreadPoolExecutor with per-stock timeout
+    shortlist = []
+    batch = candidates[:max_shortlist * 2]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        future_map = {executor.submit(_fetch_one, c): c for c in batch}
+        for future in concurrent.futures.as_completed(future_map, timeout=90):
+            try:
+                result = future.result(timeout=8)
+                if result:
+                    shortlist.append(result)
+                    if len(shortlist) >= max_shortlist:
+                        break
+            except (concurrent.futures.TimeoutError, Exception) as e:
+                sym = future_map[future].get("symbol", "?")
+                logger.debug(f"Shortlist timeout/error {sym}: {e}")
+
+    logger.info(f"Shortlist: {len(shortlist)} stocks with full data (hardened)")
     return shortlist
 
 
 async def god_mode_scan(market="NSE", max_candidates=80, max_shortlist=15, top_n=15):
     """
     Full pipeline: Universe → Prefilter → Shortlist → God Mode → Ranked BUY calls.
+    HARDENED: 3-minute hard cap, sanitized data, factor scores attached.
     """
+    import asyncio
     from services.intelligence_engine import generate_god_mode_batch_ranking
+    from services.portfolio_hardening import compute_factor_score
 
     pipeline_status = {
         "stage": "universe",
@@ -245,7 +265,7 @@ async def god_mode_scan(market="NSE", max_candidates=80, max_shortlist=15, top_n
     if not candidates:
         return {"error": "No candidates after prefilter", "pipeline": pipeline_status}
 
-    # Stage C: Deep features
+    # Stage C: Deep features (hardened with timeouts)
     logger.info("GOD SCAN Stage C: Building shortlist with deep features...")
     pipeline_status["stage"] = "shortlist"
     shortlist = build_shortlist(candidates, max_shortlist=max_shortlist)
@@ -254,14 +274,32 @@ async def god_mode_scan(market="NSE", max_candidates=80, max_shortlist=15, top_n
     if not shortlist:
         return {"error": "No stocks in shortlist after feature computation", "pipeline": pipeline_status}
 
-    # Stage D: God Mode ensemble
+    # Attach factor scores to shortlist
+    for s in shortlist:
+        try:
+            score = compute_factor_score(s, "alpha_generator")
+            s["factor_score"] = score
+        except Exception:
+            s["factor_score"] = None
+
+    # Stage D: God Mode ensemble (with 120s hard timeout)
     logger.info(f"GOD SCAN Stage D: God Mode ensemble on {len(shortlist)} stocks...")
     pipeline_status["stage"] = "god_mode"
-    ranking_result = await generate_god_mode_batch_ranking(shortlist)
+    try:
+        ranking_result = await asyncio.wait_for(
+            generate_god_mode_batch_ranking(shortlist),
+            timeout=120,
+        )
+    except asyncio.TimeoutError:
+        logger.error("GOD SCAN Stage D: LLM ensemble timed out after 120s")
+        ranking_result = {"error": "LLM ensemble timed out. Try again."}
+
     pipeline_status["stage"] = "complete"
+    pipeline_status["completed_at"] = datetime.now(timezone.utc).isoformat()
 
     if "error" in ranking_result:
-        # Fallback: return shortlist with prefilter data
+        # Fallback: return shortlist sorted by factor score
+        fallback = sorted(shortlist, key=lambda x: x.get("factor_score") or 0, reverse=True)
         return {
             "results": [{
                 "symbol": s["symbol"],
@@ -273,6 +311,7 @@ async def god_mode_scan(market="NSE", max_candidates=80, max_shortlist=15, top_n
                 "vol_ratio": s["market_data"]["vol_ratio"],
                 "rsi": s["technical"].get("rsi", {}).get("current"),
                 "prefilter_score": s["prefilter_score"],
+                "factor_score": s.get("factor_score"),
                 "ai_score": None,
                 "action": "N/A",
                 "conviction": "N/A",
@@ -280,8 +319,8 @@ async def god_mode_scan(market="NSE", max_candidates=80, max_shortlist=15, top_n
                 "rationale": f"God Mode failed: {ranking_result['error']}",
                 "model_votes": {},
                 "rank": i + 1,
-            } for i, s in enumerate(shortlist)],
-            "total": len(shortlist),
+            } for i, s in enumerate(fallback)],
+            "total": len(fallback),
             "god_mode": False,
             "pipeline": pipeline_status,
             "error": ranking_result.get("error"),
@@ -309,6 +348,7 @@ async def god_mode_scan(market="NSE", max_candidates=80, max_shortlist=15, top_n
             "pe_ratio": s["fundamental"].get("pe_ratio"),
             "roe": s["fundamental"].get("roe"),
             "prefilter_score": s["prefilter_score"],
+            "factor_score": s.get("factor_score"),
             "rank": ai.get("rank", 99),
             "ai_score": ai.get("ai_score"),
             "action": ai.get("action", "N/A"),

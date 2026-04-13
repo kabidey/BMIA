@@ -1,11 +1,102 @@
 """
 Signal Service - CRUD, evaluation, and tracking of AI-generated trade signals.
+HARDENED: Code-enforced bounds on entry/target/stop-loss, NaN sanitization.
 """
+import math
 import logging
 from datetime import datetime, timedelta
 from bson import ObjectId
 
 logger = logging.getLogger(__name__)
+
+
+def _safe_float(val, default=0.0):
+    """Sanitize float — replace NaN/Inf with default."""
+    if val is None:
+        return default
+    try:
+        v = float(val)
+        if math.isnan(v) or math.isinf(v):
+            return default
+        return v
+    except (TypeError, ValueError):
+        return default
+
+
+def _validate_signal_bounds(signal_data: dict) -> dict:
+    """Code-enforced guardrails on LLM-generated signal data.
+    Fixes impossible entry/target/stop-loss relationships."""
+    action = signal_data.get("action", "HOLD")
+    entry = signal_data.get("entry", {})
+    targets = signal_data.get("targets", [])
+    stop_loss = signal_data.get("stop_loss", {})
+
+    entry_price = _safe_float(entry.get("price"))
+    if entry_price <= 0:
+        return signal_data  # Can't validate without entry price
+
+    # Validate confidence: clamp to 10-95
+    conf = signal_data.get("confidence", 50)
+    signal_data["confidence"] = max(10, min(95, int(_safe_float(conf, 50))))
+
+    # Validate horizon_days: clamp to 1-90
+    hd = signal_data.get("horizon_days", 14)
+    signal_data["horizon_days"] = max(1, min(90, int(_safe_float(hd, 14))))
+
+    # Validate targets
+    clean_targets = []
+    for t in targets:
+        tp = _safe_float(t.get("price"))
+        if tp <= 0:
+            continue
+        if action == "BUY" and tp <= entry_price:
+            # Target must be ABOVE entry for BUY — fix by adding min 2% upside
+            tp = round(entry_price * 1.02, 2)
+            logger.warning(f"Signal hardening: BUY target {t.get('price')} <= entry {entry_price}, adjusted to {tp}")
+        elif action == "SELL" and tp >= entry_price:
+            # Target must be BELOW entry for SELL — fix by adding min 2% downside
+            tp = round(entry_price * 0.98, 2)
+            logger.warning(f"Signal hardening: SELL target {t.get('price')} >= entry {entry_price}, adjusted to {tp}")
+        # Cap target at ±30% from entry (no moonshot hallucinations)
+        if action == "BUY":
+            tp = min(tp, round(entry_price * 1.30, 2))
+        elif action == "SELL":
+            tp = max(tp, round(entry_price * 0.70, 2))
+        clean_targets.append({"price": tp, "label": t.get("label", "T1")})
+    signal_data["targets"] = clean_targets if clean_targets else targets
+
+    # Validate stop-loss
+    sl_price = _safe_float(stop_loss.get("price"))
+    if sl_price > 0:
+        if action == "BUY" and sl_price >= entry_price:
+            # Stop must be BELOW entry for BUY
+            sl_price = round(entry_price * 0.95, 2)
+            logger.warning(f"Signal hardening: BUY stop {stop_loss.get('price')} >= entry, adjusted to {sl_price}")
+        elif action == "SELL" and sl_price <= entry_price:
+            # Stop must be ABOVE entry for SELL
+            sl_price = round(entry_price * 1.05, 2)
+            logger.warning(f"Signal hardening: SELL stop {stop_loss.get('price')} <= entry, adjusted to {sl_price}")
+        # Enforce max 15% stop-loss distance
+        if action == "BUY":
+            sl_price = max(sl_price, round(entry_price * 0.85, 2))
+        elif action == "SELL":
+            sl_price = min(sl_price, round(entry_price * 1.15, 2))
+        signal_data["stop_loss"] = {"price": sl_price, "type": stop_loss.get("type", "hard")}
+
+    # Compute and validate risk/reward ratio
+    if clean_targets and sl_price > 0:
+        if action == "BUY":
+            reward = clean_targets[0]["price"] - entry_price
+            risk = entry_price - sl_price
+        elif action == "SELL":
+            reward = entry_price - clean_targets[0]["price"]
+            risk = sl_price - entry_price
+        else:
+            reward, risk = 0, 1
+        rr = round(reward / max(risk, 0.01), 2)
+        signal_data["risk_reward_ratio"] = f"1:{rr}"
+
+    return signal_data
 
 
 def serialize_signal(doc):
@@ -24,7 +115,10 @@ def serialize_signal(doc):
 
 
 async def save_signal(db, signal_data: dict, raw_analysis: dict = None):
-    """Persist a new signal to MongoDB."""
+    """Persist a new signal to MongoDB. Applies code-enforced guardrails first."""
+    # HARDENED: Validate signal bounds before saving
+    signal_data = _validate_signal_bounds(signal_data)
+
     doc = {
         "symbol": signal_data.get("symbol"),
         "action": signal_data.get("action", "HOLD"),
@@ -94,7 +188,8 @@ async def get_signal_history(db, limit: int = 50, symbol: str = None, status: st
 
 
 async def evaluate_signal(db, signal_id: str, current_price: float):
-    """Evaluate a single signal against current price and update status."""
+    """Evaluate a single signal against current price and update status.
+    HARDENED: Sanitizes all float calculations."""
     try:
         signal = await db.signals.find_one({"_id": ObjectId(signal_id)})
         if not signal:
@@ -103,8 +198,9 @@ async def evaluate_signal(db, signal_id: str, current_price: float):
         if signal["status"] != "OPEN":
             return serialize_signal(signal)
 
-        entry_price = signal.get("entry_price", 0)
-        if entry_price <= 0:
+        entry_price = _safe_float(signal.get("entry_price"))
+        current_price = _safe_float(current_price)
+        if entry_price <= 0 or current_price <= 0:
             return serialize_signal(signal)
 
         action = signal.get("action", "HOLD")
@@ -113,16 +209,18 @@ async def evaluate_signal(db, signal_id: str, current_price: float):
         horizon_days = signal.get("horizon_days", 14)
         created_at = signal.get("created_at", datetime.now())
 
-        # Calculate return
+        # Calculate return (sanitized)
         if action == "SELL":
-            return_pct = round((entry_price - current_price) / entry_price * 100, 2)
+            return_pct = _safe_float(round((entry_price - current_price) / entry_price * 100, 2))
         else:
-            # BUY, HOLD, AVOID — all track long-side movement from entry
-            return_pct = round((current_price - entry_price) / entry_price * 100, 2)
+            return_pct = _safe_float(round((current_price - entry_price) / entry_price * 100, 2))
 
-        # Track peak and drawdown
-        peak_return = max(signal.get("peak_return_pct", 0), return_pct)
-        max_dd = min(signal.get("max_drawdown_pct", 0), return_pct)
+        # Clamp return to ±100% (reject garbage)
+        return_pct = max(-100.0, min(100.0, return_pct))
+
+        # Track peak and drawdown (sanitized)
+        peak_return = max(_safe_float(signal.get("peak_return_pct")), return_pct)
+        max_dd = min(_safe_float(signal.get("max_drawdown_pct")), return_pct)
 
         days_open = (datetime.now() - created_at).days if isinstance(created_at, datetime) else 0
 
@@ -130,18 +228,18 @@ async def evaluate_signal(db, signal_id: str, current_price: float):
         new_status = "OPEN"
         eval_notes = ""
 
-        # Check targets (use first target)
+        # Check targets (use first target) — sanitized
         if targets and len(targets) > 0:
-            target_price = targets[0].get("price", 0)
-            if action == "BUY" and current_price >= target_price and target_price > 0:
+            target_price = _safe_float(targets[0].get("price"))
+            if action == "BUY" and target_price > 0 and current_price >= target_price:
                 new_status = "HIT_TARGET"
                 eval_notes = f"Target {target_price} hit at {current_price}. Return: {return_pct}%"
-            elif action == "SELL" and current_price <= target_price and target_price > 0:
+            elif action == "SELL" and target_price > 0 and current_price <= target_price:
                 new_status = "HIT_TARGET"
                 eval_notes = f"Target {target_price} hit at {current_price}. Return: {return_pct}%"
 
-        # Check stop loss
-        stop_price = stop_loss.get("price", 0)
+        # Check stop loss — sanitized
+        stop_price = _safe_float(stop_loss.get("price"))
         if stop_price > 0:
             if action == "BUY" and current_price <= stop_price:
                 new_status = "HIT_STOP"

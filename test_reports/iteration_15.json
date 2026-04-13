@@ -1,0 +1,123 @@
+{
+  "summary": "Iteration 15 testing completed successfully. Verified hardening of Batch Scanner, AI Signals, and Track Record features. All 22 backend tests passed (100%). Frontend pages (BatchScanner, SignalDashboard, TrackRecord) load correctly with all expected UI elements.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "Backend: _validate_signal_bounds correctly fixes BUY target below entry (adjusts upward to entry*1.02)",
+    "Backend: _validate_signal_bounds correctly fixes BUY stop-loss above entry (adjusts downward to entry*0.95)",
+    "Backend: _validate_signal_bounds correctly fixes SELL target above entry (adjusts downward to entry*0.98)",
+    "Backend: _validate_signal_bounds correctly fixes SELL stop-loss below entry (adjusts upward to entry*1.05)",
+    "Backend: confidence clamped to 10-95 range (200 -> 95, 5 -> 10)",
+    "Backend: horizon_days clamped to 1-90 range (500 -> 90, 0 -> 1)",
+    "Backend: risk_reward_ratio computed from validated targets/stops (format 1:X.XX)",
+    "Backend: _safe_float handles NaN/Inf/None/invalid values correctly",
+    "Backend: GET /api/signals/track-record returns data_quality field with status/closed_count/stale_open_signals/zero_return_closed",
+    "Backend: Track record metrics are sanitized (no NaN/Inf in metrics/equity_curve/by_action/by_sector/by_confidence/streaks)",
+    "Backend: GET /api/signals/active returns sanitized signals with live_return_pct (no NaN/Inf)",
+    "Backend: GET /api/signals/learning-context returns properly with total_signals field",
+    "Backend: build_shortlist uses ThreadPoolExecutor with per-stock timeout",
+    "Backend: god_mode_scan has asyncio.wait_for with 120s timeout on LLM ensemble",
+    "Backend: build_shortlist imports and uses validate_fundamentals/validate_technical from portfolio_hardening",
+    "Backend: god_mode_scan attaches factor_score to shortlist results using compute_factor_score",
+    "Backend: validate_fundamentals sanitizes impossible values (NaN pe_ratio, Inf roe, 500% dividend_yield, negative D/E, beta=100)",
+    "Backend: validate_fundamentals preserves valid values (pe_ratio=25.5, roe=18.3, dividend_yield=2.5, D/E=45, beta=1.2)",
+    "Backend: validate_technical sanitizes RSI values (RSI>100 -> None, NaN -> None, valid 65.5 preserved)",
+    "Backend: _sf sanitizer in performance_service handles NaN/Inf/None/invalid and rounds to 2 decimals",
+    "Backend: signals.py has _sanitize_dict/_sanitize_float functions for JSON safety",
+    "Backend: _gather_raw_data uses validate_fundamentals/validate_technical from portfolio_hardening",
+    "Frontend: BatchScanner page loads with data-testid='batch-scanner-page'",
+    "Frontend: BatchScanner shows 'God Mode Scanner' title and 'Launch God Scan' button",
+    "Frontend: BatchScanner shows SEBI disclaimer",
+    "Frontend: SignalDashboard page loads with data-testid='signal-dashboard-page'",
+    "Frontend: SignalDashboard shows Active signals tab with 10 active signals",
+    "Frontend: SignalDashboard shows Win Rate (50%), Total Signals (6), Avg Return (32.88%)",
+    "Frontend: SignalDashboard shows Evaluate All and Generate Signal buttons",
+    "Frontend: TrackRecord page loads with data-testid='track-record-page'",
+    "Frontend: TrackRecord shows metrics: Win Rate (50%), Expectancy (32.89%), Profit Factor (2.92), Avg Win (+100%), Avg Loss (-34.23%)",
+    "Frontend: TrackRecord shows Equity Curve chart with cumulative returns",
+    "Frontend: TrackRecord shows Performance by Sector and Performance by Confidence Band breakdowns",
+    "Frontend: TrackRecord shows SEBI disclaimer"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration15_hardening.py",
+    "/app/test_reports/pytest/iteration15_results.xml",
+    "/app/.screenshots/iteration15_batch_scanner.png",
+    "/app/.screenshots/iteration15_signal_dashboard.png",
+    "/app/.screenshots/iteration15_track_record.png"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Signal validation (_validate_signal_bounds) correctly enforces: BUY targets above entry, BUY stops below entry, SELL targets below entry, SELL stops above entry",
+    "Confidence clamped to 10-95 range prevents LLM hallucination of extreme confidence values",
+    "Horizon days clamped to 1-90 prevents unrealistic time horizons",
+    "Target prices capped at ±30% from entry prevents moonshot hallucinations",
+    "Stop-loss enforced max 15% distance prevents unrealistic risk parameters",
+    "Risk/reward ratio computed from validated (not raw) targets/stops ensures accurate metrics",
+    "ThreadPoolExecutor with per-stock 8s timeout in build_shortlist prevents infinite hangs on slow yfinance calls",
+    "asyncio.wait_for with 120s timeout on LLM ensemble prevents god_mode_scan from running forever",
+    "validate_fundamentals sanitizes yfinance garbage: NaN/Inf values, impossible dividend yields (>20%), negative D/E, extreme beta",
+    "validate_technical sanitizes RSI to 0-100 range",
+    "_sf sanitizer in performance_service ensures track record metrics are JSON-safe (no NaN/Inf)",
+    "_sanitize_dict in signals.py recursively sanitizes nested structures for JSON serialization",
+    "data_quality field in track record provides transparency on data reliability (status, closed_count, stale_open_signals, zero_return_closed)"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration15_hardening.py"
+  ],
+  "success_rate": {
+    "backend": "100% (22/22 tests passed)",
+    "frontend": "100% (All 3 pages load correctly with expected elements)"
+  },
+  "test_credentials": "No auth required. Backend at https://bharat-quant-engine.preview.emergentagent.com",
+  "seed_data_creation": "None - used existing signals data",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 15 verified the hardening of three features: (1) Batch Scanner - ThreadPoolExecutor with per-stock 8s timeout, asyncio.wait_for 120s timeout on LLM ensemble, validate_fundamentals/validate_technical applied, factor_score attached. (2) AI Signal Dashboard - _validate_signal_bounds enforces entry/target/stop-loss relationships, confidence clamped 10-95, horizon_days clamped 1-90, risk_reward_ratio computed from validated values. (3) Track Record - _sf sanitizer for NaN/Inf, data_quality field with status/closed_count/stale_open_signals/zero_return_closed. All validation functions tested directly via pytest imports. Frontend pages verified via Playwright.",
+  "hardening_verification": {
+    "batch_scanner": {
+      "status": "✅ HARDENED",
+      "features": [
+        "ThreadPoolExecutor with max_workers=5 for parallel stock fetching",
+        "Per-stock timeout of 8s via future.result(timeout=8)",
+        "Overall batch timeout of 90s via as_completed(timeout=90)",
+        "asyncio.wait_for(timeout=120) on LLM ensemble in god_mode_scan",
+        "validate_fundamentals() applied to yfinance fundamental data",
+        "validate_technical() applied to technical analysis data",
+        "compute_factor_score() attached to shortlist results"
+      ]
+    },
+    "ai_signal_dashboard": {
+      "status": "✅ HARDENED",
+      "features": [
+        "_validate_signal_bounds() enforces entry/target/stop-loss relationships",
+        "BUY: target must be > entry (adjusted to entry*1.02 if below)",
+        "BUY: stop must be < entry (adjusted to entry*0.95 if above)",
+        "SELL: target must be < entry (adjusted to entry*0.98 if above)",
+        "SELL: stop must be > entry (adjusted to entry*1.05 if below)",
+        "Target capped at ±30% from entry (no moonshot hallucinations)",
+        "Stop-loss max 15% distance from entry",
+        "Confidence clamped to 10-95 range",
+        "Horizon days clamped to 1-90 range",
+        "Risk/reward ratio computed from validated values"
+      ]
+    },
+    "track_record": {
+      "status": "✅ HARDENED",
+      "features": [
+        "_sf() sanitizer replaces NaN/Inf with default, rounds to 2 decimals",
+        "All return_pct values sanitized before metrics computation",
+        "data_quality field added with status (good/insufficient/no_data)",
+        "data_quality includes closed_count, stale_open_signals, zero_return_closed",
+        "_sanitize_dict() in signals.py for JSON-safe responses",
+        "Active signals endpoint sanitizes live_return_pct"
+      ]
+    }
+  }
+}

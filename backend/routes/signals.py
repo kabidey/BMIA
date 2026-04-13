@@ -37,7 +37,9 @@ class EvaluateSignalRequest(BaseModel):
 
 
 def _gather_raw_data(symbol):
-    """Synchronous data gathering for signal generation."""
+    """Synchronous data gathering for signal generation. HARDENED: sanitizes data."""
+    from services.portfolio_hardening import validate_fundamentals, validate_technical
+
     raw_data = {}
 
     market_data = get_market_snapshot(symbol, "6mo", "1d")
@@ -53,10 +55,10 @@ def _gather_raw_data(symbol):
     raw_data["chart_data"] = {"ohlcv": market_data["ohlcv"]}
 
     technical = full_technical_analysis(market_data["ohlcv"])
-    raw_data["technical"] = technical
+    raw_data["technical"] = validate_technical(technical) if isinstance(technical, dict) else technical
 
     fundamentals = get_fundamentals(symbol)
-    raw_data["fundamental"] = fundamentals
+    raw_data["fundamental"] = validate_fundamentals(fundamentals) if isinstance(fundamentals, dict) else fundamentals
 
     headlines = fetch_news(symbol)
     raw_data["news"] = {"headlines": headlines, "count": len(headlines)}

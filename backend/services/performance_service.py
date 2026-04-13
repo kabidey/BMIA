@@ -1,6 +1,8 @@
 """
 Performance Service - Track record metrics, equity curves, streaks.
+HARDENED: Float sanitization, data quality checks, NaN-safe calculations.
 """
+import math
 import logging
 from datetime import datetime
 from collections import defaultdict
@@ -8,8 +10,19 @@ from collections import defaultdict
 logger = logging.getLogger(__name__)
 
 
+def _sf(val, default=0.0):
+    """Safe float — replace NaN/Inf with default."""
+    if val is None:
+        return default
+    try:
+        v = float(val)
+        return default if (math.isnan(v) or math.isinf(v)) else round(v, 2)
+    except (TypeError, ValueError):
+        return default
+
+
 async def get_track_record(db):
-    """Compute comprehensive track record metrics."""
+    """Compute comprehensive track record metrics with hardened calculations."""
     try:
         all_signals = await db.signals.find({}).sort("created_at", 1).to_list(length=500)
 
@@ -26,15 +39,20 @@ async def get_track_record(db):
                 "by_timeframe": {},
                 "by_confidence": {},
                 "streaks": {},
+                "data_quality": {"status": "no_data"},
             }
 
         open_signals = [s for s in all_signals if s.get("status") == "OPEN"]
         closed_signals = [s for s in all_signals if s.get("status") != "OPEN"]
 
+        # Sanitize all return values upfront
+        for s in closed_signals:
+            s["return_pct"] = _sf(s.get("return_pct"))
+
         # Core metrics
-        wins = [s for s in closed_signals if s.get("return_pct", 0) > 0]
-        losses = [s for s in closed_signals if s.get("return_pct", 0) <= 0]
-        returns = [s.get("return_pct", 0) for s in closed_signals]
+        wins = [s for s in closed_signals if s["return_pct"] > 0]
+        losses = [s for s in closed_signals if s["return_pct"] <= 0]
+        returns = [s["return_pct"] for s in closed_signals]
 
         win_rate = round(len(wins) / max(len(closed_signals), 1) * 100, 1)
         avg_return = round(sum(returns) / max(len(returns), 1), 2)
@@ -138,20 +156,32 @@ async def get_track_record(db):
                     "avg_return": round(sum(band_returns) / len(band_returns), 2),
                 }
 
+        # Data quality assessment
+        stale_signals = sum(1 for s in open_signals
+                           if isinstance(s.get("created_at"), datetime)
+                           and (datetime.now() - s["created_at"]).days > 30)
+        zero_return_closed = sum(1 for s in closed_signals if s["return_pct"] == 0)
+        data_quality = {
+            "status": "good" if len(closed_signals) >= 5 else "insufficient",
+            "closed_count": len(closed_signals),
+            "stale_open_signals": stale_signals,
+            "zero_return_closed": zero_return_closed,
+        }
+
         return {
             "total_signals": len(all_signals),
             "open_signals": len(open_signals),
             "closed_signals": len(closed_signals),
             "metrics": {
-                "win_rate": win_rate,
-                "avg_return": avg_return,
-                "avg_win": avg_win,
-                "avg_loss": avg_loss,
-                "max_win": round(max_win, 2),
-                "max_loss": round(max_loss, 2),
-                "expectancy": expectancy,
-                "profit_factor": profit_factor,
-                "total_return": round(sum(returns), 2),
+                "win_rate": _sf(win_rate),
+                "avg_return": _sf(avg_return),
+                "avg_win": _sf(avg_win),
+                "avg_loss": _sf(avg_loss),
+                "max_win": _sf(max_win),
+                "max_loss": _sf(max_loss),
+                "expectancy": _sf(expectancy),
+                "profit_factor": _sf(profit_factor),
+                "total_return": _sf(sum(returns)),
             },
             "streaks": {
                 "current": current_streak,
@@ -163,6 +193,7 @@ async def get_track_record(db):
             "by_action": dict(by_action),
             "by_sector": by_sector_clean,
             "by_confidence": by_confidence,
+            "data_quality": data_quality,
         }
 
     except Exception as e:

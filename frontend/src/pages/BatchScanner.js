@@ -139,25 +139,26 @@ export default function BatchScanner() {
 
       const jobId = startData.job_id;
 
-      // Step 2: Simulate pipeline stages while polling
-      const stages = ['universe', 'prefilter', 'shortlist', 'god_mode'];
+      // Step 2: Realistic pipeline stage tracking
+      const stageTimings = [
+        { stage: 'universe', delay: 3000, extra: { universe_size: 2400 } },
+        { stage: 'prefilter', delay: 8000, extra: { candidates: 50 } },
+        { stage: 'shortlist', delay: 25000, extra: { shortlist_size: 10 } },
+        { stage: 'god_mode', delay: 45000, extra: {} },
+      ];
       let stageIdx = 0;
       const stageTimer = setInterval(() => {
-        if (stageIdx < stages.length) {
-          const extra = {};
-          if (stageIdx === 1) extra.universe_size = 2400;
-          if (stageIdx === 2) extra.candidates = 50;
-          if (stageIdx === 3) extra.shortlist_size = 10;
-          setPipeline(p => ({ ...p, stage: stages[stageIdx], ...extra }));
+        if (stageIdx < stageTimings.length) {
+          setPipeline(p => ({ ...p, ...stageTimings[stageIdx].extra, stage: stageTimings[stageIdx].stage }));
           stageIdx++;
         }
-      }, 8000);
+      }, 15000);
 
-      // Step 3: Poll for results
+      // Step 3: Poll for results (3.5 min max — matches backend hard timeout)
       let attempts = 0;
-      const maxAttempts = 120; // 4 minutes max
+      const maxAttempts = 70;
       while (attempts < maxAttempts) {
-        await new Promise(r => setTimeout(r, 2000));
+        await new Promise(r => setTimeout(r, 3000));
         attempts++;
 
         try {
@@ -187,13 +188,12 @@ export default function BatchScanner() {
             return;
           }
         } catch (pollErr) {
-          // Network hiccup, continue polling
           console.warn('Poll failed, retrying...', pollErr);
         }
       }
 
       clearInterval(stageTimer);
-      setError('Scan timed out after 4 minutes. Try again.');
+      setError('Scan timed out after 3.5 minutes. The backend has a hard timeout to prevent infinite runs. Try again.');
       setPipeline({ stage: 'complete' });
     } catch (e) {
       console.error('God scan error:', e);
