@@ -21,35 +21,41 @@ Build a Tier-1 Quant Analyst specializing in Indian Equity and Commodity markets
 ### 5-Year Backtest Engine ✅ (Apr 13, 2026)
 - Lookback analysis for each portfolio's holdings vs Nifty 50 benchmark
 - Metrics: CAGR, Sharpe Ratio, Max Drawdown, Alpha, Win Rate, Annual Volatility
-- Cumulative return chart with benchmark comparison
 - Cached for 24h in `portfolio_backtests` collection
 
 ### LSTM + Monte Carlo Forward Simulation Engine ✅ (Apr 13, 2026)
-**Professional-grade simulation tool:**
-- **LSTM Neural Network**: 2-layer LSTM (hidden=64, dropout=0.2) trained on 5Y daily portfolio returns. Outputs probabilistic (mu, log_sigma) for calibrating Monte Carlo. Clamped to ±50% annualized to prevent hallucination.
-- **Monte Carlo (GBM)**: 10,000 Geometric Brownian Motion paths over 252 trading days (1 year forward).
-- **Fan Chart**: Weekly percentile bands (5th, 25th, 50th, 75th, 95th) showing confidence intervals.
-- **Return Distribution**: Terminal return histogram across all 10K paths.
-- **Risk Metrics**: VaR (95%/99%), CVaR/Expected Shortfall, Probability of Profit, Expected Return, Max Expected Drawdown (average across 1000 sampled paths).
-- **Background Computation**: Async background threads for ~100s computation; 12h cache in MongoDB `portfolio_simulations` collection.
-- **Dependencies**: PyTorch (CPU-only) for LSTM, NumPy for Monte Carlo.
+- **LSTM Neural Network**: 2-layer LSTM (hidden=64, dropout=0.2) trained on 5Y daily portfolio returns
+- **Monte Carlo (GBM)**: 10,000 paths, 252 trading days, fan chart with percentile bands
+- **Risk Metrics**: VaR (95%/99%), CVaR, Probability of Profit, Max Expected Drawdown
+- Background computation (~100s), 12h MongoDB cache
 
-### Portfolio Analytics Dashboard ✅ (Apr 13, 2026)
-- Sector allocation pie charts (global + per-portfolio)
-- P&L comparison bar chart, Risk radar
-- Risk metrics table (Beta, Volatility, Win%, Concentration, Pipeline version)
-- 5-Year Backtest Evidence section with area charts and Nifty 50 benchmark
-- Forward Simulation Engine section with fan charts, histograms, and risk grids
+### Deep Hardening: Batch Scanner ✅ (Apr 13, 2026)
+- **ThreadPoolExecutor** with max_workers=5 for parallel stock fetching (was sequential)
+- **Per-stock 8s timeout** prevents yfinance hangs from stalling scan
+- **Overall 90s batch timeout** on shortlist building
+- **120s asyncio.wait_for** on LLM ensemble — prevents "runs forever" bug
+- **Data sanitization**: `validate_fundamentals()` + `validate_technical()` applied before LLM sees data
+- **Factor scoring** attached to scanner results
 
-## Key Simulation Results (1Y Forward)
-| Strategy | E[R] | VaR 95% | P(Profit) | Max DD |
-|----------|------|---------|-----------|--------|
-| Bespoke Forward Looking | +65.27% | 21.52% | 99.7% | -9.35% |
-| Quick Entry | +65.03% | -3.33% | 93.9% | -19.33% |
-| Value Stocks | +63.2% | 19.31% | 99.6% | -9.73% |
-| Long Term Compounder | +45.72% | 4.5% | 97.0% | -11.96% |
-| Alpha Generator | +18.92% | -21.02% | 74.6% | -19.41% |
-| Swing Trader | -0.02% | -28.24% | 46.1% | -20.18% |
+### Deep Hardening: AI Signal Dashboard ✅ (Apr 13, 2026)
+- **Code-enforced signal bounds** (`_validate_signal_bounds()`):
+  - BUY targets must be > entry, SELL targets must be < entry (auto-fixed if violated)
+  - Stop-loss correctly positioned relative to entry (auto-fixed)
+  - Targets capped at ±30% from entry (no moonshot hallucinations)
+  - Stop-loss max 15% distance from entry
+  - Confidence clamped 10-95, horizon clamped 1-90 days
+  - Risk/reward ratio computed from validated values
+- **Input sanitization**: Raw data to LLMs goes through `validate_fundamentals()`/`validate_technical()`
+- **Return clamping**: ±100% max on evaluated returns
+
+### Deep Hardening: Track Record ✅ (Apr 13, 2026)
+- **`_sf()` sanitizer**: All float values NaN/Inf-safe before metrics computation
+- **Data quality field**: `data_quality.status` (good/insufficient/no_data), `closed_count`, `stale_open_signals`, `zero_return_closed`
+- **Return sanitization**: All `return_pct` values sanitized upfront before any calculation
+
+### Portfolio Analytics Dashboard ✅
+- Sector allocation pie charts, P&L bar chart, Risk radar
+- Risk metrics table, 5-Year Backtest Evidence, Forward Simulation Engine
 
 ## Architecture
 ```
@@ -58,20 +64,26 @@ Build a Tier-1 Quant Analyst specializing in Indian Equity and Commodity markets
   routes/ (7 modules)
   daemons/ (2 modules)
   services/
-    portfolio_engine.py           # HARDENED v3 — 6-stage pipeline with guardrails
+    portfolio_engine.py           # HARDENED v3 — 6-stage pipeline
     portfolio_hardening.py        # Validation, factor scoring, constraints, backtesting
-    portfolio_simulation.py       # NEW — LSTM + Monte Carlo forward simulation
-    intelligence_engine.py, full_market_scanner.py, dashboard_service.py, etc.
+    portfolio_simulation.py       # LSTM + Monte Carlo forward simulation
+    full_market_scanner.py        # HARDENED — timeouts, sanitization, factor scoring
+    signal_service.py             # HARDENED — code-enforced signal bounds
+    performance_service.py        # HARDENED — NaN-safe, data quality
+    intelligence_engine.py, dashboard_service.py, etc.
 /app/frontend/src/
   pages/
-    PortfolioAnalytics.js         # Analytics + Backtests + LSTM/MC Simulations
-    Watchlist.js                  # Autonomous Portfolios with enriched data
+    PortfolioAnalytics.js         # Analytics + Backtests + Simulations
+    BatchScanner.js               # HARDENED — timeout-safe polling
+    SignalDashboard.js            # Signal tracking
+    TrackRecord.js                # Performance history
+    Watchlist.js, MarketOverview.js, etc.
 ```
 
 ## Backlog
-- P1: Rebuild all 6 portfolios with hardened v3 pipeline (existing ones use v2)
+- P1: Rebuild all 6 portfolios with hardened v3 pipeline (existing use v2)
 - P2: CSV/PDF export for portfolio reports
 - P2: WebSocket/SSE for real-time Market Cockpit
 - Future: Portfolio alerts (push notifications on rebalance/P&L threshold)
 - Future: Walk-forward simulation (forward-tracking vs lookback validation)
-- Future: Benchmark comparison dashboard (returns vs Nifty 50 ETF)
+- Future: Benchmark comparison dashboard
