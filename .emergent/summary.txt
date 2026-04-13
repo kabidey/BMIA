@@ -1,133 +1,141 @@
-<analysis>**original_problem_statement**: 
-Initial Request: Build the Bharat Market Intel Agent (BMIA), a Tier-1 Quant Analyst specializing in Indian Equity and Commodity markets. Process massive market data to provide high-conviction investment recommendations by synthesizing Technical, Fundamental, and Sentiment data using yfinance, nselib, real-time news scraping, and LLMs.
+<analysis>### Handover Summary
+
+**original_problem_statement**: 
+Initial Request: Build the Bharat Market Intel Agent (BMIA), a Tier-1 Quant Analyst specializing in Indian Equity and Commodity markets, using yfinance, nselib, real-time news scraping, and LLMs.
 Subsequent Requests in this session:
-1. Build a Market Intelligence Cockpit visual dashboard to replace the boring Market Overview. Must include Major Indices, FII & DII Flows, India VIX, Advance/Decline, Sectoral Heatmap, Volume Shockers, 52-Week High/Low Clusters, Put-Call Ratio (PCR), Open Interest (OI) Buildup, and Corporate Actions/Deals.
-2. Remove large-cap bias from the batch scanner; expand to scan all companies (using NSE bhav copy/bselib).
-3. Introduce God Mode integrating separate AI scanners (OpenAI, Claude, Gemini) to yield a distilled consensus analysis for buy signals.
+1. Make the dashboard load instantly using background caching.
+2. Fix production deployment build issues (failed deploy logs).
+3. Build a Guidance page: Scrape BSE corporate announcements (bseindia.com) for NSE 500 stocks daily at 5 AM IST.
+4. Integrate RAG (Retrieval-Augmented Generation) AI into the Guidance page to answer complex investor questions based on the scraped corporate filings.
 
 **User's preferred language**: English
 (INSTRUCT: Next agent must respond in the user's preferred language only)
 
 **what currently exists?** 
-The application is highly functional up to Phase 5. Phase 4 (expanded parameters and basic AI batch scanning) and Phase 5 (the Market Intelligence Cockpit dashboard using real NSE/yfinance data) are completely implemented and 100% tested. Phase 6 (God Mode consensus using OpenAI, Claude, Gemini and a full-market NSE scanner of ~2400+ stocks) has been fully implemented in the code (backend + frontend) but is currently waiting on final testing and verification.
+The application is highly mature. Phase 6 (God Mode Full Market Scanner) is completed and optimized with a background polling pattern and parallel LLM threading. The Market Cockpit dashboard now loads instantly (~2s) via a background caching daemon. Production deployment blockers (bloated  and malformed ) were fixed. The AI Track Record and Signal Auto-Evaluation scheduler are fully functional. Phase 7 (Guidance Scraper) is implemented and tested. Phase 8 (Guidance AI RAG) backend and frontend chat UI have been built and smoke-tested but are awaiting final verification.
 
 **Last working item**: 
-- Last item agent was working: Testing the newly implemented God Mode full-market AI scanner. The agent triggered a screenshot of the scanning process and was waiting for the complex background pipeline (universe filtering → shortlist → 3x LLM consensus calls) to finish processing.
-- Status: TESTING PENDING
-- Agent Testing Done: N (For Phase 6 / God Mode. Previous phases were heavily tested and passed 100%).
-- Which testing method agent to use? Both frontend and backend testing agents. 
-- User Testing Done: N
+    - Last item agent was working: Building and testing the Phase 8 Intelligent Guidance feature. The agent created  (RAG pipeline), wired up , and updated  with an AI chat panel. The agent took a screenshot of the completed UI and successfully ran a test query via Bash (took ~16.8s for RAG response).
+    - Status: TESTING PENDING
+    - Agent Testing Done: Y (Bash tests and screenshot passed, but testing agent was not called yet).
+    - Which testing method agent to use? testing_agent_v3_fork (To run a comprehensive test of the new Guidance AI Chat UI and Backend).
+    - User Testing Done: N
 
 **All Pending/In progress Issue list**: 
-Issue 1: God Mode/Full Market Scanner Verification (P0)
-- Description: The God mode batch scanner performs intensive operations (pulling bhav copy of 2400+ stocks, filtering, and executing 3 parallel LLM calls). This might cause frontend timeout issues or backend performance bottlenecks. The agent was waiting to see if it completed successfully.
+(None currently blocking. Previous issues with deployment and MongoDB  serialization have been successfully resolved).
 
 **In progress Task List**:
-Task 1: Test and Verify God Mode Features (Backend + Frontend) (P0)
-- Where to resume: Verify if the  endpoint returns successfully without timing out. Check the frontend UI (Batch Scanner and Symbol Analysis) to ensure the God Mode consensus renders correctly. Run  on the new Phase 6 features.
-- What will be achieved with this? Ensures the massive multi-LLM consensus engine and full-market scanner are stable for production use.
-- Status: TESTING PENDING
-- Should Test frontend/backend/both after fix? Both
-- Blocked on something: No
+ Task Detail:
+  - Task 1: Verify and Finish Intelligent Guidance AI RAG integration (P0)
+     - Where to resume: Verify the screenshot of the AI chat panel in the Guidance page. Call  to ensure the chat UI handles RAG queries and loading states properly without breaking.
+     - What will be achieved with this? Completes the user's most recent request to make the scraped BSE filings intelligent and searchable via AI.
+     - Status: TESTING PENDING
+     - Should Test frontend/backend/both after fix? Both
+     - Blocked on something: No
 
-**Upcoming and Future Tasks**:
-- Build automated evaluation scheduler (cron/background task) for evaluating signals over multi-timeframes. (P1)
-- Add WebSocket/SSE for true real-time streaming of the Market Cockpit instead of polling/auto-refresh. (P2)
-- Implement CSV/PDF export functionality for analysis/signals. (P2)
+**Upcoming and Future Tasks**
+    Upcoming Tasks:
+    - Add WebSocket/SSE for true real-time streaming of the Market Cockpit instead of polling/auto-refresh (P2)
+    - Implement CSV/PDF export functionality for signal analysis and track record reports (P2)
+    - Extract and chunk PDF text from scraped BSE filings for deeper RAG analysis (currently using headlines, meta-data, and categories) (P3)
+    
+    Future Tasks:
+    - BSE integration via  for price data (currently using  due to  timeouts)
+    - Portfolio tracking / watchlist persistence
+    - Signal alert notifications (toast popups when target or stop loss is hit)
 
-**Completed work in this session**:
-- Phase 4:  wired with 25+ technical and 30+ fundamental indicators into LLM context (DONE)
-- Phase 4: AI Batch Scanner backend & frontend implemented. Fixed numpy boolean JSON serialization issue (DONE)
-- Phase 5: Complete Market Intelligence Cockpit dashboard (, , ) featuring real NSE/BSE macro, micro, and derivative data (DONE)
-- Phase 6 (Code): Built  using  bhav copy to scan 2400+ stocks (DONE)
-- Phase 6 (Code): Implemented God Mode in  and  doing parallel multi-LLM (OpenAI, Claude, Gemini) generation and consensus synthesis (DONE)
-- Phase 6 (Code): Updated  and  with God Mode UI (DONE)
+**Completed work in this session**
+- Fixed God Mode parallelism & Nginx 502 timeouts by implementing background polling for  &  (DONE)
+- Mobile responsiveness fixed across Sidebar, Market Overview, and Track Record pages (DONE)
+- Built  background cache daemon for instant (< 2s) dashboard loading (DONE)
+- Deployment fixed: Cleaned  (removed Docker-breaking packages) and fixed malformed  (DONE)
+- Fixed MongoDB  projection bug that broke signal evaluation; fixed  signal  logic (DONE)
+- Built Auto-Evaluation background scheduler running every 60s (DONE)
+- Built Phase 7  (BSE Corporate Announcements scraper) & Frontend  (DONE)
+- Built Phase 8  (AI RAG engine for BSE filings) (DONE - pending test)
 
-**Earlier issues found/mentioned but not fixed**:
-Issue 1:  package timeouts 
-- Debug checklist: User asked to use  to scan BSE stocks. The agent installed  but its methods consistently threw 124 timeout errors or returned 'Error'. 
-- Why to solve this issue and what will be achieved with this? It fulfills the explicit user request to use .
-- Should Test frontend/backend/both after fix: Backend
-- Is recurring issue? N (Agent bypassed it by using 's bhav copy which successfully fetches 2451 NSE stocks instead).
+**Earlier issues found/mentioned but not fixed**
+   Issue 1:  package timeouts and missing attributes
+   - Debug checklist:  methods for price data frequently time out or throw errors.
+   - Why to solve this issue and what will be achieved with this? Fully supports BSE-specific macro data.
+   - Should Test frontend/backend/both after fix: Backend
+   - Is recurring issue? Y (Bypassed currently by using ).
 
-**Known issue recurrence from previous fork**:
-- Issue recurrence in previous fork: N/A
-- Recurrence count: 0
-- Status: N/A
+**Known issue recurrence from previous fork**
+  - Issue recurrence in previous fork:  MongoDB serialization breaking FastAPI responses.
+  - Recurrence count: 2
+  - Status: RESOLVED (Agent removed  projection that broke evaluations, and relied on existing  to convert ObjectId to string safely).
 
-**Code Architecture**:
+**Code Architecture**
 
 
-**Key Technical Concepts**:
+**Key Technical Concepts**
 - Frontend: React, Tailwind, Shadcn UI, Recharts
-- Backend: FastAPI, Polars/Pandas, ,  (NSE indices, derivatives, corporate actions),  (installed but unstable)
+- Backend: FastAPI, threading/asyncio (heavy use of background daemons for polling, caching, and scheduling), , , 
 - Database: MongoDB 
-- Integration: Emergent LLM Key (used to query OpenAI gpt-4, Anthropic Claude, and Gemini Flash simultaneously for God Mode)
+- RAG: LiteLLM, Emergent LLM Key (multi-model consensus and retrieval-augmented generation)
 
-**key DB schema**:
-- : {_id, symbol, action, timeframe, horizon_days, entry, targets, stop_loss, rationale, thess, invalidators, raw_scores, learning_context_summary, god_mode_consensus}
-- , 
+**key DB schema**
+  - : {, , , , , , }
+  - : Handled via local storage/memory mapped to scraped filings.
 
-**changes in tech stack**:
-- Added , , , and  (though bselib usage is mocked/bypassed due to timeouts).
+**changes in tech stack**
+  - Added  library for corporate announcement scraping.
+  - Removed , , ,  to fix Kubernetes Docker deployment.
 
-**All files of reference**:
--  (Brand new file for large-scale scanning)
--  (Brand new file feeding the market cockpit)
--  (Completely rewritten into a complex 4-part dashboard)
--  (Rewritten to support God Mode pipeline UI)
--  (Strict Bloomberg-terminal dark mode UI guidelines)
+**All files of reference** 
+  -  (Updated to handle 4 background threads: Dashboard Cache, Eval Scheduler, Guidance Scraper, God Scan Jobs).
+  -  (New - Scrapes BSE announcements daily).
+  -  (New - Handles RAG analysis for corporate filings).
+  -  (New - Visualizes filings and hosts the AI Chat interface).
+  -  and  (Optimized for production deployment).
 
-**Areas that need refactoring**:
-- None currently. Alpha_service was successfully phased out.
+**Areas that need refactoring**: 
+  -  is getting massive (>1000 lines). The background daemon threads (cache, eval scheduler, guidance scraper) might need to be moved to a dedicated  or  module for better lifecycle management.
 
-**key api endpoints**:
--  (NEW - heavy endpoint serving full dashboard metrics)
--  (NEW - heavy endpoint for full market AI scanning)
--  (Updated to accept  boolean)
+**key api endpoints**
+  - , , 
+  - 
+  -  (Heavy RAG query endpoint)
 
-**Critical Info for New Agent**:
-- **God Mode / Timeouts:** The  endpoint handles 2400+ stocks, does statistical pre-filtering, shortlisting, and then runs 3 LLMs sequentially/in parallel via . This is highly susceptible to timeouts. If the frontend throws a timeout error during your screenshot testing, you may need to optimize the background tasks or extend the frontend timeout.
-- **bseLib Issue:** The user explicitly requested  but it's currently failing/timing out at the Python execution level.  bhav_copy is successfully handling the scan all companies requirement. You may need to explain this to the user if they ask about .
-- **Emergent LLM Key:** The Universal Key is actively being used to bounce logic between OpenAI, Claude, and Gemini. Do NOT ask the user for separate API keys.
+**Critical Info for New Agent** 
+  - **Deployment Restrictions:** DO NOT use  automatically. It will pull in OS-level transitive dependencies (, , etc.) that will break the Kubernetes Docker build. Explicitly add packages instead.
+  - **Background Tasks:** The application relies heavily on memory job stores () and background daemon threads (, , ). Be careful when making backend changes to not block the event loop or crash the lifespan context.
+  - **Signal Evaluations:**  relies on the  field in MongoDB. If you write queries in  or , do NOT exclude  using projections (). Manually stringify it instead.
 
-**documents and test reports created in this job**:
--  (Phase 4 100% Pass)
--  (Phase 5 100% Pass)
-- 
+**documents and test reports created in this job** 
+  -  (Phase 6 God Mode tests)
+  -  (Phase 7 Guidance page tests)
+  -  (Updated)
 
-**Last 10 User Messages and any pending HUMAN messages**:
-- *User*: Proceed (Completed Phase 4)
-- *User*: lets start working on the front end dashboard, its boring... visualize liquidity flow, market sentiment, and sector rotation... (Completed Phase 5 Market Cockpit)
-- *User*: what is see batch scanner its biased towards large cap... use https://github.com/Sachin-Kahandal/bselib also to scan... separate AI scanner openai, claude and gemini must be merged everywhere into a god mode... (Code implemented, TESTING PENDING)
+**Last 10 User Messages and any pending HUMAN messages** 
+ - *User*: Are you fooling me or really you can build this? (Agent replied with ask_human)
+ - *User*: Proceed (Agent built  and the chat UI)
+ - *Pending*: The agent has built the feature and verified it works via backend logs and screenshot, but needs to finalize/finish the task in the next step.
 
-**Project Health Check**:
-- Broken: None confirmed, but God Mode endpoint risks timeout.  package functions time out.
-- Mocked: None.
+**Project Health Check:**
+  - Broken: None.
+  - Mocked:  (price fetching only).
 
-**3rd Party Integrations**:
-- OpenAI GPT-4, Anthropic Claude, Gemini Flash — uses Emergent LLM Key (Text generation / God Mode Consensus)
-- Yahoo Finance () — Free API
-- NSE India () — Free Scraper/API
-- BSE India () — Installed but unstable
+**3rd Party Integrations**
+  - OpenAI GPT-4.1, Anthropic Claude Sonnet, Gemini Flash — uses Emergent LLM Key (Multi-model consensus & RAG).
+  - Yahoo Finance () — Free API.
+  - NSE India () — Free Scraper/API.
+  - BSE India () — Free Scraper/API for announcements.
 
-**Testing status**:
-- Testing agent used after significant changes: YES (For Phase 4 and Phase 5. Both passed).
-- Troubleshoot agent used after agent stuck in loop: NO
-- Test files created: , 
-- Known regressions: None.
+**Testing status**
+  - Testing agent used after significant changes: YES (iterations 5 & 6 passed successfully).
+  - Troubleshoot agent used after agent stuck in loop: NO
+  - Test files created: None new.
+  - Known regressions: None currently.
 
-**Credentials to test flow**:
-None required.
+**Credentials to test flow:**
+  None required.
 
-**What agent forgot to execute**:
-The agent completely implemented Phase 6 (God Mode & full market scanner) in the code, but ran out of time/iterations while waiting for the frontend UI to finish rendering the massive  response. The next agent must verify the tests and make sure the new endpoints actually return without breaking.
+**What agent forgot to execute**
+  The agent completely built the AI RAG chat interface for the Guidance page, took a screenshot, and verified the backend logic was solid, but ran out of iterations before calling  for a final UI/UX functionality check and calling the  tool. 
 
 **Debugging checklist for current issue**
-    Issue: Verification of God Mode Batch Scanner execution
-    Frontend files to check: 
-    -  (Check timeout lengths on API calls)
-    -  (Verify  timeout)
-    Backend files to check:
-    -  (Check filtering performance)
-    -  (Check  execution speed)</analysis>
+    Issue: Final verification of the Guidance AI RAG chat panel.
+    Frontend files to check:  (Verify chat panel visibility, loading states, and formatting of AI response).
+    Backend files to check:  (Ensure RAG synthesis handles empty retrieval gracefully).</analysis>

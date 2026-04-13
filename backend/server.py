@@ -36,6 +36,7 @@ from services.guidance_service import (
     get_guidance_items, get_guidance_stats, get_stock_list,
     run_full_scrape, start_guidance_scheduler,
 )
+from services.guidance_ai_service import ask_guidance_ai, get_suggested_questions
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -1001,6 +1002,29 @@ async def guidance_scrape_status(job_id: str):
         response["error"] = job.get("error")
         del _god_scan_jobs[job_id]
     return response
+
+
+# ── Guidance AI (RAG) Endpoints ───────────────────────────────────────────────
+
+class GuidanceAskRequest(BaseModel):
+    question: str
+    conversation_history: Optional[list] = None
+
+
+@app.post("/api/guidance/ask")
+async def guidance_ask(req: GuidanceAskRequest):
+    """Ask an AI-powered question about BSE corporate filings."""
+    db = app.db
+    result = await ask_guidance_ai(db, req.question, req.conversation_history)
+    return result
+
+
+@app.get("/api/guidance/suggestions")
+async def guidance_suggestions():
+    """Get AI-generated suggested questions based on current filings."""
+    db = app.db
+    suggestions = await get_suggested_questions(db)
+    return {"suggestions": suggestions}
 
 
 if __name__ == "__main__":
