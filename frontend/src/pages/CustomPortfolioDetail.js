@@ -310,7 +310,7 @@ export default function CustomPortfolioDetail() {
   const sectorData = Object.entries(sectors).map(([name, val]) => ({ name, value: val, pct: ((val / sectorTotal) * 100).toFixed(1) })).sort((a, b) => b.value - a.value);
 
   return (
-    <div className="p-4 sm:p-6 max-w-5xl mx-auto space-y-5" data-testid="custom-portfolio-detail">
+    <div className="p-3 sm:p-6 max-w-5xl mx-auto space-y-4 sm:space-y-5" data-testid="custom-portfolio-detail">
       {/* Header */}
       <div>
         <button onClick={() => navigate('/watchlist')} className="flex items-center gap-1 text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] mb-3" data-testid="back-btn">
@@ -418,7 +418,8 @@ export default function CustomPortfolioDetail() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2">
           <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))] overflow-hidden" data-testid="holdings-table">
-            <table className="w-full text-xs">
+            <div className="overflow-x-auto">
+            <table className="w-full text-xs min-w-[550px]">
               <thead>
                 <tr className="text-[10px] text-[hsl(var(--muted-foreground))] border-b border-[hsl(var(--border))]">
                   <th className="py-2 px-3 text-left">Stock</th>
@@ -446,6 +447,7 @@ export default function CustomPortfolioDetail() {
                 ))}
               </tbody>
             </table>
+            </div>
           </Card>
         </div>
         {sectorData.length > 0 && (

@@ -10,16 +10,16 @@ import {
 function Section({ id, icon: Icon, iconColor, title, subtitle, children }) {
   return (
     <section id={id} className="scroll-mt-20">
-      <div className="flex items-start gap-3 mb-4">
-        <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${iconColor || 'bg-[hsl(var(--primary))]/15'}`}>
-          <Icon className={`w-5 h-5 ${iconColor?.includes('cyan') ? 'text-cyan-400' : iconColor?.includes('amber') ? 'text-amber-400' : iconColor?.includes('emerald') ? 'text-emerald-400' : iconColor?.includes('red') ? 'text-red-400' : 'text-[hsl(var(--primary))]'}`} />
+      <div className="flex items-start gap-2 sm:gap-3 mb-3 sm:mb-4">
+        <div className={`w-8 h-8 sm:w-9 sm:h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${iconColor || 'bg-[hsl(var(--primary))]/15'}`}>
+          <Icon className={`w-4 h-4 sm:w-5 sm:h-5 ${iconColor?.includes('cyan') ? 'text-cyan-400' : iconColor?.includes('amber') ? 'text-amber-400' : iconColor?.includes('emerald') ? 'text-emerald-400' : iconColor?.includes('red') ? 'text-red-400' : 'text-[hsl(var(--primary))]'}`} />
         </div>
         <div>
-          <h2 className="text-lg font-display font-bold text-[hsl(var(--foreground))]">{title}</h2>
-          {subtitle && <p className="text-sm text-[hsl(var(--muted-foreground))] mt-0.5">{subtitle}</p>}
+          <h2 className="text-base sm:text-lg font-display font-bold text-[hsl(var(--foreground))]">{title}</h2>
+          {subtitle && <p className="text-xs sm:text-sm text-[hsl(var(--muted-foreground))] mt-0.5">{subtitle}</p>}
         </div>
       </div>
-      <div className="ml-12 space-y-4 text-sm text-[hsl(var(--foreground))]/85 leading-relaxed">
+      <div className="sm:ml-12 space-y-3 sm:space-y-4 text-sm text-[hsl(var(--foreground))]/85 leading-relaxed">
         {children}
       </div>
     </section>
@@ -80,15 +80,15 @@ const TOC_ITEMS = [
   { id: 'custom-portfolios', label: 'Make Your Own' },
   { id: 'bse-guidance', label: 'BSE Guidance' },
   { id: 'anti-hallucination', label: 'Anti-Hallucination' },
-  { id: 'security', label: 'TOTP Security' },
+  { id: 'security', label: 'OrgLens Auth' },
   { id: 'risk-framework', label: 'Risk Framework' },
 ];
 
 export default function HowItWorks() {
   return (
     <div className="flex" data-testid="how-it-works-page">
-      {/* Sticky TOC — desktop only */}
-      <nav className="hidden xl:block w-52 flex-shrink-0 sticky top-0 h-screen overflow-y-auto py-6 pr-4 border-r border-[hsl(var(--border))]">
+      {/* Sticky TOC — large desktop only */}
+      <nav className="hidden 2xl:block w-52 flex-shrink-0 sticky top-0 h-screen overflow-y-auto py-6 pr-4 border-r border-[hsl(var(--border))]">
         <p className="text-[10px] uppercase tracking-widest text-[hsl(var(--muted-foreground))] mb-3 px-3">On this page</p>
         {TOC_ITEMS.map(item => (
           <a key={item.id} href={`#${item.id}`} className="block px-3 py-1.5 text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--surface-2))] rounded" style={{ transition: 'all 0.15s' }}>
@@ -98,9 +98,9 @@ export default function HowItWorks() {
       </nav>
 
       {/* Main content */}
-      <div className="flex-1 max-w-4xl mx-auto px-4 sm:px-6 py-6 space-y-10">
+      <div className="flex-1 max-w-4xl mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-8 sm:space-y-10">
         {/* Hero */}
-        <div className="relative overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 sm:p-8" data-testid="how-hero">
+        <div className="relative overflow-hidden rounded-xl sm:rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4 sm:p-8" data-testid="how-hero">
           <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-[hsl(var(--primary))]/5 via-transparent to-cyan-500/3 pointer-events-none" />
           <div className="relative">
             <div className="flex items-center gap-2 mb-2">
@@ -121,7 +121,7 @@ export default function HowItWorks() {
               <MetricBadge label="Guardrails" value="5 Code-Enforced" />
               <MetricBadge label="Ensemble" value="4 Models" />
               <MetricBadge label="MC Paths" value="10,000" />
-              <MetricBadge label="Auth" value="TOTP 2FA" />
+              <MetricBadge label="Auth" value="OrgLens" />
             </div>
           </div>
         </div>
@@ -134,7 +134,7 @@ export default function HowItWorks() {
           <p>
             BMIA eliminates this entirely. There is no human in the decision loop. The system operates on three principles:
           </p>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 gap-3">
             <Card className="bg-[hsl(var(--surface-2))] border-[hsl(var(--border))]">
               <CardContent className="p-3">
                 <Lock className="w-4 h-4 text-[hsl(var(--primary))] mb-1" />
@@ -164,7 +164,7 @@ export default function HowItWorks() {
 
         {/* Architecture */}
         <Section id="architecture" icon={Layers} iconColor="bg-[hsl(var(--primary))]/15" title="System Architecture" subtitle="How the components connect">
-          <div className="font-mono text-xs bg-[hsl(var(--surface-2))] rounded-lg p-4 border border-[hsl(var(--border))] overflow-x-auto whitespace-pre leading-5 text-[hsl(var(--foreground))]/80">{`
+          <div className="font-mono text-[10px] sm:text-xs bg-[hsl(var(--surface-2))] rounded-lg p-3 sm:p-4 border border-[hsl(var(--border))] overflow-x-auto whitespace-pre leading-5 text-[hsl(var(--foreground))]/80">{`
 ┌─────────────────────────────────────────────────────────────────┐
 │  FRONTEND (React + Tailwind + Recharts + Shadcn UI)            │
 │  ┌──────┐ ┌──────────┐ ┌─────────┐ ┌──────────┐ ┌───────────┐ │
@@ -304,7 +304,7 @@ export default function HowItWorks() {
           <p>
             The crown jewel of BMIA. Six portfolios, each with ₹50 lakhs notional capital, each targeting a different market edge. No human touches the portfolio after construction — the daemon handles price updates, stop-loss enforcement, and rebalancing.
           </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3">
             {[
               { name: 'Bespoke Forward Looking', horizon: '6-12 months', desc: 'Future catalysts — capacity expansion, new orders, policy tailwinds. Growth + momentum weighted.' },
               { name: 'Quick Entry', horizon: '1-4 weeks', desc: 'Momentum breakouts — volume spikes, consolidation breakouts, RSI 50-70 sweet spot.' },
@@ -546,26 +546,27 @@ export default function HowItWorks() {
           </div>
         </Section>
 
-        {/* TOTP Security */}
-        <Section id="security" icon={Lock} iconColor="bg-red-500/15" title="TOTP 2FA Security" subtitle="RFC 6238 authentication — same protocol as Google Authenticator">
+        {/* Security */}
+        <Section id="security" icon={Lock} iconColor="bg-red-500/15" title="OrgLens Authentication" subtitle="Employee verification + local password auth with JWT sessions">
           <p>
-            BMIA is secured with Time-based One-Time Password (TOTP) authentication — the same cryptographic protocol used by Google Authenticator, Authy, and every major bank's 2FA system.
+            BMIA access is restricted to verified SMIFS employees. Authentication uses a two-step process: OrgLens employee verification followed by local password authentication.
           </p>
           <Collapsible title="How it works" defaultOpen>
-            <p><strong>Shared Secret:</strong> A 32-character base32 secret key is configured via environment variable (TOTP_SECRET). This same key is added to your authenticator app.</p>
-            <p><strong>Code Generation:</strong> Every 30 seconds, the authenticator app computes HMAC-SHA1(secret, floor(unix_time / 30)) → truncates to 6 digits. The server does the same computation.</p>
-            <p><strong>Verification:</strong> When you enter a code, the server computes the expected code for the current 30-second window (±1 window tolerance for clock drift). If they match → access granted.</p>
-            <p><strong>Session:</strong> Successful verification issues a JWT token (1-hour expiry). The frontend checks token validity every 30 seconds and force-logouts on expiry.</p>
+            <p><strong>Step 1 — Email Verification:</strong> User enters their SMIFS email. The backend calls the OrgLens Employee Stack API to verify: Is this a real, active employee? The API returns name, department, designation, and employment status.</p>
+            <p><strong>Step 2a — New User:</strong> If no password exists, the user is prompted to create one. Password is bcrypt-hashed (salt round 12) and stored in MongoDB. Never in plaintext.</p>
+            <p><strong>Step 2b — Returning User:</strong> If a password already exists, they enter it. bcrypt.checkpw verifies against the stored hash.</p>
+            <p><strong>Session:</strong> Successful login issues a JWT token. Regular employees get 1-hour sessions with auto-logout (frontend checks every 30 seconds). The superadmin gets a 365-day persistent session.</p>
           </Collapsible>
-          <Collapsible title="Master Code (Persistent Session)">
-            <p>A master code exists for the account owner. It is bcrypt-hashed (salt round 12) and stored encrypted in MongoDB — never in plaintext, never in code, never in environment variables after initial seeding.</p>
-            <p>Entering the master code issues a 365-day persistent JWT — no auto-logout. The frontend detects the "persistent" flag in the JWT payload and skips expiry polling.</p>
+          <Collapsible title="OrgLens Integration">
+            <p>The OrgLens API at orglens.pesmifs.com provides real-time employee data. Every login attempt verifies the employee's current status — if someone leaves SMIFS, their access is automatically revoked on next login attempt even if their password is still valid.</p>
+            <p>API call: <code>GET /api/v1/employee/by-email/name@smifs.com</code> with X-API-Key header.</p>
+            <p>Returns: name, department, designation, employment_status. Only "Active" status grants access.</p>
           </Collapsible>
           <Collapsible title="Security Properties">
-            <p><strong>No QR code or secret is ever served</strong> — the /api/auth/totp-setup endpoint only initializes the DB, returns a ready status. Zero information leakage.</p>
-            <p><strong>Brute force resistant:</strong> 6-digit code = 1,000,000 combinations, valid for 60 seconds (±1 window). At 1 attempt/second, probability of guessing: 0.006%.</p>
-            <p><strong>Replay resistant:</strong> Each code is valid for exactly one 30-second window. Using the same code twice fails.</p>
-            <p><strong>Clock drift tolerant:</strong> ±1 window (60 seconds total) handles minor time sync differences between phone and server.</p>
+            <p><strong>No credential leakage:</strong> Passwords are bcrypt-hashed, never stored in plaintext. OrgLens API key is in environment variables, never in code.</p>
+            <p><strong>Auto-revocation:</strong> Every login re-checks OrgLens. Terminated employees are immediately locked out.</p>
+            <p><strong>JWT auto-expiry:</strong> 1-hour tokens for regular users. Frontend force-logouts on expiry. No stale sessions.</p>
+            <p><strong>Superadmin:</strong> somnath.dey@smifs.com — 365-day session for operational continuity.</p>
           </Collapsible>
         </Section>
 
@@ -574,8 +575,8 @@ export default function HowItWorks() {
           <p>
             Risk management is not a feature — it's the foundation. Every layer of BMIA has built-in risk controls.
           </p>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs border border-[hsl(var(--border))] rounded-lg overflow-hidden">
+          <div className="overflow-x-auto -mx-3 px-3">
+            <table className="w-full text-xs border border-[hsl(var(--border))] rounded-lg overflow-hidden min-w-[500px]">
               <thead>
                 <tr className="bg-[hsl(var(--surface-2))] text-[hsl(var(--muted-foreground))]">
                   <th className="px-3 py-2 text-left">Layer</th>

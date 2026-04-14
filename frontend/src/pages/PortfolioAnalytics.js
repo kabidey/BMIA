@@ -377,7 +377,7 @@ function SimulationCard({ strategyType, strategyName }) {
       )}
 
       {/* Risk Metrics Grid */}
-      <div className="grid grid-cols-3 gap-x-3 gap-y-2 mt-2" data-testid={`simulation-metrics-${strategyType}`}>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-2 mt-2" data-testid={`simulation-metrics-${strategyType}`}>
         <div>
           <p className="text-[9px] text-[hsl(var(--muted-foreground))]">VaR (95%)</p>
           <p className="text-xs font-mono font-bold text-red-400">{risk_metrics.var_95_pct}%</p>

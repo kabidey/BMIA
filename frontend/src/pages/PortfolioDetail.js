@@ -50,8 +50,8 @@ function SignalBadge({ pnl }) {
 function HoldingsTable({ holdings }) {
   if (!holdings?.length) return <p className="text-xs text-[hsl(var(--muted-foreground))] p-4">No holdings</p>;
   return (
-    <div className="overflow-x-auto" data-testid="holdings-table">
-      <table className="w-full text-xs">
+    <div className="overflow-x-auto -mx-1" data-testid="holdings-table">
+      <table className="w-full text-xs min-w-[600px]">
         <thead>
           <tr className="text-[10px] text-[hsl(var(--muted-foreground))] border-b border-[hsl(var(--border))]">
             <th className="py-2 px-3 text-left">Stock</th>
@@ -462,7 +462,7 @@ function WalkForwardSection({ strategyType }) {
         <p className="text-xs font-semibold text-[hsl(var(--foreground))]">Walk-Forward Tracking</p>
         <span className="text-[9px] text-[hsl(var(--muted-foreground))] font-mono">{records.length} snapshots</span>
       </div>
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="bg-cyan-500/5 rounded-lg p-3 border border-cyan-500/10">
           <p className="text-[9px] text-cyan-400 uppercase tracking-wider mb-1">Forecast (MC)</p>
           <p className="text-lg font-mono font-bold text-cyan-400">{f.expected_return_pct >= 0 ? '+' : ''}{f.expected_return_pct?.toFixed(1)}%</p>
@@ -528,14 +528,14 @@ export default function PortfolioDetail() {
   const currentVal = portfolio?.current_value || invested;
 
   return (
-    <div className="p-4 sm:p-6 space-y-5 max-w-6xl mx-auto" data-testid="portfolio-detail-page">
+    <div className="p-3 sm:p-6 space-y-4 sm:space-y-5 max-w-6xl mx-auto" data-testid="portfolio-detail-page">
       {/* Back + Header */}
       <div>
         <button onClick={() => navigate('/watchlist')} className="flex items-center gap-1 text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] mb-3" data-testid="back-btn">
           <ArrowLeft className="w-3.5 h-3.5" /> All Portfolios
         </button>
-        <div className={`p-5 rounded-xl border bg-gradient-to-br ${colors}`}>
-          <div className="flex items-start justify-between">
+        <div className={`p-4 sm:p-5 rounded-xl border bg-gradient-to-br ${colors}`}>
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
             <div className="flex items-start gap-3">
               <div className="w-12 h-12 rounded-lg bg-[hsl(var(--surface-1))] flex items-center justify-center">
                 <Icon className="w-6 h-6 text-[hsl(var(--primary))]" />
@@ -556,8 +556,8 @@ export default function PortfolioDetail() {
               </div>
             </div>
             {isActive && (
-              <div className="text-right">
-                <p className="text-2xl font-mono font-bold text-[hsl(var(--foreground))]">
+              <div className="sm:text-right">
+                <p className="text-xl sm:text-2xl font-mono font-bold text-[hsl(var(--foreground))]">
                   <IndianRupee className="w-4 h-4 inline" />{currentVal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                 </p>
                 <p className={`text-sm font-mono flex items-center justify-end gap-0.5 ${pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
@@ -603,7 +603,7 @@ export default function PortfolioDetail() {
           </div>
 
           {/* Backtest + Simulation */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4">
             <BacktestSection strategyType={type} />
             <SimulationSection strategyType={type} />
           </div>
