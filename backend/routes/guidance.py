@@ -1,4 +1,4 @@
-"""Guidance — BSE Corporate Announcements, AI RAG, and PDF extraction routes."""
+"""Guidance — BSE Corporate Announcements, AI RAG, PDF extraction, and Vector Store routes."""
 import logging
 import uuid
 import asyncio
@@ -8,10 +8,11 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from services.guidance_service import (
-    get_guidance_items, get_guidance_stats, get_stock_list, run_full_scrape,
+    get_guidance_items, get_guidance_stats, get_stock_list, run_full_scrape, prune_old_guidance,
 )
 from services.guidance_ai_service import ask_guidance_ai, get_suggested_questions
 from services.pdf_extractor_service import process_unprocessed_pdfs, get_pdf_extraction_stats
+from services.vector_store import guidance_vector_store
 
 logger = logging.getLogger(__name__)
 
@@ -110,3 +111,25 @@ async def trigger_pdf_processing(request: Request, limit: int = 30):
     db = request.app.db
     result = await process_unprocessed_pdfs(db, limit=limit)
     return result
+
+
+@router.get("/guidance/vectors/stats")
+async def vector_store_stats():
+    """Get vector store statistics."""
+    return guidance_vector_store.get_stats()
+
+
+@router.post("/guidance/vectors/rebuild")
+async def rebuild_vector_store(request: Request):
+    """Manually trigger vector store rebuild."""
+    db = request.app.db
+    await guidance_vector_store.build(db)
+    return guidance_vector_store.get_stats()
+
+
+@router.post("/guidance/prune")
+async def trigger_prune(request: Request):
+    """Manually prune guidance data older than 3 months."""
+    db = request.app.db
+    deleted = await prune_old_guidance(db)
+    return {"pruned": deleted, "retention_days": 90}

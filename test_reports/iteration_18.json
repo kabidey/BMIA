@@ -1,0 +1,42 @@
+{
+  "summary": "Iteration 18: Backend testing for 3-month rolling RAG vectorization feature. All 10 tests passed (100%). Vector store is ready with 25,401 vectors (2,488 announcements + 22,913 PDF chunks). All guidance endpoints working correctly with retention_days=90.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "GET /api/health - returns status 'ok' with timestamp",
+    "GET /api/guidance/vectors/stats - returns ready=true, total_vectors=25401, announcements=2488, pdf_chunks=22913, retention_days=90",
+    "GET /api/guidance/vectors/stats - includes last_built timestamp",
+    "POST /api/guidance/vectors/rebuild - rebuilds vector store and returns updated stats",
+    "POST /api/guidance/prune - returns pruned count and retention_days=90",
+    "POST /api/guidance/ask (board meetings) - returns answer with filings_retrieved > 0 and sources list",
+    "POST /api/guidance/ask (RELIANCE) - returns results with stocks_in_context",
+    "GET /api/guidance/stats - includes retention_days=90 and vector_store stats",
+    "GET /api/guidance?limit=10 - returns items with pagination info",
+    "GET /api/guidance/stocks - returns stocks with announcements (663 total stocks)"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_guidance_vectors.py",
+    "/app/test_reports/pytest/iteration18_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/backend/tests/test_guidance_vectors.py"
+  ],
+  "success_rate": {
+    "backend": "100% (10/10 tests passed)",
+    "frontend": "N/A (backend-only test)"
+  },
+  "test_credentials": "No auth required for guidance endpoints",
+  "seed_data_creation": "None - using existing guidance data (2,488 announcements from 663 stocks)",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 18 verified the 3-month rolling RAG vectorization feature. Key findings: (1) Vector store builds on startup with 25,401 vectors (2,488 announcements + 22,913 PDF chunks). (2) TF-IDF vectorization with sklearn working correctly. (3) Cosine similarity search returns relevant results. (4) retention_days=90 enforced across all endpoints. (5) /api/guidance/ask endpoint uses GPT-4.1 via Emergent LLM key - takes 10-30s to respond. (6) Prune endpoint removes data older than 90 days. (7) All guidance endpoints properly filter by 3-month window."
+}

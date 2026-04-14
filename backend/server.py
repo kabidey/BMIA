@@ -17,6 +17,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from services.dashboard_service import start_background_cache
 from services.guidance_service import start_guidance_scheduler
 from services.pdf_extractor_service import start_pdf_extraction_daemon
+from services.vector_store import guidance_vector_store
 from daemons.evaluation_scheduler import start_evaluation_scheduler
 from daemons.portfolio_daemon import start_portfolio_daemon
 
@@ -57,6 +58,12 @@ async def lifespan(app: FastAPI):
             starter(*args)
         except Exception as e:
             logger.error(f"{name} start failed (non-fatal): {e}")
+
+    # Build vector store eagerly so it's ready before accepting requests
+    try:
+        await guidance_vector_store.build(app.db)
+    except Exception as e:
+        logger.error(f"Vector store initial build failed (non-fatal): {e}")
 
     yield
     app.mongodb_client.close()

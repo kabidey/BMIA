@@ -2,6 +2,7 @@
 Guidance Service — BSE Corporate Announcements Scraper
 Fetches announcements, filings, PDFs for all BSE Group A stocks (covers NSE 500).
 Runs daily at 5 AM IST via background scheduler.
+3-month rolling window: data older than 90 days is pruned automatically.
 """
 import logging
 import time
@@ -13,6 +14,7 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 IST = timezone(timedelta(hours=5, minutes=30))
+RETENTION_DAYS = 90  # 3-month rolling window
 
 # BSE PDF base URL
 BSE_PDF_BASE = "https://www.bseindia.com/xml-data/corpfiling/AttachLive"
@@ -93,10 +95,22 @@ def fetch_announcements_for_stock(scrip_code: str, days_back: int = 30):
         return []
 
 
+async def prune_old_guidance(db):
+    """Remove guidance documents older than RETENTION_DAYS (3 months).
+    Returns count of deleted documents."""
+    cutoff = (datetime.now(IST) - timedelta(days=RETENTION_DAYS)).isoformat()
+    result = await db.guidance.delete_many({"scraped_at": {"$lt": cutoff}})
+    deleted = result.deleted_count
+    if deleted > 0:
+        logger.info(f"GUIDANCE PRUNE: Removed {deleted} documents older than {RETENTION_DAYS} days")
+    return deleted
+
+
 async def run_full_scrape(db, days_back: int = 30, batch_size: int = 20):
     """
     Full scrape: fetch announcements for all Group A stocks.
     Stores results in MongoDB 'guidance' collection.
+    After scraping, prunes data older than 3 months and rebuilds vector index.
     """
     universe = get_stock_universe()
     if not universe:
@@ -143,23 +157,36 @@ async def run_full_scrape(db, days_back: int = 30, batch_size: int = 20):
     await db.guidance.create_index("stock_symbol")
     await db.guidance.create_index("news_date")
     await db.guidance.create_index("category")
+    await db.guidance.create_index("scraped_at")
     await db.guidance.create_index([("news_date", -1)])
+
+    # Prune documents older than 3 months
+    pruned = await prune_old_guidance(db)
+
+    # Rebuild vector store after scrape
+    try:
+        from services.vector_store import guidance_vector_store
+        await guidance_vector_store.build(db)
+    except Exception as e:
+        logger.error(f"GUIDANCE SCRAPE: Vector store rebuild failed: {e}")
 
     result = {
         "scraped": total_scraped,
         "stocks_processed": total_stocks,
+        "pruned": pruned,
         "errors": len(errors),
         "error_details": errors[:20],
         "completed_at": datetime.now(IST).isoformat(),
     }
-    logger.info(f"GUIDANCE SCRAPE COMPLETE: {total_scraped} announcements from {total_stocks} stocks")
+    logger.info(f"GUIDANCE SCRAPE COMPLETE: {total_scraped} announcements from {total_stocks} stocks, {pruned} pruned")
     return result
 
 
 async def get_guidance_items(db, symbol: Optional[str] = None, category: Optional[str] = None,
                              search: Optional[str] = None, page: int = 1, limit: int = 50):
-    """Query guidance items from MongoDB with filters."""
-    query = {}
+    """Query guidance items from MongoDB with filters. Enforces 3-month window."""
+    cutoff = (datetime.now(IST) - timedelta(days=RETENTION_DAYS)).isoformat()
+    query = {"scraped_at": {"$gte": cutoff}}
 
     if symbol:
         query["$or"] = [
@@ -188,12 +215,22 @@ async def get_guidance_items(db, symbol: Optional[str] = None, category: Optiona
 
 
 async def get_guidance_stats(db):
-    """Get summary stats for the Guidance page."""
-    total = await db.guidance.count_documents({})
-    stocks = await db.guidance.distinct("stock_symbol")
+    """Get summary stats for the Guidance page (3-month window only)."""
+    cutoff = (datetime.now(IST) - timedelta(days=RETENTION_DAYS)).isoformat()
+    base_filter = {"scraped_at": {"$gte": cutoff}}
+
+    total = await db.guidance.count_documents(base_filter)
+    pipeline_stocks = [
+        {"$match": base_filter},
+        {"$group": {"_id": "$stock_symbol"}},
+    ]
+    stocks_cursor = db.guidance.aggregate(pipeline_stocks)
+    stocks_list = await stocks_cursor.to_list(length=5000)
+    stock_count = len(stocks_list)
 
     # Category breakdown
     pipeline = [
+        {"$match": base_filter},
         {"$group": {"_id": "$category", "count": {"$sum": 1}}},
         {"$sort": {"count": -1}},
         {"$limit": 15},
@@ -205,17 +242,28 @@ async def get_guidance_stats(db):
     week_ago = (datetime.now(IST) - timedelta(days=7)).isoformat()
     recent_count = await db.guidance.count_documents({"scraped_at": {"$gte": week_ago}})
 
+    # Vector store stats
+    try:
+        from services.vector_store import guidance_vector_store
+        vector_stats = guidance_vector_store.get_stats()
+    except Exception:
+        vector_stats = None
+
     return {
         "total_announcements": total,
-        "total_stocks": len(stocks),
+        "total_stocks": stock_count,
         "categories": [{"name": c["_id"] or "Other", "count": c["count"]} for c in categories],
         "recent_7d": recent_count,
+        "retention_days": RETENTION_DAYS,
+        "vector_store": vector_stats,
     }
 
 
 async def get_stock_list(db):
-    """Get distinct stocks that have guidance data."""
+    """Get distinct stocks that have guidance data (3-month window)."""
+    cutoff = (datetime.now(IST) - timedelta(days=RETENTION_DAYS)).isoformat()
     pipeline = [
+        {"$match": {"scraped_at": {"$gte": cutoff}}},
         {"$group": {
             "_id": "$stock_symbol",
             "name": {"$first": "$stock_name"},
@@ -233,14 +281,15 @@ async def get_stock_list(db):
 
 # ── Daily Scheduler ──────────────────────────────────────────────────────────
 def start_guidance_scheduler(mongo_url: str, db_name: str):
-    """Start background thread that scrapes daily at 5 AM IST."""
+    """Start background thread that scrapes daily at 5 AM IST.
+    Also prunes data older than 3 months and rebuilds vector index."""
     import asyncio as _aio
     from motor.motor_asyncio import AsyncIOMotorClient
 
     def _scheduler_loop():
-        logger.info("GUIDANCE SCHEDULER: Started (daily at 5:00 AM IST)")
+        logger.info("GUIDANCE SCHEDULER: Started (daily at 5:00 AM IST, 3-month retention)")
 
-        # Run initial scrape on first startup if DB is empty
+        # Run initial scrape on first startup if DB is empty, then build vector store
         try:
             loop = _aio.new_event_loop()
             _aio.set_event_loop(loop)
@@ -249,9 +298,22 @@ def start_guidance_scheduler(mongo_url: str, db_name: str):
 
             count = loop.run_until_complete(db.guidance.count_documents({}))
             if count == 0:
-                logger.info("GUIDANCE SCHEDULER: DB empty, running initial scrape...")
-                result = loop.run_until_complete(run_full_scrape(db, days_back=30))
+                logger.info("GUIDANCE SCHEDULER: DB empty, running initial scrape (90 days)...")
+                result = loop.run_until_complete(run_full_scrape(db, days_back=RETENTION_DAYS))
                 logger.info(f"GUIDANCE SCHEDULER: Initial scrape done: {result.get('scraped', 0)} items")
+            else:
+                # Prune old data on startup
+                pruned = loop.run_until_complete(prune_old_guidance(db))
+                if pruned:
+                    logger.info(f"GUIDANCE SCHEDULER: Startup prune removed {pruned} stale docs")
+
+            # Build vector store on startup (skip if already built by lifespan)
+            try:
+                from services.vector_store import guidance_vector_store
+                if not guidance_vector_store.is_ready:
+                    loop.run_until_complete(guidance_vector_store.build(db))
+            except Exception as e:
+                logger.error(f"GUIDANCE SCHEDULER: Initial vector build failed: {e}")
 
             client.close()
             loop.close()
@@ -271,7 +333,7 @@ def start_guidance_scheduler(mongo_url: str, db_name: str):
                 logger.info(f"GUIDANCE SCHEDULER: Next scrape at {target.isoformat()}, sleeping {sleep_seconds/3600:.1f}h")
                 time.sleep(sleep_seconds)
 
-                # Run scrape
+                # Run scrape (includes pruning + vector rebuild)
                 loop = _aio.new_event_loop()
                 _aio.set_event_loop(loop)
                 client = AsyncIOMotorClient(mongo_url)
@@ -279,7 +341,7 @@ def start_guidance_scheduler(mongo_url: str, db_name: str):
 
                 logger.info("GUIDANCE SCHEDULER: Running daily 5 AM scrape...")
                 result = loop.run_until_complete(run_full_scrape(db, days_back=7))
-                logger.info(f"GUIDANCE SCHEDULER: Daily scrape done: {result.get('scraped', 0)} items")
+                logger.info(f"GUIDANCE SCHEDULER: Daily scrape done: {result.get('scraped', 0)} items, {result.get('pruned', 0)} pruned")
 
                 client.close()
                 loop.close()

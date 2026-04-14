@@ -3,8 +3,8 @@ Guidance AI Service — RAG Pipeline for BSE Corporate Filings Intelligence.
 
 Pipeline:
 1. Parse question → extract stock names, categories, intent
-2. Retrieve relevant filings from MongoDB (smart text matching + filters)
-3. Build context window from top-K filings
+2. Vector-search relevant filings + PDF chunks via TF-IDF cosine similarity (3-month window)
+3. Build context window from top-K results
 4. Send to LLM (GPT-4.1) with crafted prompt
 5. Return structured answer with source citations
 """
@@ -17,6 +17,7 @@ from datetime import datetime, timedelta, timezone
 logger = logging.getLogger(__name__)
 
 IST = timezone(timedelta(hours=5, minutes=30))
+RETENTION_DAYS = 90  # 3-month window
 
 GUIDANCE_SYSTEM_PROMPT = """You are the Bharat Market Intel Agent (BMIA) — Guidance Intelligence Module.
 You are an expert analyst specializing in Indian equity markets. You have access to real BSE corporate filings, 
@@ -111,10 +112,45 @@ def _extract_query_context(question: str):
 
 
 async def _retrieve_relevant_filings(db, question: str, context: dict, max_results: int = 60):
-    """Retrieve relevant filings from MongoDB using smart querying."""
-    query_parts = []
+    """Retrieve relevant filings using vector store (TF-IDF cosine similarity).
+    Falls back to keyword search if vector store is not ready."""
+    from services.vector_store import guidance_vector_store
 
-    # Stock filter
+    if guidance_vector_store.is_ready:
+        # First pass: search with category filter only (TF-IDF handles text relevance)
+        # Don't filter by extracted "stocks" — they're often noise words from the question
+        results = guidance_vector_store.search(
+            query=question,
+            top_k=max_results,
+            category_filter=context.get("categories") or None,
+            min_score=0.03,
+        )
+
+        # If we got specific stock names that look real (>= 3 chars, known patterns),
+        # do a secondary focused search and merge
+        real_stocks = [s for s in context.get("stocks", []) if len(s) >= 3]
+        if real_stocks and len(results) < max_results:
+            stock_results = guidance_vector_store.search(
+                query=question,
+                top_k=max_results // 2,
+                stock_filter=real_stocks,
+                min_score=0.02,
+            )
+            seen_ids = {r.get("news_id") for r in results}
+            for sr in stock_results:
+                if sr.get("news_id") not in seen_ids:
+                    results.append(sr)
+                    seen_ids.add(sr.get("news_id"))
+
+        if results:
+            logger.info(f"GUIDANCE AI: Vector search returned {len(results)} results (top score: {results[0].get('score', 0):.4f})")
+            return results
+
+    # Fallback: keyword-based retrieval from MongoDB
+    logger.info("GUIDANCE AI: Vector store not ready or empty, using keyword fallback")
+    cutoff = (datetime.now(IST) - timedelta(days=RETENTION_DAYS)).isoformat()
+    query_parts = [{"scraped_at": {"$gte": cutoff}}]
+
     if context["stocks"]:
         stock_regex = "|".join(context["stocks"])
         query_parts.append({
@@ -124,54 +160,36 @@ async def _retrieve_relevant_filings(db, question: str, context: dict, max_resul
             ]
         })
 
-    # Category filter
     if context["categories"]:
         cat_regex = "|".join(re.escape(c) for c in context["categories"])
         query_parts.append({"category": {"$regex": cat_regex, "$options": "i"}})
 
-    # Build final query
-    if query_parts:
-        query = {"$and": query_parts} if len(query_parts) > 1 else query_parts[0]
-    else:
-        # No specific filters — do keyword search on headline
-        keywords = [w for w in question.lower().split() if len(w) > 3 and w not in
-                    ('what', 'which', 'show', 'tell', 'give', 'list', 'find',
-                     'about', 'from', 'with', 'that', 'this', 'have', 'been',
-                     'their', 'they', 'some', 'most', 'more', 'than')]
-        if keywords:
-            kw_regex = "|".join(re.escape(k) for k in keywords[:6])
-            query = {"$or": [
-                {"headline": {"$regex": kw_regex, "$options": "i"}},
-                {"stock_name": {"$regex": kw_regex, "$options": "i"}},
-                {"more_text": {"$regex": kw_regex, "$options": "i"}},
-                {"category": {"$regex": kw_regex, "$options": "i"}},
-            ]}
-        else:
-            query = {}
+    query = {"$and": query_parts} if len(query_parts) > 1 else query_parts[0]
 
-    # Fetch with date sort (most recent first)
     filings = await db.guidance.find(
         query, {"_id": 0}
     ).sort("news_date", -1).limit(max_results).to_list(length=max_results)
-
-    # If we got too few results from specific query, broaden search
-    if len(filings) < 10 and context["stocks"]:
-        broad_filings = await db.guidance.find(
-            {}, {"_id": 0}
-        ).sort("news_date", -1).limit(30).to_list(length=30)
-        # Add unique filings
-        existing_ids = {f.get("news_id") for f in filings}
-        for bf in broad_filings:
-            if bf.get("news_id") not in existing_ids:
-                filings.append(bf)
-                if len(filings) >= max_results:
-                    break
 
     return filings
 
 
 async def _retrieve_pdf_chunks(db, context: dict, question: str, max_chunks: int = 15):
-    """Retrieve relevant PDF text chunks for deeper RAG context."""
+    """Retrieve relevant PDF text chunks via vector store for deeper RAG context."""
+    from services.vector_store import guidance_vector_store
+
+    if guidance_vector_store.is_ready:
+        results = guidance_vector_store.search(
+            query=question,
+            top_k=max_chunks,
+            category_filter=context.get("categories") or None,
+            doc_type="pdf_chunk",
+            min_score=0.03,
+        )
+        if results:
+            logger.info(f"GUIDANCE AI: Vector search returned {len(results)} PDF chunks")
+            return results
+
+    # Fallback to old method
     try:
         from services.pdf_extractor_service import get_pdf_chunks_for_query
         keywords = [w for w in question.lower().split() if len(w) > 3]
@@ -189,7 +207,7 @@ async def _retrieve_pdf_chunks(db, context: dict, question: str, max_chunks: int
 
 
 def _build_context_text(filings: list, max_chars: int = 30000) -> str:
-    """Convert filings to structured text for LLM context."""
+    """Convert filings/vector results to structured text for LLM context."""
     if not filings:
         return "No relevant filings found in the database."
 
@@ -197,10 +215,11 @@ def _build_context_text(filings: list, max_chars: int = 30000) -> str:
     total_chars = 0
 
     for i, f in enumerate(filings):
+        score_str = f" | Relevance: {f['score']:.3f}" if "score" in f else ""
         entry = (
             f"[{i+1}] {f.get('stock_symbol', '?')} | "
-            f"{f.get('news_date', '?')[:10]} | "
-            f"{f.get('category', 'General')} | "
+            f"{(f.get('news_date', '?') or '?')[:10]} | "
+            f"{f.get('category', 'General')}{score_str} | "
             f"Critical: {'YES' if f.get('critical') else 'No'}\n"
             f"  Company: {f.get('stock_name', '?')}\n"
             f"  Headline: {f.get('headline', 'N/A')}\n"
@@ -223,12 +242,13 @@ def _build_context_text(filings: list, max_chars: int = 30000) -> str:
         total_chars += len(entry)
 
     header = (
-        f"=== BSE CORPORATE FILINGS DATABASE ===\n"
+        f"=== BSE CORPORATE FILINGS DATABASE (3-MONTH WINDOW) ===\n"
         f"Total filings retrieved: {len(filings)}\n"
         f"Stocks covered: {len(set(f.get('stock_symbol','') for f in filings))}\n"
-        f"Date range: {filings[-1].get('news_date','?')[:10] if filings else '?'} to "
-        f"{filings[0].get('news_date','?')[:10] if filings else '?'}\n"
-        f"{'='*40}\n\n"
+        f"Date range: {(filings[-1].get('news_date','?') or '?')[:10] if filings else '?'} to "
+        f"{(filings[0].get('news_date','?') or '?')[:10] if filings else '?'}\n"
+        f"Retrieval: TF-IDF Vector Similarity\n"
+        f"{'='*50}\n\n"
     )
 
     return header + "".join(lines)
@@ -282,11 +302,13 @@ async def ask_guidance_ai(db, question: str, conversation_history: list = None):
 
     # Append PDF text chunks
     if pdf_chunks:
-        pdf_context = "\n\n=== EXTRACTED PDF CONTENT ===\n"
+        pdf_context = "\n\n=== EXTRACTED PDF CONTENT (Vectorized Chunks) ===\n"
         for i, chunk in enumerate(pdf_chunks):
+            score_str = f" | Score: {chunk['score']:.3f}" if "score" in chunk else ""
+            chunk_text = chunk.get('text', '')
             pdf_context += (
-                f"\n[PDF-{i+1}] {chunk.get('stock_symbol','')} | {chunk.get('headline','')[:80]}\n"
-                f"  {chunk.get('text','')[:600]}\n"
+                f"\n[PDF-{i+1}] {chunk.get('stock_symbol','')} | {(chunk.get('headline','') or '')[:80]}{score_str}\n"
+                f"  {chunk_text[:600]}\n"
             )
         context_text += pdf_context
 
