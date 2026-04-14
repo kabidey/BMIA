@@ -53,7 +53,13 @@ Build a Tier-1 Quant Analyst specializing in Indian Equity and Commodity markets
 - Cosine similarity search for semantic retrieval
 - 90-day rolling window with automatic pruning
 - Vector store built on startup, rebuilt after each scrape
-- Replaces old regex/keyword-based retrieval
+
+### Guidance Intelligence Briefing (Apr 2026)
+- Auto-generated daily briefing with LLM narrative (GPT-4.1)
+- Surfaces: top 5 critical filings, insider activity (14d), upcoming AGMs/EGMs, recent board meetings
+- Most active stocks by filing volume (7d)
+- Cached in MongoDB (6h), regenerate-on-demand via API
+- Frontend card on Market Cockpit with expandable details, alert badges, refresh button
 
 ## Architecture
 ```
@@ -62,8 +68,10 @@ Build a Tier-1 Quant Analyst specializing in Indian Equity and Commodity markets
   services/vector_store.py — TF-IDF vector store (GuidanceVectorStore)
   services/guidance_service.py — BSE scraper with 3-month retention
   services/guidance_ai_service.py — RAG pipeline using vector search
+  services/briefing_service.py — Daily intelligence briefing generator
 /app/frontend/src/
   components/TOTPGate.js (OrgLens Auth Gate)
+  pages/MarketOverview.js (GuidanceBriefingCard component)
   pages/ (11+ pages)
 ```
 
@@ -82,6 +90,8 @@ Build a Tier-1 Quant Analyst specializing in Indian Equity and Commodity markets
 - POST /api/guidance/vectors/rebuild — Manual vector rebuild
 - POST /api/guidance/prune — Prune old guidance data
 - POST /api/guidance/ask — AI RAG query (vector-powered)
+- GET /api/guidance/briefing — Daily intelligence briefing (cached 6h)
+- POST /api/guidance/briefing/refresh — Force regenerate briefing
 
 ## Backlog
 - P2: CSV/PDF export for portfolio reports
