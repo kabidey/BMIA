@@ -28,45 +28,105 @@ import { useApi } from '../hooks/useApi';
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
 
 // ── Indian Market Session Logic (IST = UTC+5:30) ──
+// NSE holidays — updated annually
+const NSE_HOLIDAYS = new Set([
+  // 2025
+  '2025-02-26', // Mahashivratri
+  '2025-03-14', // Holi
+  '2025-03-31', // Id-ul-Fitr
+  '2025-04-10', // Shri Mahavir Jayanti
+  '2025-04-14', // Dr. Ambedkar Jayanti
+  '2025-04-18', // Good Friday
+  '2025-05-01', // Maharashtra Day
+  '2025-06-07', // Bakri Id
+  '2025-08-15', // Independence Day
+  '2025-08-16', // Ashura
+  '2025-08-27', // Ganesh Chaturthi
+  '2025-10-02', // Mahatma Gandhi Jayanti / Eid-e-Milad
+  '2025-10-21', // Diwali (Lakshmi Puja)
+  '2025-10-22', // Diwali Balipratipada
+  '2025-11-05', // Prakash Gurpurab Sri Guru Nanak Dev
+  '2025-12-25', // Christmas
+  // 2026
+  '2026-01-26', // Republic Day
+  '2026-02-17', // Mahashivratri
+  '2026-03-03', // Holi
+  '2026-03-20', // Id-ul-Fitr
+  '2026-03-30', // Shri Mahavir Jayanti
+  '2026-04-03', // Good Friday
+  '2026-04-14', // Dr. Ambedkar Jayanti
+  '2026-05-01', // Maharashtra Day
+  '2026-05-28', // Bakri Id
+  '2026-06-25', // Muharram
+  '2026-08-15', // Independence Day
+  '2026-08-18', // Ganesh Chaturthi
+  '2026-08-25', // Eid-e-Milad
+  '2026-10-02', // Mahatma Gandhi Jayanti
+  '2026-10-09', // Dussehra
+  '2026-10-29', // Diwali Balipratipada
+  '2026-11-19', // Prakash Gurpurab Sri Guru Nanak Dev
+  '2026-11-24', // Guru Tegh Bahadur Martyrdom
+  '2026-12-25', // Christmas
+]);
+
 function getMarketSession() {
   const now = new Date();
-  // Convert to IST
   const ist = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-  const day = ist.getDay(); // 0=Sun, 6=Sat
+  const day = ist.getDay();
   const h = ist.getHours();
   const m = ist.getMinutes();
   const mins = h * 60 + m;
+  const dateStr = `${ist.getFullYear()}-${String(ist.getMonth() + 1).padStart(2, '0')}-${String(ist.getDate()).padStart(2, '0')}`;
 
   const isWeekend = day === 0 || day === 6;
+  const isHoliday = NSE_HOLIDAYS.has(dateStr);
 
-  // Key times in minutes from midnight IST
-  const PRE_OPEN = 9 * 60;       // 9:00
-  const MARKET_OPEN = 9 * 60 + 15; // 9:15
-  const MARKET_CLOSE = 15 * 60 + 30; // 15:30
-  const POST_CLOSE = 16 * 60;    // 16:00
+  const PRE_OPEN = 9 * 60;
+  const MARKET_OPEN = 9 * 60 + 15;
+  const MARKET_CLOSE = 15 * 60 + 30;
+  const POST_CLOSE = 16 * 60;
 
+  // Find next trading day name
+  const findNextTradingDay = () => {
+    const d = new Date(ist);
+    for (let i = 1; i <= 10; i++) {
+      d.setDate(d.getDate() + 1);
+      const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      if (d.getDay() !== 0 && d.getDay() !== 6 && !NSE_HOLIDAYS.has(ds)) {
+        return d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+      }
+    }
+    return 'next trading day';
+  };
+
+  if (isHoliday) {
+    // Find which holiday
+    const holidayNames = {
+      '04-14': 'Dr. Ambedkar Jayanti', '01-26': 'Republic Day', '08-15': 'Independence Day',
+      '10-02': 'Gandhi Jayanti', '12-25': 'Christmas', '05-01': 'Maharashtra Day',
+    };
+    const mmdd = dateStr.slice(5);
+    const name = holidayNames[mmdd] || 'Market Holiday';
+    return { status: 'holiday', label: name, sublabel: `Opens ${findNextTradingDay()} 9:15 AM`, accent: 'text-red-400', bg: 'bg-red-500/10 border-red-500/20' };
+  }
   if (isWeekend) {
-    const daysToMon = day === 0 ? 1 : 2;
-    return { status: 'closed', label: 'Weekend', sublabel: `Opens Mon 9:15 AM`, accent: 'text-red-400', bg: 'bg-red-500/10 border-red-500/20', nextMins: null };
+    return { status: 'closed', label: 'Weekend', sublabel: `Opens ${findNextTradingDay()} 9:15 AM`, accent: 'text-red-400', bg: 'bg-red-500/10 border-red-500/20' };
   }
   if (mins < PRE_OPEN) {
-    const untilOpen = PRE_OPEN - mins;
-    return { status: 'closed', label: 'Pre-Market', sublabel: `Opens in ${Math.floor(untilOpen / 60)}h ${untilOpen % 60}m`, accent: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/20', nextMins: untilOpen };
+    const u = PRE_OPEN - mins;
+    return { status: 'closed', label: 'Pre-Market', sublabel: `Opens in ${Math.floor(u / 60)}h ${u % 60}m`, accent: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/20' };
   }
   if (mins >= PRE_OPEN && mins < MARKET_OPEN) {
-    const untilOpen = MARKET_OPEN - mins;
-    return { status: 'preopen', label: 'Pre-Open', sublabel: `Trading starts in ${untilOpen}m`, accent: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/20', nextMins: untilOpen };
+    return { status: 'preopen', label: 'Pre-Open', sublabel: `Trading in ${MARKET_OPEN - mins}m`, accent: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/20' };
   }
   if (mins >= MARKET_OPEN && mins < MARKET_CLOSE) {
-    const untilClose = MARKET_CLOSE - mins;
-    const h = Math.floor(untilClose / 60);
-    const m = untilClose % 60;
-    return { status: 'open', label: 'Market Open', sublabel: `Closes in ${h}h ${m}m`, accent: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/20', nextMins: untilClose };
+    const u = MARKET_CLOSE - mins;
+    return { status: 'open', label: 'Market Open', sublabel: `Closes in ${Math.floor(u / 60)}h ${u % 60}m`, accent: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/20' };
   }
   if (mins >= MARKET_CLOSE && mins < POST_CLOSE) {
-    return { status: 'closing', label: 'Post-Close', sublabel: 'Closing auction', accent: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/20', nextMins: POST_CLOSE - mins };
+    return { status: 'closing', label: 'Post-Close', sublabel: 'Closing auction', accent: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/20' };
   }
-  return { status: 'closed', label: 'Market Closed', sublabel: 'Opens tomorrow 9:15 AM', accent: 'text-red-400', bg: 'bg-red-500/10 border-red-500/20', nextMins: null };
+  return { status: 'closed', label: 'Market Closed', sublabel: `Opens ${findNextTradingDay()} 9:15 AM`, accent: 'text-red-400', bg: 'bg-red-500/10 border-red-500/20' };
 }
 
 function MarketStatusBadge() {
