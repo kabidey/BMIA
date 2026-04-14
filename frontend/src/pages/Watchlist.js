@@ -173,6 +173,17 @@ function PortfolioCard({ portfolio, strategies, onExpand, expanded, rebalanceLog
   const isError = portfolio.status === 'error';
   const isActive = portfolio.status === 'active';
   const [activeTab, setActiveTab] = useState('holdings');
+  const [constructing, setConstructing] = useState(false);
+
+  const handleConstruct = async (e) => {
+    e.stopPropagation();
+    setConstructing(true);
+    try {
+      await fetch(`${BACKEND_URL}/api/portfolios/${type}/construct`, { method: 'POST' });
+    } catch (err) { /* will show on refresh */ }
+    setConstructing(false);
+    window.location.reload();
+  };
 
   const pnl = portfolio.total_pnl || 0;
   const pnlPct = portfolio.total_pnl_pct || 0;
@@ -207,13 +218,14 @@ function PortfolioCard({ portfolio, strategies, onExpand, expanded, rebalanceLog
           </div>
 
           <div className="text-right flex-shrink-0 ml-4">
-            {isConstructing && (
-              <div className="flex items-center gap-2 text-amber-400">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span className="text-sm font-medium">Constructing...</span>
-              </div>
+            {(isConstructing || isError) && (
+              <button onClick={handleConstruct} disabled={constructing}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-500/15 border border-amber-500/30 text-amber-400 hover:bg-amber-500/25 disabled:opacity-50"
+                data-testid={`construct-btn-${type}`}>
+                {constructing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
+                {constructing ? 'Building...' : 'Construct Now'}
+              </button>
             )}
-            {isError && <span className="text-sm text-red-400 font-medium">Error</span>}
             {isActive && (
               <>
                 <p className="text-lg font-mono font-bold text-[hsl(var(--foreground))]">
@@ -508,18 +520,29 @@ export default function Watchlist() {
               const Icon = STRATEGY_ICONS[type] || BarChart3;
               const colors = STRATEGY_COLORS[type] || '';
               return (
-                <div key={type} className={`p-4 rounded-xl border bg-gradient-to-br ${colors} opacity-50`} data-testid={`portfolio-card-${type}`}>
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-[hsl(var(--surface-1))] flex items-center justify-center">
-                      <Icon className="w-5 h-5 text-[hsl(var(--muted-foreground))]" />
-                    </div>
-                    <div>
-                      <h3 className="text-base font-semibold text-[hsl(var(--foreground))]">{cfg.name || type.replace(/_/g, ' ')}</h3>
-                      <div className="flex items-center gap-2 mt-1">
-                        <Loader2 className="w-3 h-3 animate-spin text-amber-400" />
-                        <span className="text-xs text-amber-400">Queued for construction...</span>
+                <div key={type} className={`p-4 rounded-xl border bg-gradient-to-br ${colors}`} data-testid={`portfolio-card-${type}`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-lg bg-[hsl(var(--surface-1))] flex items-center justify-center">
+                        <Icon className="w-5 h-5 text-[hsl(var(--muted-foreground))]" />
+                      </div>
+                      <div>
+                        <h3 className="text-base font-semibold text-[hsl(var(--foreground))]">{cfg.name || type.replace(/_/g, ' ')}</h3>
+                        <p className="text-xs text-[hsl(var(--muted-foreground))] mt-0.5">Not yet constructed</p>
                       </div>
                     </div>
+                    <button
+                      onClick={async () => {
+                        try {
+                          await fetch(`${BACKEND_URL}/api/portfolios/${type}/construct`, { method: 'POST' });
+                          window.location.reload();
+                        } catch (e) { alert('Failed: ' + e.message); }
+                      }}
+                      className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-[hsl(var(--primary))]/15 border border-[hsl(var(--primary))]/30 text-[hsl(var(--primary))] hover:bg-[hsl(var(--primary))]/25"
+                      data-testid={`construct-btn-${type}`}>
+                      <Zap className="w-3.5 h-3.5" />
+                      Construct Now
+                    </button>
                   </div>
                 </div>
               );

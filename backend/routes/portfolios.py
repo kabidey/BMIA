@@ -20,6 +20,17 @@ _simulation_locks = {}  # strategy_type -> bool
 @router.get("/portfolios/overview")
 async def portfolio_overview(request: Request):
     db = request.app.db
+    # Auto-clean stuck "constructing" portfolios (>10 min old)
+    from datetime import timedelta
+    stuck = await db.portfolios.find({"status": "constructing"}).to_list(length=20)
+    for s in stuck:
+        created = s.get("constructed_at") or s.get("created_at")
+        if created and isinstance(created, datetime):
+            if (datetime.now(timezone.utc) - created.replace(tzinfo=timezone.utc)).total_seconds() > 600:
+                await db.portfolios.delete_one({"_id": s["_id"]})
+        else:
+            # No timestamp — just delete it, it's stale
+            await db.portfolios.delete_one({"_id": s["_id"]})
     return await get_portfolio_overview(db)
 
 
