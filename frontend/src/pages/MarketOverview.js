@@ -198,6 +198,51 @@ function CustomTreemapContent({ x, y, width, height, name, change_pct }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ══════════════════════════════════════════════════════════════════════════════
+function DaemonIndicator() {
+  const [status, setStatus] = useState(null);
+  const [toggling, setToggling] = useState(false);
+
+  const fetchStatus = useCallback(async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/daemon/status`);
+      setStatus(await res.json());
+    } catch { /* silent */ }
+  }, []);
+
+  useEffect(() => { fetchStatus(); }, [fetchStatus]);
+  useEffect(() => {
+    const iv = setInterval(fetchStatus, 30000);
+    return () => clearInterval(iv);
+  }, [fetchStatus]);
+
+  const handleToggle = async () => {
+    setToggling(true);
+    try {
+      await fetch(`${BACKEND_URL}/api/daemon/toggle`, { method: 'POST' });
+      await fetchStatus();
+    } catch { /* */ }
+    setToggling(false);
+  };
+
+  if (!status) return null;
+
+  const isRunning = status.status === 'running' && !status.paused;
+  const isPaused = status.paused;
+
+  return (
+    <div className="flex items-center gap-1.5" data-testid="daemon-indicator">
+      <button onClick={handleToggle} disabled={toggling} title={isPaused ? 'Resume daemon' : 'Pause daemon'}
+        className={`flex items-center gap-1.5 px-2 py-1 rounded-md border text-[10px] font-mono ${
+          isRunning ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' :
+          'bg-red-500/10 border-red-500/20 text-red-400'
+        } hover:opacity-80 disabled:opacity-50`}>
+        <div className={`w-1.5 h-1.5 rounded-full ${isRunning ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'}`} />
+        {isRunning ? 'Daemon' : 'Paused'}
+      </button>
+    </div>
+  );
+}
+
 export default function MarketOverview() {
   const [cockpitData, setCockpitData] = useState(null);
   const [slowData, setSlowData] = useState(null);
@@ -310,6 +355,7 @@ export default function MarketOverview() {
             </p>
           </div>
           <MarketStatusBadge />
+          <DaemonIndicator />
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 text-xs text-[hsl(var(--muted-foreground))]">

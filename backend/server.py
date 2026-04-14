@@ -18,6 +18,7 @@ from services.dashboard_service import start_background_cache
 from services.guidance_service import start_guidance_scheduler
 from services.pdf_extractor_service import start_pdf_extraction_daemon
 from daemons.evaluation_scheduler import start_evaluation_scheduler
+from daemons.portfolio_daemon import start_portfolio_daemon
 
 from routes.symbols import router as symbols_router
 from routes.market import router as market_router
@@ -28,6 +29,7 @@ from routes.bse import router as bse_router
 from routes.portfolios import router as portfolios_router
 from routes.custom_portfolios import router as custom_portfolios_router
 from routes.totp_auth import router as totp_auth_router
+from routes.daemon_control import router as daemon_control_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -42,12 +44,13 @@ async def lifespan(app: FastAPI):
     app.db = app.mongodb_client[DB_NAME]
     logger.info("Connected to MongoDB")
 
-    # Start background daemons (all non-blocking) — Portfolio daemon REMOVED
+    # Start background daemons (all non-blocking)
     for name, starter, args in [
         ("Background cache", start_background_cache, ()),
         ("Evaluation scheduler", start_evaluation_scheduler, (MONGO_URL, DB_NAME)),
         ("Guidance scheduler", start_guidance_scheduler, (MONGO_URL, DB_NAME)),
         ("PDF extraction daemon", start_pdf_extraction_daemon, (MONGO_URL, DB_NAME)),
+        ("Portfolio daemon", start_portfolio_daemon, (MONGO_URL, DB_NAME)),
     ]:
         try:
             starter(*args)
@@ -84,6 +87,7 @@ app.include_router(bse_router)
 app.include_router(portfolios_router)
 app.include_router(custom_portfolios_router)
 app.include_router(totp_auth_router)
+app.include_router(daemon_control_router)
 
 
 if __name__ == "__main__":
