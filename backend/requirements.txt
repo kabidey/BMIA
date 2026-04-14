@@ -108,6 +108,7 @@ Pygments==2.20.0
 PyJWT==2.12.1
 pyluach==2.3.0
 pymongo==4.5.0
+pyotp==2.9.0
 pyparsing==3.3.2
 pypdfium2==5.7.0
 pytest==9.0.3
@@ -118,6 +119,7 @@ python-multipart==0.0.24
 pytokens==0.4.1
 pytz==2026.1.post1
 PyYAML==6.0.3
+qrcode==8.2
 referencing==0.37.0
 regex==2026.4.4
 requests==2.33.1

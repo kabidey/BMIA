@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import './App.css';
+import TOTPGate from './components/TOTPGate';
 import Sidebar from './components/layout/Sidebar';
 import MarketOverview from './pages/MarketOverview';
 import SymbolAnalysis from './pages/SymbolAnalysis';
@@ -24,29 +25,31 @@ function App() {
 
   return (
     <Router>
-      <div className="flex min-h-screen bg-[hsl(var(--background))]" data-testid="app-root">
-        <Sidebar />
-        <main className="flex-1 overflow-auto ml-0 sm:ml-16 lg:ml-56 pt-14 sm:pt-0">
-          <Routes>
-            <Route path="/" element={<MarketOverview />} />
-            <Route path="/analyze/:symbol" element={<SymbolAnalysis />} />
-            <Route path="/analyze" element={<SymbolAnalysis />} />
-            <Route path="/scanner" element={<BatchScanner />} />
-            <Route path="/signals" element={<SignalDashboard />} />
-            <Route path="/track-record" element={<TrackRecord />} />
-            <Route path="/guidance" element={<Guidance />} />
-            <Route path="/watchlist" element={<Watchlist />} />
-            <Route path="/portfolio/custom/new" element={<CustomPortfolioCreate />} />
-            <Route path="/portfolio/custom/:id" element={<CustomPortfolioDetail />} />
-            <Route path="/portfolio/:type" element={<PortfolioDetail />} />
-            <Route path="/analytics" element={<PortfolioAnalytics />} />
-            <Route path="/how-it-works" element={<HowItWorks />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </main>
-        <SignalAlerts />
-        <Toaster position="top-right" theme="dark" />
-      </div>
+      <TOTPGate>
+        <div className="flex min-h-screen bg-[hsl(var(--background))]" data-testid="app-root">
+          <Sidebar />
+          <main className="flex-1 overflow-auto ml-0 sm:ml-16 lg:ml-56 pt-14 sm:pt-0">
+            <Routes>
+              <Route path="/" element={<MarketOverview />} />
+              <Route path="/analyze/:symbol" element={<SymbolAnalysis />} />
+              <Route path="/analyze" element={<SymbolAnalysis />} />
+              <Route path="/scanner" element={<BatchScanner />} />
+              <Route path="/signals" element={<SignalDashboard />} />
+              <Route path="/track-record" element={<TrackRecord />} />
+              <Route path="/guidance" element={<Guidance />} />
+              <Route path="/watchlist" element={<Watchlist />} />
+              <Route path="/portfolio/custom/new" element={<CustomPortfolioCreate />} />
+              <Route path="/portfolio/custom/:id" element={<CustomPortfolioDetail />} />
+              <Route path="/portfolio/:type" element={<PortfolioDetail />} />
+              <Route path="/analytics" element={<PortfolioAnalytics />} />
+              <Route path="/how-it-works" element={<HowItWorks />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </main>
+          <SignalAlerts />
+          <Toaster position="top-right" theme="dark" />
+        </div>
+      </TOTPGate>
     </Router>
   );
 }
