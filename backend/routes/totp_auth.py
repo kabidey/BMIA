@@ -36,45 +36,25 @@ class VerifyRequest(BaseModel):
 
 @router.get("/totp-setup")
 async def totp_setup(request: Request):
-    """Initialize TOTP secret in DB if not exists. Never exposes secret or QR."""
-    db = request.app.db
-    config = await db.auth_config.find_one({"type": "totp"}, {"_id": 0})
-
-    if not config:
-        secret = pyotp.random_base32()
-        await db.auth_config.insert_one({
-            "type": "totp",
-            "secret": secret,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "setup_complete": True,
-        })
-
+    """Ensures TOTP is ready. Secret comes from TOTP_SECRET env var."""
+    secret = os.environ.get("TOTP_SECRET")
+    if not secret:
+        return {"status": "error", "detail": "TOTP_SECRET not configured in environment"}
     return {"status": "ready"}
 
 
 @router.post("/totp-verify")
 async def totp_verify(req: VerifyRequest, request: Request):
     """Verify a 6-digit TOTP code and return a JWT session token."""
-    db = request.app.db
-    config = await db.auth_config.find_one({"type": "totp"}, {"_id": 0})
+    secret = os.environ.get("TOTP_SECRET")
+    if not secret:
+        raise HTTPException(status_code=500, detail="TOTP_SECRET not configured")
 
-    if not config:
-        raise HTTPException(status_code=400, detail="TOTP not configured. Visit /api/auth/totp-setup first.")
-
-    secret = config["secret"]
     totp = pyotp.TOTP(secret)
 
-    # Verify with ±1 window tolerance (60s total — handles slight clock drift)
     if not totp.verify(req.code, valid_window=1):
-        logger.warning(f"TOTP verification failed for code: {req.code[:2]}****")
+        logger.warning(f"TOTP verification failed")
         raise HTTPException(status_code=401, detail="Invalid code. Try again.")
-
-    # Mark setup as complete on first successful verify
-    if not config.get("setup_complete"):
-        await db.auth_config.update_one(
-            {"type": "totp"},
-            {"$set": {"setup_complete": True}}
-        )
 
     # Issue JWT
     jwt_secret = _get_jwt_secret()
