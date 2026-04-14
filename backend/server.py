@@ -17,7 +17,6 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from services.dashboard_service import start_background_cache
 from services.guidance_service import start_guidance_scheduler
 from services.pdf_extractor_service import start_pdf_extraction_daemon
-from services.portfolio_engine import start_portfolio_daemon
 from daemons.evaluation_scheduler import start_evaluation_scheduler
 
 from routes.symbols import router as symbols_router
@@ -41,11 +40,7 @@ async def lifespan(app: FastAPI):
     app.db = app.mongodb_client[DB_NAME]
     logger.info("Connected to MongoDB")
 
-    # Start background daemons (all non-blocking)
-    # Portfolio daemon DISABLED — user requested kill to prevent production queue
-    # for name, starter, args in [
-    #     ("Portfolio daemon", start_portfolio_daemon, (MONGO_URL, DB_NAME)),
-    # ]:
+    # Start background daemons (all non-blocking) — Portfolio daemon REMOVED
     for name, starter, args in [
         ("Background cache", start_background_cache, ()),
         ("Evaluation scheduler", start_evaluation_scheduler, (MONGO_URL, DB_NAME)),
