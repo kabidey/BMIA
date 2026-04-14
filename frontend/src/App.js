@@ -15,6 +15,7 @@ import PortfolioDetail from './pages/PortfolioDetail';
 import CustomPortfolioCreate from './pages/CustomPortfolioCreate';
 import CustomPortfolioDetail from './pages/CustomPortfolioDetail';
 import HowItWorks from './pages/HowItWorks';
+import AuditLog from './pages/AuditLog';
 import SignalAlerts from './components/layout/SignalAlerts';
 import { Toaster } from './components/ui/sonner';
 
@@ -43,6 +44,7 @@ function App() {
               <Route path="/portfolio/:type" element={<PortfolioDetail />} />
               <Route path="/analytics" element={<PortfolioAnalytics />} />
               <Route path="/how-it-works" element={<HowItWorks />} />
+              <Route path="/audit-log" element={<AuditLog />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </main>
