@@ -23,7 +23,7 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 APP_NAME = "BMIA"
 JWT_ALGORITHM = "HS256"
-JWT_EXPIRY_HOURS = 24
+JWT_EXPIRY_HOURS = 1
 
 
 def _get_jwt_secret(db=None):

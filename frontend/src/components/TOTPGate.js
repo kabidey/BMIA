@@ -23,13 +23,42 @@ export function useAuth() {
     const token = getToken();
     if (!token) { setAuthed(false); return; }
 
+    // Quick local JWT expiry check before hitting server
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      if (payload.exp && payload.exp * 1000 < Date.now()) {
+        clearToken();
+        setAuthed(false);
+        return;
+      }
+    } catch { clearToken(); setAuthed(false); return; }
+
     fetch(`${BACKEND_URL}/api/auth/session`, {
       headers: { 'Authorization': `Bearer ${token}` }
     })
       .then(r => r.json())
-      .then(d => setAuthed(d.valid === true))
+      .then(d => {
+        if (d.valid) { setAuthed(true); } else { clearToken(); setAuthed(false); }
+      })
       .catch(() => setAuthed(false));
   }, []);
+
+  // Periodic expiry check — force logout when token expires
+  useEffect(() => {
+    if (authed !== true) return;
+    const interval = setInterval(() => {
+      const token = getToken();
+      if (!token) { window.location.reload(); return; }
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        if (payload.exp && payload.exp * 1000 < Date.now()) {
+          clearToken();
+          window.location.reload();
+        }
+      } catch { clearToken(); window.location.reload(); }
+    }, 30000); // Check every 30s
+    return () => clearInterval(interval);
+  }, [authed]);
 
   return authed;
 }
