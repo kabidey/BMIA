@@ -80,7 +80,7 @@ function HoldingsTable({ holdings }) {
                   {pnl >= 0 ? '+' : ''}{pnl.toFixed(2)}%
                 </td>
                 <td className="py-2 px-3 text-right font-mono">{h.weight?.toFixed(1)}%</td>
-                <td className="py-2 px-3 text-right font-mono">{((h.value || 0) / 1e5).toFixed(2)}L</td>
+                <td className="py-2 px-3 text-right font-mono">{(((h.value || 0) > 0 ? h.value : (h.current_price || h.entry_price || 0) * (h.quantity || 0)) / 1e5).toFixed(2)}L</td>
                 <td className="py-2 px-3 text-center"><SignalBadge pnl={pnl} /></td>
               </tr>
             );
