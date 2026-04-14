@@ -15,7 +15,7 @@ import { TerminalPanel } from '../components/layout/TerminalPanel';
 import {
   TrendingUp, TrendingDown, Minus, Activity, BarChart3, Zap,
   RefreshCw, Timer, ArrowUpRight, ArrowDownRight, Eye,
-  Gauge, PieChart as PieChartIcon, Layers, FileText, Bell, Scale
+  Gauge, PieChart as PieChartIcon, Layers, FileText, Bell, Scale, Loader2
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer,
@@ -30,6 +30,7 @@ const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
 // ── Market session from backend (holiday-aware, DB-driven) ──
 function MarketStatusBadge() {
   const [session, setSession] = useState(null);
+  const [seeding, setSeeding] = useState(false);
 
   const fetchSession = useCallback(async () => {
     try {
@@ -45,6 +46,17 @@ function MarketStatusBadge() {
     return () => clearInterval(iv);
   }, [fetchSession]);
 
+  const seedHolidays = async () => {
+    setSeeding(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/market/holidays/seed`, { method: 'POST' });
+      const d = await res.json();
+      alert(`Seeded ${d.inserted} new holidays (${d.total} total across 2025-2027)`);
+      fetchSession();
+    } catch { alert('Failed to seed holidays'); }
+    setSeeding(false);
+  };
+
   if (!session) return null;
 
   const isOpen = session.status === 'open';
@@ -54,10 +66,17 @@ function MarketStatusBadge() {
   const bgColor = isOpen ? 'bg-emerald-500/10 border-emerald-500/20' : isPre ? 'bg-amber-500/10 border-amber-500/20' : 'bg-red-500/10 border-red-500/20';
 
   return (
-    <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium ${bgColor}`} data-testid="market-status-badge">
-      <div className={`w-2 h-2 rounded-full ${dotColor} ${isOpen ? 'animate-pulse' : ''}`} />
-      <span className={textColor}>{session.label}</span>
-      <span className="text-[10px] text-[hsl(var(--muted-foreground))] font-mono">{session.sublabel}</span>
+    <div className="flex items-center gap-2">
+      <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium ${bgColor}`} data-testid="market-status-badge">
+        <div className={`w-2 h-2 rounded-full ${dotColor} ${isOpen ? 'animate-pulse' : ''}`} />
+        <span className={textColor}>{session.label}</span>
+        <span className="text-[10px] text-[hsl(var(--muted-foreground))] font-mono">{session.sublabel}</span>
+      </div>
+      <button onClick={seedHolidays} disabled={seeding} title="Seed NSE holidays 2025-2027"
+        className="w-7 h-7 rounded-lg flex items-center justify-center text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--surface-2))] disabled:opacity-50"
+        data-testid="seed-holidays-btn">
+        {seeding ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Bell className="w-3.5 h-3.5" />}
+      </button>
     </div>
   );
 }
