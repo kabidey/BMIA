@@ -5,61 +5,87 @@ Build a Tier-1 Quant Analyst specializing in Indian Equity and Commodity markets
 
 ## What's Implemented
 
-### Core Intelligence Platform ✅
+### Core Intelligence Platform
 - Market Cockpit, Symbol Analysis (25+ tech / 30+ fundamental), God Mode 3-LLM Scanner, AI Signal Dashboard, BSE Guidance RAG, PDF Extraction
 
-### Server Refactoring ✅ — 7 route modules, 2 daemons
+### Server Refactoring — 8 route modules, 2+ daemons
 
-### Hardened God Mode Pipeline v3 ✅
+### Hardened God Mode Pipeline v3
 - 5 code-enforced guardrails: data validation, sector diversification (max 3), ATR sizing, factor scoring, 8% stop-loss
 
-### Deep Hardening ✅
+### Deep Hardening
 - Batch Scanner: ThreadPoolExecutor, per-stock timeouts, 120s LLM cap
 - AI Signals: code-enforced bounds on entry/target/stop-loss
 - Track Record: NaN-safe metrics, data quality field
 
-### 5-Year Backtest Engine ✅ — CAGR, Sharpe, Alpha vs Nifty 50, cached 24h
+### 5-Year Backtest Engine — CAGR, Sharpe, Alpha vs Nifty 50, cached 24h
 
-### LSTM + Monte Carlo Forward Simulation ✅ — 10K GBM paths, VaR, CVaR, P(Profit), cached 12h
+### 4-Model ML Ensemble + Monte Carlo Forward Simulation
+- LSTM, Attention-LSTM, GRU, GARCH models
+- 10K GBM paths, VaR, CVaR, P(Profit), cached 12h
 
-### Portfolio v3 Rebuild ✅ — Manual construct via UI button, daemon disabled
+### Portfolio v3 Rebuild — Manual construct via UI button, daemon with kill switch
 
-### Walk-Forward Tracking ✅ — Forecast vs Actual snapshots
+### Walk-Forward Tracking — Forecast vs Actual snapshots
 
-### Scanner History ✅ — Past God Mode scans cached and browsable
+### Scanner History — Past God Mode scans cached and browsable
 
-### Dedicated Portfolio Detail Pages ✅ — /portfolio/:type with holdings, sector pie, backtest, simulation, walk-forward inline
+### Dedicated Portfolio Detail Pages — /portfolio/:type with holdings, sector pie, backtest, simulation, walk-forward
 
-### Custom Portfolios ("Make Your Own") ✅
-- Create up to 5 custom portfolios, 10 stocks each, ₹50L capital
+### Custom Portfolios ("Make Your Own")
+- Create up to 5 custom portfolios, 10 stocks each, Rs 50L capital
 - Stock search autocomplete (2400+ NSE), weight allocation, auto-balance
-- Manual rebalancing with full change tracking (ADD/REMOVE/WEIGHT_CHANGE)
-- 5Y backtest + LSTM/MC simulation computed per custom portfolio
-- Tracking history with timestamped snapshots
+- Manual rebalancing with full change tracking
+- 5Y backtest + LSTM/MC simulation per custom portfolio
 
-### How It Works Documentation ✅ — 14-section exhaustive page
+### How It Works Documentation — 14-section exhaustive page
 
-### TOTP 2FA Authentication ✅
-- RFC 6238 TOTP (Google Authenticator compatible)
-- Secret from TOTP_SECRET env var (no DB, no QR/secret exposure)
-- JWT session, 1-hour expiry, 30s client-side expiry check, force logout
-- Gate screen: 6-digit input, auto-submit, paste support
+### OrgLens JWT Authentication
+- Email -> OrgLens scan -> Password -> JWT (1h regular, 365d superadmin)
+- Superadmin: somnath.dey@smifs.com
+
+### Audit Log — Comprehensive tracking with superadmin UI
+
+### DB-driven NSE Holiday Calendar and Market Session Intelligence
+
+### 3-Month Rolling RAG Vectorization (Apr 2026)
+- TF-IDF vectorization using sklearn (25,000+ vectors: announcements + PDF chunks)
+- Cosine similarity search for semantic retrieval
+- 90-day rolling window with automatic pruning
+- Vector store built on startup, rebuilt after each scrape
+- Replaces old regex/keyword-based retrieval
 
 ## Architecture
 ```
 /app/backend/
-  server.py, routes/ (8 modules incl custom_portfolios, totp_auth), daemons/, services/
+  server.py, routes/ (11 modules), daemons/, services/
+  services/vector_store.py — TF-IDF vector store (GuidanceVectorStore)
+  services/guidance_service.py — BSE scraper with 3-month retention
+  services/guidance_ai_service.py — RAG pipeline using vector search
 /app/frontend/src/
-  components/TOTPGate.js
-  pages/ (11 pages)
+  components/TOTPGate.js (OrgLens Auth Gate)
+  pages/ (11+ pages)
 ```
 
 ## Env Vars (Production)
-- TOTP_SECRET — 32-char base32 TOTP secret
 - TOTP_JWT_SECRET — JWT signing key
+- ORGLENS_API_KEY — OrgLens employee verification
+- MASTER_CODE — Superadmin master code
 - MONGO_URL, DB_NAME, EMERGENT_LLM_KEY, CORS_ORIGINS
+
+## Key API Endpoints
+- POST /api/auth/verify-orglens — Employee verification
+- POST /api/custom-portfolios — Create manual portfolio
+- GET /api/audit-log — Superadmin only
+- POST /api/portfolios/rebuild-all — Superadmin kill switch
+- GET /api/guidance/vectors/stats — Vector store statistics
+- POST /api/guidance/vectors/rebuild — Manual vector rebuild
+- POST /api/guidance/prune — Prune old guidance data
+- POST /api/guidance/ask — AI RAG query (vector-powered)
 
 ## Backlog
 - P2: CSV/PDF export for portfolio reports
 - P2: WebSocket/SSE for real-time Market Cockpit
-- Future: Portfolio alerts, Benchmark comparison dashboard
+- Future: Portfolio alerts (push notifications on rebalance/P&L threshold)
+- Future: Benchmark comparison dashboard
+- Refactor: Rename TOTPGate.js -> AuthGate.js
