@@ -27,6 +27,65 @@ import { useApi } from '../hooks/useApi';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
 
+// ── Indian Market Session Logic (IST = UTC+5:30) ──
+function getMarketSession() {
+  const now = new Date();
+  // Convert to IST
+  const ist = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  const day = ist.getDay(); // 0=Sun, 6=Sat
+  const h = ist.getHours();
+  const m = ist.getMinutes();
+  const mins = h * 60 + m;
+
+  const isWeekend = day === 0 || day === 6;
+
+  // Key times in minutes from midnight IST
+  const PRE_OPEN = 9 * 60;       // 9:00
+  const MARKET_OPEN = 9 * 60 + 15; // 9:15
+  const MARKET_CLOSE = 15 * 60 + 30; // 15:30
+  const POST_CLOSE = 16 * 60;    // 16:00
+
+  if (isWeekend) {
+    const daysToMon = day === 0 ? 1 : 2;
+    return { status: 'closed', label: 'Weekend', sublabel: `Opens Mon 9:15 AM`, accent: 'text-red-400', bg: 'bg-red-500/10 border-red-500/20', nextMins: null };
+  }
+  if (mins < PRE_OPEN) {
+    const untilOpen = PRE_OPEN - mins;
+    return { status: 'closed', label: 'Pre-Market', sublabel: `Opens in ${Math.floor(untilOpen / 60)}h ${untilOpen % 60}m`, accent: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/20', nextMins: untilOpen };
+  }
+  if (mins >= PRE_OPEN && mins < MARKET_OPEN) {
+    const untilOpen = MARKET_OPEN - mins;
+    return { status: 'preopen', label: 'Pre-Open', sublabel: `Trading starts in ${untilOpen}m`, accent: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/20', nextMins: untilOpen };
+  }
+  if (mins >= MARKET_OPEN && mins < MARKET_CLOSE) {
+    const untilClose = MARKET_CLOSE - mins;
+    const h = Math.floor(untilClose / 60);
+    const m = untilClose % 60;
+    return { status: 'open', label: 'Market Open', sublabel: `Closes in ${h}h ${m}m`, accent: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/20', nextMins: untilClose };
+  }
+  if (mins >= MARKET_CLOSE && mins < POST_CLOSE) {
+    return { status: 'closing', label: 'Post-Close', sublabel: 'Closing auction', accent: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/20', nextMins: POST_CLOSE - mins };
+  }
+  return { status: 'closed', label: 'Market Closed', sublabel: 'Opens tomorrow 9:15 AM', accent: 'text-red-400', bg: 'bg-red-500/10 border-red-500/20', nextMins: null };
+}
+
+function MarketStatusBadge() {
+  const [session, setSession] = useState(getMarketSession);
+  useEffect(() => {
+    const iv = setInterval(() => setSession(getMarketSession()), 30000);
+    return () => clearInterval(iv);
+  }, []);
+
+  const pulseClass = session.status === 'open' ? 'animate-pulse' : '';
+  return (
+    <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium ${session.bg}`} data-testid="market-status-badge">
+      <div className={`w-2 h-2 rounded-full ${session.status === 'open' ? 'bg-emerald-400' : session.status === 'preopen' ? 'bg-amber-400' : 'bg-red-400'} ${pulseClass}`} />
+      <span className={session.accent}>{session.label}</span>
+      <span className="text-[10px] text-[hsl(var(--muted-foreground))] font-mono">{session.sublabel}</span>
+    </div>
+  );
+}
+
 // ── Flash on change utility ──
 function useFlash(value) {
   const prev = useRef(value);
@@ -255,6 +314,7 @@ export default function MarketOverview() {
               Liquidity Flow &bull; Sentiment &bull; Sector Rotation &bull; Derivatives
             </p>
           </div>
+          <MarketStatusBadge />
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 text-xs text-[hsl(var(--muted-foreground))]">
