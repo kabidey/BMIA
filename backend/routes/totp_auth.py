@@ -36,37 +36,20 @@ class VerifyRequest(BaseModel):
 
 @router.get("/totp-setup")
 async def totp_setup(request: Request):
-    """Get QR code for TOTP setup. Creates secret if not exists."""
+    """Initialize TOTP secret in DB if not exists. Never exposes secret or QR."""
     db = request.app.db
     config = await db.auth_config.find_one({"type": "totp"}, {"_id": 0})
 
     if not config:
-        # Generate new TOTP secret
         secret = pyotp.random_base32()
         await db.auth_config.insert_one({
             "type": "totp",
             "secret": secret,
             "created_at": datetime.now(timezone.utc).isoformat(),
-            "setup_complete": False,
+            "setup_complete": True,
         })
-    else:
-        secret = config["secret"]
 
-    # Generate QR code
-    totp = pyotp.TOTP(secret)
-    provisioning_uri = totp.provisioning_uri(name="admin", issuer_name=APP_NAME)
-
-    img = qrcode.make(provisioning_uri, box_size=6, border=2)
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    qr_b64 = base64.b64encode(buf.getvalue()).decode()
-
-    return {
-        "qr_code": f"data:image/png;base64,{qr_b64}",
-        "secret": secret,
-        "provisioning_uri": provisioning_uri,
-        "setup_complete": config.get("setup_complete", False) if config else False,
-    }
+    return {"status": "ready"}
 
 
 @router.post("/totp-verify")
