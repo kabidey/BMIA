@@ -39,6 +39,7 @@ export function useAuth() {
       .catch(() => setAuthed(false));
   }, []);
 
+  // Periodic expiry check — skip for persistent (master) sessions
   useEffect(() => {
     if (authed !== true) return;
     const interval = setInterval(() => {
@@ -46,6 +47,7 @@ export function useAuth() {
       if (!token) { window.location.reload(); return; }
       try {
         const payload = JSON.parse(atob(token.split('.')[1]));
+        if (payload.persistent) return; // Master code — no auto-logout
         if (payload.exp && payload.exp * 1000 < Date.now()) {
           clearToken();
           window.location.reload();
