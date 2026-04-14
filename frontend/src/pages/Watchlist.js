@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { RefreshCw, TrendingUp, TrendingDown, ChevronDown, ChevronUp, ArrowRightLeft, Clock, Zap, Target, Shield, Rocket, BarChart3, Gem, Loader2, IndianRupee, ArrowUpRight, ArrowDownRight, History, CheckCircle2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { RefreshCw, TrendingUp, TrendingDown, ChevronRight, ArrowRightLeft, Clock, Zap, Target, Shield, Rocket, BarChart3, Gem, Loader2, IndianRupee, ArrowUpRight, ArrowDownRight, History, CheckCircle2 } from 'lucide-react';
 import { Card, CardContent } from '../components/ui/card';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -163,7 +164,8 @@ function SwapCard({ change, index }) {
   );
 }
 
-function PortfolioCard({ portfolio, strategies, onExpand, expanded, rebalanceLogs }) {
+function PortfolioCard({ portfolio, strategies, rebalanceLogs }) {
+  const navigate = useNavigate();
   const type = portfolio.type;
   const cfg = strategies[type] || {};
   const Icon = STRATEGY_ICONS[type] || BarChart3;
@@ -172,27 +174,23 @@ function PortfolioCard({ portfolio, strategies, onExpand, expanded, rebalanceLog
   const isConstructing = portfolio.status === 'constructing';
   const isError = portfolio.status === 'error';
   const isActive = portfolio.status === 'active';
-  const [activeTab, setActiveTab] = useState('holdings');
   const [constructing, setConstructing] = useState(false);
 
   const handleConstruct = async (e) => {
     e.stopPropagation();
     setConstructing(true);
-    // Fire-and-forget — don't await the long construct call
     fetch(`${BACKEND_URL}/api/portfolios/${type}/construct`, { method: 'POST' }).catch(() => {});
   };
 
   const pnl = portfolio.total_pnl || 0;
   const pnlPct = portfolio.total_pnl_pct || 0;
   const holdings = portfolio.holdings || [];
-  const portfolioLogs = rebalanceLogs.filter(l => l.portfolio_type === type);
-  const hasSwaps = portfolioLogs.some(l => l.action === 'REBALANCE' && l.changes?.length > 0);
 
   return (
     <div className="space-y-0" data-testid={`portfolio-card-${type}`}>
       <div
         className={`p-4 rounded-xl border cursor-pointer bg-gradient-to-br ${colors} transition-all hover:scale-[1.01]`}
-        onClick={() => onExpand(type)}
+        onClick={() => isActive ? navigate(`/portfolio/${type}`) : null}
       >
         <div className="flex items-start justify-between">
           <div className="flex items-start gap-3">
@@ -204,6 +202,7 @@ function PortfolioCard({ portfolio, strategies, onExpand, expanded, rebalanceLog
               <p className="text-xs text-[hsl(var(--muted-foreground))] mt-0.5">{cfg.description?.slice(0, 80) || ''}</p>
               <div className="flex items-center gap-3 mt-1">
                 <p className="text-[10px] text-[hsl(var(--muted-foreground))]">{cfg.horizon || portfolio.horizon}</p>
+                {portfolio.pipeline && <span className="text-[9px] bg-emerald-500/15 text-emerald-400 px-1.5 py-0.5 rounded font-mono">{portfolio.pipeline}</span>}
                 {portfolio.last_rebalanced && (
                   <span className="text-[10px] text-amber-400/80 flex items-center gap-0.5">
                     <History className="w-2.5 h-2.5" />
@@ -234,121 +233,24 @@ function PortfolioCard({ portfolio, strategies, onExpand, expanded, rebalanceLog
                   <span className="ml-1 text-xs">({pnl >= 0 ? '+' : ''}{pnl.toLocaleString('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })})</span>
                 </p>
                 <p className="text-[10px] text-[hsl(var(--muted-foreground))] mt-1">
-                  {holdings.length} stocks | W:{portfolio.winners || holdings.filter(h => (h.pnl_pct||0) > 0).length} L:{portfolio.losers || holdings.filter(h => (h.pnl_pct||0) < 0).length}
+                  {holdings.length} stocks | W:{holdings.filter(h => (h.pnl_pct||0) > 0).length} L:{holdings.filter(h => (h.pnl_pct||0) < 0).length}
                 </p>
               </>
             )}
           </div>
         </div>
 
-        <div className="flex items-center justify-center mt-2">
-          {expanded ? <ChevronUp className="w-4 h-4 text-[hsl(var(--muted-foreground))]" /> : <ChevronDown className="w-4 h-4 text-[hsl(var(--muted-foreground))]" />}
-        </div>
-      </div>
-
-      {/* Expanded Panel */}
-      {expanded && isActive && (
-        <div className="mx-2 -mt-1 rounded-b-xl bg-[hsl(var(--surface-1))] border border-t-0 border-[hsl(var(--border))] overflow-hidden" data-testid={`expanded-${type}`}>
-          {/* Tab Navigation */}
-          <div className="flex border-b border-[hsl(var(--border))]" data-testid={`tabs-${type}`}>
-            <button
-              onClick={(e) => { e.stopPropagation(); setActiveTab('holdings'); }}
-              className={`px-4 py-2 text-xs font-semibold transition-colors ${activeTab === 'holdings' ? 'text-[hsl(var(--primary))] border-b-2 border-[hsl(var(--primary))]' : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]'}`}
-              data-testid={`tab-holdings-${type}`}
-            >
-              Holdings ({holdings.length})
-            </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); setActiveTab('rebalance'); }}
-              className={`px-4 py-2 text-xs font-semibold transition-colors flex items-center gap-1.5 ${activeTab === 'rebalance' ? 'text-[hsl(var(--primary))] border-b-2 border-[hsl(var(--primary))]' : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]'}`}
-              data-testid={`tab-rebalance-${type}`}
-            >
-              <History className="w-3 h-3" />
-              Rebalance History ({portfolioLogs.length})
-            </button>
+        {isActive && (
+          <div className="flex items-center justify-center mt-2 text-[hsl(var(--muted-foreground))]">
+            <span className="text-[10px] mr-1">View Details</span>
+            <ChevronRight className="w-3.5 h-3.5" />
           </div>
-
-          {/* Holdings Tab */}
-          {activeTab === 'holdings' && holdings.length > 0 && (
-            <>
-              <HoldingsTable holdings={holdings} accent={accent} />
-              {portfolio.portfolio_thesis && (
-                <div className="px-4 py-3 border-t border-[hsl(var(--border))] bg-[hsl(var(--surface-2))]">
-                  <p className="text-xs font-semibold text-[hsl(var(--muted-foreground))] mb-1">Portfolio Thesis</p>
-                  <p className="text-xs text-[hsl(var(--foreground))]">{portfolio.portfolio_thesis}</p>
-                </div>
-              )}
-            </>
-          )}
-
-          {/* Rebalance History Tab */}
-          {activeTab === 'rebalance' && (
-            <div className="p-4 space-y-4" data-testid={`rebalance-history-${type}`}>
-              {portfolioLogs.length === 0 ? (
-                <div className="text-center py-6">
-                  <CheckCircle2 className="w-8 h-8 text-emerald-400/40 mx-auto mb-2" />
-                  <p className="text-sm text-[hsl(var(--muted-foreground))]">No rebalancing activity yet</p>
-                  <p className="text-[10px] text-[hsl(var(--muted-foreground))] mt-1">
-                    AI evaluates this portfolio daily after market close (4-6 PM IST)
-                  </p>
-                </div>
-              ) : (
-                portfolioLogs.map((log, i) => (
-                  <div key={i} className="space-y-3" data-testid={`rebalance-log-entry-${i}`}>
-                    {/* Header */}
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        {log.action === 'REBALANCE' ? (
-                          <div className="w-6 h-6 rounded-full bg-amber-500/20 flex items-center justify-center">
-                            <ArrowRightLeft className="w-3.5 h-3.5 text-amber-400" />
-                          </div>
-                        ) : (
-                          <div className="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                          </div>
-                        )}
-                        <span className={`text-xs font-bold ${log.action === 'REBALANCE' ? 'text-amber-400' : 'text-emerald-400'}`}>
-                          {log.action === 'REBALANCE' ? `Rebalanced (${log.changes?.length || 0} swap${(log.changes?.length || 0) !== 1 ? 's' : ''})` : 'Reviewed — No Change'}
-                        </span>
-                        {log.confidence && (
-                          <span className="text-[10px] font-mono text-[hsl(var(--muted-foreground))] bg-[hsl(var(--surface-2))] px-1.5 py-0.5 rounded">
-                            {log.confidence}% confidence
-                          </span>
-                        )}
-                      </div>
-                      <span className="text-[10px] text-[hsl(var(--muted-foreground))] font-mono">
-                        {log.timestamp ? new Date(log.timestamp).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
-                      </span>
-                    </div>
-
-                    {/* Analysis Summary */}
-                    {log.analysis_summary && (
-                      <div className="bg-[hsl(var(--surface-2))] rounded-lg p-3 border border-[hsl(var(--border))]">
-                        <p className="text-[10px] font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wider mb-1">AI Analysis</p>
-                        <p className="text-xs text-[hsl(var(--foreground))] leading-relaxed">{log.analysis_summary}</p>
-                      </div>
-                    )}
-
-                    {/* Swap Cards */}
-                    {log.changes && log.changes.length > 0 && (
-                      <div className="space-y-2">
-                        {log.changes.map((ch, j) => (
-                          <SwapCard key={j} change={ch} index={j} />
-                        ))}
-                      </div>
-                    )}
-
-                    {i < portfolioLogs.length - 1 && <div className="border-b border-[hsl(var(--border))]" />}
-                  </div>
-                ))
-              )}
-            </div>
-          )}
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
+
 
 function GlobalRebalanceActivity({ logs }) {
   const rebalancedLogs = logs.filter(l => l.action === 'REBALANCE' && l.changes?.length > 0);
@@ -388,7 +290,6 @@ export default function Watchlist() {
   const [rebalanceLogs, setRebalanceLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [expanded, setExpanded] = useState(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -422,10 +323,6 @@ export default function Watchlist() {
     setRefreshing(true);
     await fetchData();
     setRefreshing(false);
-  };
-
-  const toggleExpand = (type) => {
-    setExpanded(prev => prev === type ? null : type);
   };
 
   const allStrategies = Object.keys(STRATEGY_ICONS);
@@ -520,8 +417,6 @@ export default function Watchlist() {
                 key={type}
                 portfolio={p}
                 strategies={strategies}
-                onExpand={toggleExpand}
-                expanded={expanded === type}
                 rebalanceLogs={rebalanceLogs}
               />
             );
