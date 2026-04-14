@@ -315,3 +315,131 @@ async def delete_custom_portfolio(portfolio_id: str, request: Request):
         raise HTTPException(status_code=404, detail="Portfolio not found")
     await db.custom_portfolio_history.delete_many({"portfolio_id": portfolio_id})
     return {"status": "deleted"}
+
+
+_custom_backtest_locks = {}
+_custom_sim_locks = {}
+
+
+@router.get("/custom-portfolios/{portfolio_id}/backtest")
+async def custom_portfolio_backtest(portfolio_id: str, request: Request):
+    """5-year backtest for a custom portfolio. Background computation + cache."""
+    from bson import ObjectId
+    from services.portfolio_hardening import compute_backtest
+    import threading
+    import os
+    import pymongo
+
+    db = request.app.db
+    doc = await db.custom_portfolios.find_one({"_id": ObjectId(portfolio_id)})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Portfolio not found")
+
+    cache_key = f"custom_{portfolio_id}"
+    cached = await db.portfolio_backtests.find_one({"portfolio_type": cache_key}, {"_id": 0})
+    if cached:
+        try:
+            ct = datetime.fromisoformat(cached.get("computed_at", ""))
+            if (datetime.now(timezone.utc) - ct.replace(tzinfo=timezone.utc)).total_seconds() < 86400:
+                cached["status"] = "complete"
+                return cached
+        except Exception:
+            pass
+
+    if _custom_backtest_locks.get(portfolio_id):
+        return {"status": "computing", "portfolio_type": cache_key}
+
+    symbols = [h["symbol"] for h in doc.get("holdings", []) if h.get("symbol")]
+    name = doc.get("name", "Custom Portfolio")
+    mongo_url = os.environ["MONGO_URL"]
+    db_name = os.environ["DB_NAME"]
+
+    def _run():
+        try:
+            _custom_backtest_locks[portfolio_id] = True
+            result = compute_backtest(symbols, name)
+            result["portfolio_type"] = cache_key
+            result["computed_at"] = datetime.now(timezone.utc).isoformat()
+            result["status"] = "complete"
+            client = pymongo.MongoClient(mongo_url)
+            client[db_name].portfolio_backtests.update_one(
+                {"portfolio_type": cache_key}, {"$set": result}, upsert=True)
+            client.close()
+        except Exception as e:
+            logger.error(f"Custom backtest error: {e}")
+        finally:
+            _custom_backtest_locks[portfolio_id] = False
+
+    threading.Thread(target=_run, daemon=True).start()
+    return {"status": "computing", "portfolio_type": cache_key}
+
+
+@router.get("/custom-portfolios/{portfolio_id}/simulation")
+async def custom_portfolio_simulation(portfolio_id: str, request: Request):
+    """LSTM + Monte Carlo simulation for a custom portfolio. Background computation + cache."""
+    from bson import ObjectId
+    from services.portfolio_simulation import run_portfolio_simulation
+    import threading
+    import os
+    import pymongo
+
+    db = request.app.db
+    doc = await db.custom_portfolios.find_one({"_id": ObjectId(portfolio_id)})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Portfolio not found")
+
+    cache_key = f"custom_{portfolio_id}"
+    cached = await db.portfolio_simulations.find_one({"portfolio_type": cache_key}, {"_id": 0})
+    if cached:
+        try:
+            ct = datetime.fromisoformat(cached.get("computed_at", ""))
+            if (datetime.now(timezone.utc) - ct.replace(tzinfo=timezone.utc)).total_seconds() < 43200:
+                cached["status"] = "complete"
+                return cached
+        except Exception:
+            pass
+
+    if _custom_sim_locks.get(portfolio_id):
+        return {"status": "computing", "portfolio_type": cache_key}
+
+    holdings = doc.get("holdings", [])
+    symbols = [h["symbol"] for h in holdings if h.get("symbol")]
+    weights = [h.get("weight", 10) / 100 for h in holdings]
+    value = doc.get("current_value") or doc.get("total_invested") or 5000000
+    name = doc.get("name", "Custom Portfolio")
+    mongo_url = os.environ["MONGO_URL"]
+    db_name = os.environ["DB_NAME"]
+
+    def _run():
+        import math
+        try:
+            _custom_sim_locks[portfolio_id] = True
+            result = run_portfolio_simulation(symbols, weights, value, name)
+            if result.get("error"):
+                return
+            result["portfolio_type"] = cache_key
+            result["computed_at"] = datetime.now(timezone.utc).isoformat()
+            result["status"] = "complete"
+
+            def _sanitize(obj):
+                if isinstance(obj, dict):
+                    return {k: _sanitize(v) for k, v in obj.items()}
+                if isinstance(obj, list):
+                    return [_sanitize(v) for v in obj]
+                if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+                    return 0.0
+                return obj
+
+            result = _sanitize(result)
+            client = pymongo.MongoClient(mongo_url)
+            client[db_name].portfolio_simulations.update_one(
+                {"portfolio_type": cache_key}, {"$set": result}, upsert=True)
+            client.close()
+        except Exception as e:
+            logger.error(f"Custom simulation error: {e}")
+        finally:
+            _custom_sim_locks[portfolio_id] = False
+
+    threading.Thread(target=_run, daemon=True).start()
+    return {"status": "computing", "portfolio_type": cache_key}
+

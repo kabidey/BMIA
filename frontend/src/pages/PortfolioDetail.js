@@ -82,7 +82,11 @@ function SectorPie({ holdings }) {
   const sectors = {};
   (holdings || []).forEach(h => {
     const s = h.sector || 'Other';
-    sectors[s] = (sectors[s] || 0) + (h.value || 0);
+    // Use value if available, fall back to weight * entry_price * quantity, then weight
+    const val = (h.value && h.value > 0) ? h.value :
+                (h.entry_price && h.quantity) ? h.entry_price * h.quantity :
+                (h.weight || 10);
+    sectors[s] = (sectors[s] || 0) + val;
   });
   const total = Object.values(sectors).reduce((a, b) => a + b, 0) || 1;
   const data = Object.entries(sectors).map(([name, val]) => ({ name, value: val, pct: ((val / total) * 100).toFixed(1) })).sort((a, b) => b.value - a.value);

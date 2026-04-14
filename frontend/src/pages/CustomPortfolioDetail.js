@@ -4,9 +4,12 @@ import { Card } from '../components/ui/card';
 import {
   ArrowLeft, RefreshCw, Loader2, IndianRupee, ArrowUpRight, ArrowDownRight,
   History, Trash2, ArrowRightLeft, Search, Plus, X, Minus, Save, AlertTriangle,
-  ChevronDown, ChevronRight
+  ChevronDown, ChevronRight, Brain
 } from 'lucide-react';
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
+import {
+  PieChart, Pie, Cell, Tooltip, ResponsiveContainer, CartesianGrid, XAxis, YAxis,
+  Area, AreaChart, ComposedChart, Line, BarChart, Bar, ReferenceLine, Legend
+} from 'recharts';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const SECTOR_COLORS = ['#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16'];
@@ -47,6 +50,166 @@ function StockSearch({ onAdd, addedSymbols }) {
         </div>
       )}
     </div>
+  );
+}
+
+function CustomBacktest({ portfolioId }) {
+  const [bt, setBt] = useState(null);
+  const [computing, setComputing] = useState(false);
+
+  const fetchBt = useCallback(async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/custom-portfolios/${portfolioId}/backtest`);
+      const d = await res.json();
+      if (d.status === 'computing') { setComputing(true); return false; }
+      if (!d.error && d.cagr_pct !== undefined) setBt(d);
+      setComputing(false);
+      return true;
+    } catch { setComputing(false); return true; }
+  }, [portfolioId]);
+
+  useEffect(() => { fetchBt(); }, [fetchBt]);
+  useEffect(() => {
+    if (!computing) return;
+    const iv = setInterval(async () => { if (await fetchBt()) clearInterval(iv); }, 10000);
+    return () => clearInterval(iv);
+  }, [computing, fetchBt]);
+
+  if (!bt && !computing) return null;
+  if (computing) return (
+    <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))] p-4">
+      <div className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin text-[hsl(var(--primary))]" /><span className="text-xs text-[hsl(var(--muted-foreground))]">Computing 5Y backtest... auto-refreshing</span></div>
+    </Card>
+  );
+
+  const isAlpha = (bt.alpha_pct || 0) > 0;
+  return (
+    <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))] p-4" data-testid="custom-backtest">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <History className="w-4 h-4 text-[hsl(var(--primary))]" />
+          <p className="text-xs font-semibold text-[hsl(var(--foreground))]">5-Year Backtest</p>
+          <span className="text-[9px] text-[hsl(var(--muted-foreground))]">{bt.years}Y | {bt.stocks_tested} stocks</span>
+        </div>
+        <span className={`text-xs font-bold font-mono px-2 py-0.5 rounded ${isAlpha ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
+          Alpha: {bt.alpha_pct >= 0 ? '+' : ''}{bt.alpha_pct}%
+        </span>
+      </div>
+      {bt.chart_data?.length > 2 && (
+        <ResponsiveContainer width="100%" height={200}>
+          <AreaChart data={bt.chart_data} margin={{ top: 5, right: 5, bottom: 5, left: -10 }}>
+            <defs><linearGradient id="cbtGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#10b981" stopOpacity={0.15} /><stop offset="95%" stopColor="#10b981" stopOpacity={0} /></linearGradient></defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="hsl(222 14% 14%)" />
+            <XAxis dataKey="month" tick={{ fontSize: 9, fill: 'hsl(215 16% 70%)' }} interval={Math.floor(bt.chart_data.length / 8)} />
+            <YAxis tick={{ fontSize: 9, fill: 'hsl(215 16% 70%)' }} tickFormatter={v => `${v}%`} />
+            <Tooltip contentStyle={{ background: 'hsl(222 18% 8%)', border: '1px solid hsl(222 14% 18%)', borderRadius: '8px', fontSize: '10px' }} formatter={v => [`${v.toFixed(1)}%`]} />
+            <Area type="monotone" dataKey="portfolio" stroke="#10b981" fill="url(#cbtGrad)" strokeWidth={2} name="Portfolio" />
+            <Area type="monotone" dataKey="nifty50" stroke="#f59e0b" fill="none" strokeWidth={1} strokeDasharray="4 4" name="Nifty 50" />
+            <Legend wrapperStyle={{ fontSize: '10px' }} />
+          </AreaChart>
+        </ResponsiveContainer>
+      )}
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 mt-3">
+        {[
+          { l: 'CAGR', v: `${bt.cagr_pct >= 0 ? '+' : ''}${bt.cagr_pct}%`, c: bt.cagr_pct >= 0 ? 'text-emerald-400' : 'text-red-400' },
+          { l: 'Max DD', v: `${bt.max_drawdown_pct}%`, c: 'text-red-400' },
+          { l: 'Sharpe', v: bt.sharpe_ratio, c: bt.sharpe_ratio >= 1 ? 'text-emerald-400' : 'text-amber-400' },
+          { l: 'Win Rate', v: `${bt.win_rate_monthly_pct}%`, c: 'text-[hsl(var(--foreground))]' },
+          { l: 'Volatility', v: `${bt.annual_volatility_pct}%`, c: 'text-[hsl(var(--foreground))]' },
+          { l: 'Nifty 50', v: `+${bt.benchmark_cagr_pct}%`, c: 'text-amber-400' },
+        ].map(m => (<div key={m.l}><p className="text-[9px] text-[hsl(var(--muted-foreground))]">{m.l}</p><p className={`text-sm font-mono font-bold ${m.c}`}>{m.v}</p></div>))}
+      </div>
+    </Card>
+  );
+}
+
+function CustomSimulation({ portfolioId }) {
+  const [sim, setSim] = useState(null);
+  const [computing, setComputing] = useState(false);
+
+  const fetchSim = useCallback(async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/custom-portfolios/${portfolioId}/simulation`);
+      const d = await res.json();
+      if (d.status === 'computing') { setComputing(true); return false; }
+      if (!d.error && d.monte_carlo) setSim(d);
+      setComputing(false);
+      return true;
+    } catch { setComputing(false); return true; }
+  }, [portfolioId]);
+
+  useEffect(() => { fetchSim(); }, [fetchSim]);
+  useEffect(() => {
+    if (!computing) return;
+    const iv = setInterval(async () => { if (await fetchSim()) clearInterval(iv); }, 15000);
+    return () => clearInterval(iv);
+  }, [computing, fetchSim]);
+
+  if (!sim && !computing) return null;
+  if (computing) return (
+    <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))] p-4">
+      <div className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin text-cyan-400" /><span className="text-xs text-[hsl(var(--muted-foreground))]">Training LSTM + 10K Monte Carlo... auto-refreshing</span></div>
+    </Card>
+  );
+
+  const mc = sim.monte_carlo || {};
+  const rm = mc.risk_metrics || {};
+  const fc = mc.fan_chart || [];
+  const dc = mc.distribution_chart || [];
+  const ts = mc.terminal_stats || {};
+
+  return (
+    <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))] p-4" data-testid="custom-simulation">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <Brain className="w-4 h-4 text-cyan-400" />
+          <p className="text-xs font-semibold text-[hsl(var(--foreground))]">Forward Simulation</p>
+          <span className="text-[9px] bg-cyan-500/10 text-cyan-400 px-1.5 py-0.5 rounded font-mono">LSTM + MC</span>
+        </div>
+        <span className={`text-xs font-bold font-mono px-2 py-0.5 rounded ${(rm.expected_return_pct || 0) > 0 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
+          E[R]: {(rm.expected_return_pct || 0) >= 0 ? '+' : ''}{rm.expected_return_pct}%
+        </span>
+      </div>
+      {fc.length > 2 && (
+        <ResponsiveContainer width="100%" height={200}>
+          <ComposedChart data={fc} margin={{ top: 5, right: 5, bottom: 5, left: -5 }}>
+            <defs><linearGradient id="cfanInner" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#06b6d4" stopOpacity={0.18} /><stop offset="100%" stopColor="#06b6d4" stopOpacity={0.05} /></linearGradient></defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="hsl(222 14% 14%)" />
+            <XAxis dataKey="week" tick={{ fontSize: 8, fill: 'hsl(215 16% 70%)' }} tickFormatter={v => `W${v}`} interval={Math.max(1, Math.floor(fc.length / 8))} />
+            <YAxis tick={{ fontSize: 8, fill: 'hsl(215 16% 70%)' }} tickFormatter={v => `${(v / 1e5).toFixed(1)}L`} />
+            <Tooltip contentStyle={{ background: 'hsl(222 18% 8%)', border: '1px solid hsl(222 14% 18%)', borderRadius: '8px', fontSize: '10px' }}
+              formatter={(val, name) => [`₹${(val / 1e5).toFixed(2)}L`, { p50: 'Median', mean: 'Mean', p25: '25th', p75: '75th' }[name] || name]} />
+            <Area type="monotone" dataKey="p75" stroke="none" fill="url(#cfanInner)" />
+            <Area type="monotone" dataKey="p25" stroke="none" fill="hsl(222 18% 8%)" />
+            <Line type="monotone" dataKey="p50" stroke="#06b6d4" strokeWidth={2} dot={false} />
+            <Line type="monotone" dataKey="mean" stroke="#f59e0b" strokeWidth={1} strokeDasharray="4 4" dot={false} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      )}
+      {dc.length > 2 && (
+        <div className="mt-3">
+          <p className="text-[9px] text-[hsl(var(--muted-foreground))] mb-1 uppercase tracking-wider">Terminal Return Distribution</p>
+          <ResponsiveContainer width="100%" height={70}>
+            <BarChart data={dc} margin={{ top: 2, right: 5, bottom: 2, left: -15 }}>
+              <XAxis dataKey="return_pct" tick={{ fontSize: 7, fill: 'hsl(215 16% 70%)' }} tickFormatter={v => `${v}%`} interval={Math.floor(dc.length / 5)} />
+              <YAxis tick={false} width={10} />
+              <ReferenceLine x={0} stroke="hsl(215 16% 50%)" strokeDasharray="2 2" />
+              <Bar dataKey="frequency">{dc.map((e, i) => <Cell key={i} fill={e.return_pct >= 0 ? 'hsla(186,92%,42%,0.6)' : 'hsla(0,72%,52%,0.5)'} />)}</Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 mt-3">
+        {[
+          { l: 'VaR 95%', v: `${rm.var_95_pct}%`, c: 'text-red-400' },
+          { l: 'CVaR 95%', v: `${rm.cvar_95_pct}%`, c: 'text-red-400' },
+          { l: 'Max Exp DD', v: `-${rm.max_expected_drawdown_pct}%`, c: 'text-red-400' },
+          { l: 'Median Ret', v: `${(rm.median_return_pct || 0) >= 0 ? '+' : ''}${rm.median_return_pct}%`, c: (rm.median_return_pct || 0) >= 0 ? 'text-emerald-400' : 'text-red-400' },
+          { l: 'P(Profit)', v: `${rm.probability_of_profit_pct}%`, c: rm.probability_of_profit_pct >= 60 ? 'text-emerald-400' : 'text-amber-400' },
+          { l: 'Terminal', v: `₹${((ts.median_value || 0) / 1e5).toFixed(1)}L`, c: 'text-cyan-400' },
+        ].map(m => (<div key={m.l}><p className="text-[9px] text-[hsl(var(--muted-foreground))]">{m.l}</p><p className={`text-sm font-mono font-bold ${m.c}`}>{m.v}</p></div>))}
+      </div>
+    </Card>
   );
 }
 
@@ -136,7 +299,13 @@ export default function CustomPortfolioDetail() {
 
   // Sector data for pie
   const sectors = {};
-  holdings.forEach(h => { sectors[h.sector || 'Other'] = (sectors[h.sector || 'Other'] || 0) + (h.value || 0); });
+  holdings.forEach(h => {
+    const s = h.sector || 'Other';
+    const val = (h.value && h.value > 0) ? h.value :
+                (h.entry_price && h.quantity) ? h.entry_price * h.quantity :
+                (h.weight || 10);
+    sectors[s] = (sectors[s] || 0) + val;
+  });
   const sectorTotal = Object.values(sectors).reduce((a, b) => a + b, 0) || 1;
   const sectorData = Object.entries(sectors).map(([name, val]) => ({ name, value: val, pct: ((val / sectorTotal) * 100).toFixed(1) })).sort((a, b) => b.value - a.value);
 
@@ -305,6 +474,10 @@ export default function CustomPortfolioDetail() {
           </Card>
         )}
       </div>
+
+      {/* Backtest + Simulation */}
+      <CustomBacktest portfolioId={id} />
+      <CustomSimulation portfolioId={id} />
 
       {/* History */}
       {history.length > 0 && (
