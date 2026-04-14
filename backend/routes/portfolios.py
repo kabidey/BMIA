@@ -415,10 +415,30 @@ async def portfolio_construct(strategy_type: str, request: Request):
 _rebuild_lock = {"running": False}
 
 
+SUPERADMIN_EMAIL = "somnath.dey@smifs.com"
+
+
+def _require_superadmin(request: Request):
+    """Check JWT for superadmin. Raises 403 if not."""
+    import jwt as pyjwt
+    import os
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        raise HTTPException(status_code=403, detail="Authentication required")
+    try:
+        secret = os.environ.get("TOTP_JWT_SECRET", "bmia-jwt-secret")
+        payload = pyjwt.decode(auth[7:], secret, algorithms=["HS256"])
+        if payload.get("sub") != SUPERADMIN_EMAIL:
+            raise HTTPException(status_code=403, detail="Superadmin access required")
+    except pyjwt.InvalidTokenError:
+        raise HTTPException(status_code=403, detail="Invalid session")
+
+
 @router.post("/portfolios/rebuild-all")
 async def portfolio_rebuild_all(request: Request):
-    """Delete all portfolios and trigger v3 reconstruction via daemon.
-    Clears backtest and simulation caches too."""
+    """Delete all portfolios and trigger v3 reconstruction. SUPERADMIN ONLY."""
+    _require_superadmin(request)
+
     if _rebuild_lock["running"]:
         return {"status": "already_running", "message": "Rebuild already in progress"}
 

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { RefreshCw, BarChart3, TrendingUp, TrendingDown, Shield, Activity, Award, Loader2, History, Target, Brain, Zap, AlertTriangle, Percent, ChevronRight, RotateCcw, Crosshair } from 'lucide-react';
 import { Card, CardContent } from '../components/ui/card';
+import { getUser } from '../components/TOTPGate';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, Radar, Legend, LineChart, Line, CartesianGrid, Area, AreaChart, ComposedChart, ReferenceLine } from 'recharts';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -755,12 +756,14 @@ export default function PortfolioAnalytics() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={handleRebuild} disabled={rebuilding}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-amber-500/10 border border-amber-500/30 text-amber-400 hover:bg-amber-500/20 disabled:opacity-50"
-            data-testid="rebuild-portfolios-btn">
-            <RotateCcw className={`w-4 h-4 ${rebuilding ? 'animate-spin' : ''}`} />
-            Rebuild v3
-          </button>
+          {(getUser()?.superadmin || getUser()?.sub === 'somnath.dey@smifs.com') && (
+            <button onClick={handleRebuild} disabled={rebuilding}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-amber-500/10 border border-amber-500/30 text-amber-400 hover:bg-amber-500/20 disabled:opacity-50"
+              data-testid="rebuild-portfolios-btn">
+              <RotateCcw className={`w-4 h-4 ${rebuilding ? 'animate-spin' : ''}`} />
+              Rebuild v3
+            </button>
+          )}
           <button onClick={handleRefresh} disabled={refreshing}
             className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))] text-[hsl(var(--foreground))] hover:bg-[hsl(var(--surface-3))] disabled:opacity-50"
             data-testid="refresh-analytics-btn">
