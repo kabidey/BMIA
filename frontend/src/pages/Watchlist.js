@@ -178,11 +178,8 @@ function PortfolioCard({ portfolio, strategies, onExpand, expanded, rebalanceLog
   const handleConstruct = async (e) => {
     e.stopPropagation();
     setConstructing(true);
-    try {
-      await fetch(`${BACKEND_URL}/api/portfolios/${type}/construct`, { method: 'POST' });
-    } catch (err) { /* will show on refresh */ }
-    setConstructing(false);
-    window.location.reload();
+    // Fire-and-forget — don't await the long construct call
+    fetch(`${BACKEND_URL}/api/portfolios/${type}/construct`, { method: 'POST' }).catch(() => {});
   };
 
   const pnl = portfolio.total_pnl || 0;
@@ -223,7 +220,7 @@ function PortfolioCard({ portfolio, strategies, onExpand, expanded, rebalanceLog
                 className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-500/15 border border-amber-500/30 text-amber-400 hover:bg-amber-500/25 disabled:opacity-50"
                 data-testid={`construct-btn-${type}`}>
                 {constructing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
-                {constructing ? 'Building...' : 'Construct Now'}
+                {constructing ? 'Building... ~2-3 min' : 'Construct Now'}
               </button>
             )}
             {isActive && (
@@ -516,36 +513,7 @@ export default function Watchlist() {
           {allStrategies.map(type => {
             const p = portfolioMap[type];
             if (!p) {
-              const cfg = strategies[type] || PORTFOLIO_STRATEGIES_FALLBACK[type] || {};
-              const Icon = STRATEGY_ICONS[type] || BarChart3;
-              const colors = STRATEGY_COLORS[type] || '';
-              return (
-                <div key={type} className={`p-4 rounded-xl border bg-gradient-to-br ${colors}`} data-testid={`portfolio-card-${type}`}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-[hsl(var(--surface-1))] flex items-center justify-center">
-                        <Icon className="w-5 h-5 text-[hsl(var(--muted-foreground))]" />
-                      </div>
-                      <div>
-                        <h3 className="text-base font-semibold text-[hsl(var(--foreground))]">{cfg.name || type.replace(/_/g, ' ')}</h3>
-                        <p className="text-xs text-[hsl(var(--muted-foreground))] mt-0.5">Not yet constructed</p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={async () => {
-                        try {
-                          await fetch(`${BACKEND_URL}/api/portfolios/${type}/construct`, { method: 'POST' });
-                          window.location.reload();
-                        } catch (e) { alert('Failed: ' + e.message); }
-                      }}
-                      className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-[hsl(var(--primary))]/15 border border-[hsl(var(--primary))]/30 text-[hsl(var(--primary))] hover:bg-[hsl(var(--primary))]/25"
-                      data-testid={`construct-btn-${type}`}>
-                      <Zap className="w-3.5 h-3.5" />
-                      Construct Now
-                    </button>
-                  </div>
-                </div>
-              );
+              return <UnconstructedCard key={type} type={type} strategies={strategies} BACKEND_URL={BACKEND_URL} />;
             }
             return (
               <PortfolioCard
@@ -563,6 +531,40 @@ export default function Watchlist() {
 
       {/* Global Rebalance Activity */}
       <GlobalRebalanceActivity logs={rebalanceLogs} />
+    </div>
+  );
+}
+
+function UnconstructedCard({ type, strategies, BACKEND_URL }) {
+  const cfg = strategies[type] || PORTFOLIO_STRATEGIES_FALLBACK[type] || {};
+  const Icon = STRATEGY_ICONS[type] || BarChart3;
+  const colors = STRATEGY_COLORS[type] || '';
+  const [building, setBuilding] = useState(false);
+
+  return (
+    <div className={`p-4 rounded-xl border bg-gradient-to-br ${colors}`} data-testid={`portfolio-card-${type}`}>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-[hsl(var(--surface-1))] flex items-center justify-center">
+            <Icon className="w-5 h-5 text-[hsl(var(--muted-foreground))]" />
+          </div>
+          <div>
+            <h3 className="text-base font-semibold text-[hsl(var(--foreground))]">{cfg.name || type.replace(/_/g, ' ')}</h3>
+            <p className="text-xs text-[hsl(var(--muted-foreground))] mt-0.5">{building ? 'Construction in progress... ~2-3 min' : 'Not yet constructed'}</p>
+          </div>
+        </div>
+        <button
+          disabled={building}
+          onClick={() => {
+            setBuilding(true);
+            fetch(`${BACKEND_URL}/api/portfolios/${type}/construct`, { method: 'POST' }).catch(() => {});
+          }}
+          className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-[hsl(var(--primary))]/15 border border-[hsl(var(--primary))]/30 text-[hsl(var(--primary))] hover:bg-[hsl(var(--primary))]/25 disabled:opacity-50"
+          data-testid={`construct-btn-${type}`}>
+          {building ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
+          {building ? 'Building...' : 'Construct Now'}
+        </button>
+      </div>
     </div>
   );
 }
