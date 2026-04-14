@@ -4,7 +4,7 @@ import { Card, CardContent } from '../components/ui/card';
 import {
   ArrowLeft, RefreshCw, Loader2, TrendingUp, TrendingDown, IndianRupee,
   Shield, Zap, Target, Rocket, ArrowRightLeft, Gem, BarChart3, Brain,
-  History, Crosshair, ArrowUpRight, ArrowDownRight, ChevronRight
+  History, Crosshair, ArrowUpRight, ArrowDownRight, ChevronRight, ChevronDown
 } from 'lucide-react';
 import {
   PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -34,6 +34,17 @@ const STRATEGY_COLORS = {
 };
 
 // ═══════════════════════════════════════════
+// SIGNAL BADGE
+// ═══════════════════════════════════════════
+function SignalBadge({ pnl }) {
+  const signal = pnl > 5 ? 'BULLISH' : pnl < -5 ? 'BEARISH' : 'NEUTRAL';
+  const cls = signal === 'BULLISH' ? 'bg-emerald-500/15 text-emerald-400' :
+              signal === 'BEARISH' ? 'bg-red-500/15 text-red-400' :
+              'bg-[hsl(var(--surface-3))] text-[hsl(var(--muted-foreground))]';
+  return <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono ${cls}`}>{signal}</span>;
+}
+
+// ═══════════════════════════════════════════
 // HOLDINGS TABLE
 // ═══════════════════════════════════════════
 function HoldingsTable({ holdings }) {
@@ -50,6 +61,7 @@ function HoldingsTable({ holdings }) {
             <th className="py-2 px-3 text-right">P&L %</th>
             <th className="py-2 px-3 text-right">Weight</th>
             <th className="py-2 px-3 text-right">Value</th>
+            <th className="py-2 px-3 text-center">Signal</th>
           </tr>
         </thead>
         <tbody>
@@ -57,20 +69,126 @@ function HoldingsTable({ holdings }) {
             const pnl = h.pnl_pct || 0;
             return (
               <tr key={i} className="border-b border-[hsl(var(--border))]/30 hover:bg-[hsl(var(--surface-2))]">
-                <td className="py-2 px-3 font-mono font-medium">{(h.symbol || '').replace('.NS', '')}</td>
+                <td className="py-2 px-3">
+                  <p className="font-mono font-medium">{(h.symbol || '').replace('.NS', '')}</p>
+                  {h.quantity && <p className="text-[10px] text-[hsl(var(--muted-foreground))]">Qty: {h.quantity}</p>}
+                </td>
                 <td className="py-2 px-3"><span className="text-[10px] bg-[hsl(var(--surface-3))] px-1.5 py-0.5 rounded">{h.sector || 'N/A'}</span></td>
-                <td className="py-2 px-3 text-right font-mono">{h.entry_price?.toFixed(1)}</td>
-                <td className="py-2 px-3 text-right font-mono">{h.current_price?.toFixed(1) || '--'}</td>
+                <td className="py-2 px-3 text-right font-mono">{h.entry_price?.toFixed(2)}</td>
+                <td className="py-2 px-3 text-right font-mono">{h.current_price?.toFixed(2) || '--'}</td>
                 <td className={`py-2 px-3 text-right font-mono font-bold ${pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                   {pnl >= 0 ? '+' : ''}{pnl.toFixed(2)}%
                 </td>
                 <td className="py-2 px-3 text-right font-mono">{h.weight?.toFixed(1)}%</td>
                 <td className="py-2 px-3 text-right font-mono">{((h.value || 0) / 1e5).toFixed(2)}L</td>
+                <td className="py-2 px-3 text-center"><SignalBadge pnl={pnl} /></td>
               </tr>
             );
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
+// REBALANCE LOG
+// ═══════════════════════════════════════════
+function RebalanceLog({ strategyType }) {
+  const [logs, setLogs] = useState([]);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    fetch(`${BACKEND_URL}/api/portfolios/rebalance-log/${strategyType}?limit=20`)
+      .then(r => r.json())
+      .then(d => setLogs(d.logs || []))
+      .catch(() => {});
+  }, [strategyType]);
+
+  const swapLogs = logs.filter(l => l.action === 'REBALANCE' && l.changes?.length > 0);
+  if (swapLogs.length === 0) return null;
+
+  return (
+    <div data-testid="rebalance-log">
+      <button onClick={() => setOpen(!open)} className="flex items-center gap-2 mb-2 w-full text-left">
+        <ArrowRightLeft className="w-4 h-4 text-amber-400" />
+        <p className="text-sm font-semibold text-[hsl(var(--foreground))]">Rebalance History</p>
+        <span className="text-[10px] bg-amber-500/15 text-amber-400 px-2 py-0.5 rounded-full font-mono">{swapLogs.length} swap{swapLogs.length !== 1 ? 's' : ''}</span>
+        {open ? <ChevronDown className="w-3.5 h-3.5 text-[hsl(var(--muted-foreground))] ml-auto" /> : <ChevronRight className="w-3.5 h-3.5 text-[hsl(var(--muted-foreground))] ml-auto" />}
+      </button>
+      {open && (
+        <div className="space-y-3">
+          {swapLogs.map((log, i) => (
+            <Card key={i} className="bg-[hsl(var(--surface-1))] border-amber-500/20 p-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] text-amber-400 font-mono">
+                  {log.timestamp ? new Date(log.timestamp).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Recent'}
+                </span>
+                <span className="text-[10px] text-[hsl(var(--muted-foreground))]">{log.changes?.length} changes</span>
+              </div>
+              <div className="space-y-2">
+                {(log.changes || []).map((ch, j) => (
+                  <div key={j} className="flex items-center gap-3 text-xs p-2 rounded-lg bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))]/30">
+                    {ch.type === 'IN' ? (
+                      <span className="text-emerald-400 text-[10px] font-mono font-bold w-8">+ IN</span>
+                    ) : (
+                      <span className="text-red-400 text-[10px] font-mono font-bold w-8">- OUT</span>
+                    )}
+                    <div className="flex-1">
+                      <span className="font-mono font-medium">{(ch.symbol || '').replace('.NS', '')}</span>
+                      {ch.sector && <span className="ml-2 text-[10px] text-[hsl(var(--muted-foreground))]">{ch.sector}</span>}
+                    </div>
+                    {ch.rationale && (
+                      <p className="text-[10px] text-[hsl(var(--muted-foreground))] max-w-[250px] truncate">{ch.rationale}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {log.rationale && (
+                <p className="text-[10px] text-[hsl(var(--muted-foreground))] mt-2 italic border-t border-[hsl(var(--border))]/30 pt-2">{log.rationale}</p>
+              )}
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
+// AI CONSTRUCTION NOTES
+// ═══════════════════════════════════════════
+function ConstructionNotes({ portfolio }) {
+  const [open, setOpen] = useState(false);
+  const notes = portfolio?.construction_log || portfolio?.ai_rationale || portfolio?.rationale;
+  const models = portfolio?.construction_log?.models_succeeded || portfolio?.models_used;
+  if (!notes && !models) return null;
+
+  const rationale = typeof notes === 'string' ? notes : notes?.rationale || notes?.thesis || '';
+  const modelList = models || notes?.models_succeeded || [];
+
+  if (!rationale && modelList.length === 0) return null;
+
+  return (
+    <div data-testid="construction-notes">
+      <button onClick={() => setOpen(!open)} className="flex items-center gap-2 mb-2 w-full text-left">
+        <Brain className="w-4 h-4 text-[hsl(var(--primary))]" />
+        <p className="text-sm font-semibold text-[hsl(var(--foreground))]">AI Construction Notes</p>
+        {open ? <ChevronDown className="w-3.5 h-3.5 text-[hsl(var(--muted-foreground))] ml-auto" /> : <ChevronRight className="w-3.5 h-3.5 text-[hsl(var(--muted-foreground))] ml-auto" />}
+      </button>
+      {open && (
+        <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))] p-4">
+          {modelList.length > 0 && (
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-[10px] text-[hsl(var(--muted-foreground))]">Models:</span>
+              {(Array.isArray(modelList) ? modelList : []).map(m => (
+                <span key={m} className="text-[9px] bg-[hsl(var(--primary))]/15 text-[hsl(var(--primary))] px-1.5 py-0.5 rounded font-mono">{m}</span>
+              ))}
+            </div>
+          )}
+          {rationale && <p className="text-xs text-[hsl(var(--foreground))]/80 leading-relaxed whitespace-pre-line">{rationale}</p>}
+        </Card>
+      )}
     </div>
   );
 }
@@ -492,6 +610,10 @@ export default function PortfolioDetail() {
 
           {/* Walk-Forward */}
           <WalkForwardSection strategyType={type} />
+
+          {/* Rebalance Log + AI Notes */}
+          <RebalanceLog strategyType={type} />
+          <ConstructionNotes portfolio={portfolio} />
         </>
       )}
     </div>
