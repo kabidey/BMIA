@@ -350,7 +350,7 @@ function SimulationSection({ strategyType }) {
   if (!sim && !computing) return null;
   if (computing) return (
     <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))] p-4">
-      <div className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin text-cyan-400" /><span className="text-xs text-[hsl(var(--muted-foreground))]">Training LSTM + 10K Monte Carlo paths... auto-refreshing</span></div>
+      <div className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin text-cyan-400" /><span className="text-xs text-[hsl(var(--muted-foreground))]">Training 4-model ensemble + 10K Monte Carlo... auto-refreshing</span></div>
     </Card>
   );
 
@@ -367,7 +367,7 @@ function SimulationSection({ strategyType }) {
         <div className="flex items-center gap-2">
           <Brain className="w-4 h-4 text-cyan-400" />
           <p className="text-xs font-semibold text-[hsl(var(--foreground))]">Forward Simulation</p>
-          <span className="text-[9px] bg-cyan-500/10 text-cyan-400 px-1.5 py-0.5 rounded font-mono">LSTM + MC</span>
+          <span className="text-[9px] bg-cyan-500/10 text-cyan-400 px-1.5 py-0.5 rounded font-mono">Ensemble + MC</span>
         </div>
         <span className={`text-xs font-bold font-mono px-2 py-0.5 rounded ${rm.expected_return_pct > 0 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
           E[R]: {(rm.expected_return_pct || 0) >= 0 ? '+' : ''}{rm.expected_return_pct}%
