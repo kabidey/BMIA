@@ -73,11 +73,14 @@ const TOC_ITEMS = [
   { id: 'signal-engine', label: 'Signal Engine' },
   { id: 'portfolio-engine', label: 'Portfolio Engine' },
   { id: 'hardening', label: 'Hardening Layer' },
+  { id: 'daemon', label: 'Autonomous Daemon' },
   { id: 'backtest', label: '5-Year Backtest' },
-  { id: 'simulation', label: 'LSTM + Monte Carlo' },
+  { id: 'simulation', label: 'Ensemble + Monte Carlo' },
   { id: 'walk-forward', label: 'Walk-Forward' },
+  { id: 'custom-portfolios', label: 'Make Your Own' },
   { id: 'bse-guidance', label: 'BSE Guidance' },
   { id: 'anti-hallucination', label: 'Anti-Hallucination' },
+  { id: 'security', label: 'TOTP Security' },
   { id: 'risk-framework', label: 'Risk Framework' },
 ];
 
@@ -113,10 +116,12 @@ export default function HowItWorks() {
             <div className="flex flex-wrap gap-2 mt-4">
               <MetricBadge label="Stocks" value="2,400+" />
               <MetricBadge label="LLMs" value="3 (Consensus)" />
-              <MetricBadge label="Strategies" value="6 Portfolios" />
+              <MetricBadge label="Strategies" value="6 AI + Custom" />
               <MetricBadge label="Capital" value="₹3 Cr" />
               <MetricBadge label="Guardrails" value="5 Code-Enforced" />
+              <MetricBadge label="Ensemble" value="4 Models" />
               <MetricBadge label="MC Paths" value="10,000" />
+              <MetricBadge label="Auth" value="TOTP 2FA" />
             </div>
           </div>
         </div>
@@ -355,6 +360,29 @@ export default function HowItWorks() {
           </div>
         </Section>
 
+        {/* Daemon */}
+        <Section id="daemon" icon={RefreshCw} iconColor="bg-emerald-500/15" title="Autonomous Portfolio Daemon v3" subtitle="Self-healing background engine with DB kill switch">
+          <p>
+            The daemon is the nervous system of BMIA. It runs as a background thread inside the FastAPI process, waking every 5 minutes during market hours to perform three critical functions — without any human intervention.
+          </p>
+          <Collapsible title="Phase 1: Price Updates (9 AM - 4 PM IST)" defaultOpen>
+            <p>Every 5-minute cycle, the daemon fetches live prices from yfinance for every holding in every active portfolio. It updates current_price, computes P&L percentage, and recalculates portfolio value. This is what keeps the "Current Value" number on your portfolio page alive.</p>
+          </Collapsible>
+          <Collapsible title="Phase 2: Stop-Loss & Take-Profit (9 AM - 4 PM IST)">
+            <p><strong>8% Hard Stop:</strong> If any holding drops 8% or more from its entry price, the daemon removes it immediately. No human approval needed. No "let me wait for recovery." The stock is OUT. This is the single most important risk management mechanism in the system.</p>
+            <p><strong>20% Take-Profit:</strong> If any holding rises 20%+ from entry, it's automatically exited. Winners are booked, not ridden into reversal. Every stop trigger is logged with timestamp and rationale in the rebalance history.</p>
+          </Collapsible>
+          <Collapsible title="Phase 3: Rebalance Evaluation (4 PM - 6 PM IST)">
+            <p>After market close, the daemon evaluates whether each portfolio needs a strategic rebalance — not just stop-loss, but thesis-level changes. Should stock X be swapped for stock Y? Has the sector allocation drifted? This uses the same 3-LLM God Mode consensus pipeline as initial construction. Rate limited to max 1 rebalance per portfolio per day.</p>
+          </Collapsible>
+          <Collapsible title="Intelligence Features">
+            <p><strong>Holiday Awareness:</strong> The daemon checks the NSE holiday calendar (stored in MongoDB). On Dr. Ambedkar Jayanti, Diwali, Republic Day — it skips all processing. No wasted yfinance calls on a closed market.</p>
+            <p><strong>Weekend Detection:</strong> Saturday/Sunday → 30-minute sleep cycle instead of 5-minute.</p>
+            <p><strong>DB Kill Switch:</strong> A toggle button in the Market Cockpit header lets you pause/resume the daemon instantly. The pause state is stored in MongoDB — survives server restarts. No code changes needed.</p>
+            <p><strong>Sync pymongo:</strong> The v3 daemon uses synchronous pymongo instead of async motor. This eliminates the event loop lifecycle crashes ("cannot schedule new futures after shutdown") that plagued earlier versions.</p>
+          </Collapsible>
+        </Section>
+
         {/* Backtest */}
         <Section id="backtest" icon={History} iconColor="bg-[hsl(var(--primary))]/15" title="5-Year Backtest Engine" subtitle="Lookback analysis with Nifty 50 benchmark comparison">
           <p>
@@ -372,19 +400,38 @@ export default function HowItWorks() {
         </Section>
 
         {/* Simulation */}
-        <Section id="simulation" icon={Cpu} iconColor="bg-cyan-500/15" title="LSTM + Monte Carlo Simulation" subtitle="Neural network calibrated 10,000-path forward projection">
+        <Section id="simulation" icon={Cpu} iconColor="bg-cyan-500/15" title="4-Model Ensemble + Monte Carlo" subtitle="Multi-model neural ensemble calibrated 10,000-path forward projection">
           <p>
-            The forward simulation engine combines deep learning with classical quantitative finance to project each portfolio's likely trajectory over the next year.
+            The forward simulation engine combines four independent forecasting models with classical quantitative finance. Each model sees the same 5 years of daily portfolio returns but learns different patterns. Their predictions are weighted by validation accuracy — the model that's been most right gets the most influence.
           </p>
-          <Collapsible title="LSTM Neural Network" defaultOpen>
-            <p><strong>Architecture:</strong> 2-layer LSTM (hidden_size=64, dropout=0.2) with probabilistic output (mu, log_sigma)</p>
-            <p><strong>Training:</strong> Trained on 5 years of daily log-returns for the weighted portfolio. 100 epochs max with early stopping (patience=15). Gaussian negative log-likelihood loss.</p>
-            <p><strong>Output:</strong> Predicted daily return distribution (mean and standard deviation) — calibrates the Monte Carlo parameters</p>
-            <p><strong>Clamping:</strong> Daily mu capped at ±0.002 (~±50% annualized) to prevent LSTM from hallucinating extreme returns</p>
-            <p><strong>Fallback:</strong> If insufficient data (&lt;90 days), falls back to historical mean/std</p>
+          <Collapsible title="Model 1: LSTM (Sequential Momentum)" defaultOpen>
+            <p><strong>Architecture:</strong> 2-layer LSTM, hidden_size=128, dropout=0.3, probabilistic output (mu, log_sigma)</p>
+            <p><strong>Captures:</strong> Sequential momentum, trend persistence, short-term mean reversion. LSTMs excel at remembering patterns across 20-60 day windows — capturing how stocks that rallied last week tend to behave this week.</p>
+            <p><strong>Training:</strong> AdamW optimizer with weight decay (1e-4), CosineAnnealing LR scheduler, 120 epochs max, early stopping (patience=20). Gaussian NLL loss.</p>
+          </Collapsible>
+          <Collapsible title="Model 2: Attention-LSTM (Long-Range Dependencies)">
+            <p><strong>Architecture:</strong> 2-layer LSTM + Self-Attention layer + LayerNorm residual, hidden_size=128</p>
+            <p><strong>Captures:</strong> Long-range dependencies that vanilla LSTM misses — quarterly earnings cycles (90-day patterns), seasonal effects (budget season, monsoon impact on agri stocks), annual rebalancing flows. The attention mechanism can directly connect a return from 200 days ago to today's prediction.</p>
+            <p><strong>Attention mechanism:</strong> Query-Key-Value self-attention over the full LSTM hidden sequence, scaled by sqrt(hidden_dim). No masking — full bidirectional attention over the lookback window.</p>
+          </Collapsible>
+          <Collapsible title="Model 3: GRU (Different Gradient Dynamics)">
+            <p><strong>Architecture:</strong> 2-layer GRU, hidden_size=96, dropout=0.3</p>
+            <p><strong>Captures:</strong> GRU has a simpler gate structure than LSTM (2 gates vs 3). This means different gradient flow characteristics — it sometimes captures fast regime changes that LSTM's forget gate smooths over. Having both in the ensemble means we get the best of both gradient dynamics.</p>
+            <p><strong>Why smaller?</strong> GRU is more parameter-efficient. 96 hidden units in GRU ≈ 128 in LSTM in terms of effective capacity.</p>
+          </Collapsible>
+          <Collapsible title="Model 4: GARCH(1,1) (Volatility Specialist)">
+            <p><strong>Model:</strong> sigma²(t) = omega + alpha*r²(t-1) + beta*sigma²(t-1), with alpha=0.06, beta=0.93</p>
+            <p><strong>Captures:</strong> Volatility clustering — the empirical fact that large moves tend to follow large moves. GARCH is the industry standard at every major quant desk for volatility forecasting. It has no opinion about direction (mean), only about how much the market will move.</p>
+            <p><strong>Variance targeting:</strong> omega is calibrated from the unconditional variance of the full sample. This ensures long-run mean reversion in volatility.</p>
+          </Collapsible>
+          <Collapsible title="Ensemble Weighting">
+            <p><strong>Split:</strong> 80% training / 20% validation on the chronological return series (no shuffling — respects time order)</p>
+            <p><strong>Weighting:</strong> Inverse validation loss. If LSTM had val_loss=0.5, Attention-LSTM had 0.3, GRU had 0.6, and GARCH had 1.0 — Attention-LSTM gets the highest weight because it predicted the validation set best.</p>
+            <p><strong>Adaptive:</strong> On random/noisy data, GARCH dominates (neural nets can't learn random). On trending markets, LSTM/Attention-LSTM dominate. The weights adapt automatically to the current market regime.</p>
           </Collapsible>
           <Collapsible title="Monte Carlo (Geometric Brownian Motion)">
             <p><strong>Model:</strong> S(t+1) = S(t) * exp((mu - sigma²/2)*dt + sigma*sqrt(dt)*Z) where Z ~ N(0,1)</p>
+            <p><strong>Calibration:</strong> mu and sigma come from the ensemble-weighted forecast, not raw historical data</p>
             <p><strong>Paths:</strong> 10,000 independent simulations over 252 trading days (1 year)</p>
             <p><strong>Seed:</strong> Fixed (42) for reproducibility across runs</p>
             <p><strong>Fan Chart:</strong> Weekly percentile bands (5th, 25th, 50th, 75th, 95th) for visual confidence intervals</p>
@@ -394,11 +441,11 @@ export default function HowItWorks() {
             <p><strong>VaR (95%, 99%):</strong> Value at Risk — maximum loss at given confidence level over 1 year</p>
             <p><strong>CVaR / Expected Shortfall:</strong> Average loss in the worst 5% of scenarios — captures tail risk better than VaR</p>
             <p><strong>Probability of Profit:</strong> % of 10,000 paths that end above starting value</p>
-            <p><strong>Max Expected Drawdown:</strong> Average worst peak-to-trough across 1,000 sampled paths (not just median path)</p>
+            <p><strong>Max Expected Drawdown:</strong> Average worst peak-to-trough across 1,000 sampled paths</p>
             <p><strong>Return Range (25-75th):</strong> The "likely" range of outcomes</p>
             <p><strong>Terminal Stats:</strong> Worst case, best case, median, mean portfolio values</p>
           </Collapsible>
-          <p className="text-xs text-[hsl(var(--muted-foreground))]">Computed in background threads (~100s per portfolio). Cached for 12 hours.</p>
+          <p className="text-xs text-[hsl(var(--muted-foreground))]">Computed in background threads. Cached for 12 hours. Requires 2 vCPU / 8GB RAM.</p>
         </Section>
 
         {/* Walk-Forward */}
@@ -412,6 +459,48 @@ export default function HowItWorks() {
           <p>
             A well-calibrated simulation should have: actual returns falling within the 25th-75th percentile band ~50% of the time, and within the 5th-95th band ~90% of the time. If the simulation consistently over-predicts, the LSTM parameters need recalibration.
           </p>
+        </Section>
+
+        {/* Custom Portfolios */}
+        <Section id="custom-portfolios" icon={Target} iconColor="bg-[hsl(var(--primary))]/15" title="Make Your Own Portfolio" subtitle="Compete against the AI — build, rebalance, and track your own picks">
+          <p>
+            BMIA doesn't just tell you what to buy — it lets you prove your own thesis. Create up to 5 custom portfolios with up to 10 stocks each, allocate weights, and track performance with the same analytical rigor as the AI portfolios.
+          </p>
+          <Collapsible title="Creation Flow" defaultOpen>
+            <p>1. <strong>Name it:</strong> "My Growth Picks", "Dividend Kings", "Momentum Play" — whatever your thesis</p>
+            <p>2. <strong>Search & add stocks:</strong> Autocomplete search across 2,400+ NSE stocks. Add up to 10.</p>
+            <p>3. <strong>Set weights:</strong> Manual +/- buttons per stock, or auto-balance for equal weight. Weights normalize to 100%.</p>
+            <p>4. <strong>Save:</strong> The system fetches live prices, computes quantities from ₹50L notional capital, and creates the portfolio.</p>
+          </Collapsible>
+          <Collapsible title="Manual Rebalancing">
+            <p>Hit "Rebalance" on any custom portfolio to enter rebalance mode. You can:</p>
+            <p>- <strong>Add new stocks</strong> via the search bar</p>
+            <p>- <strong>Remove existing stocks</strong> with one click</p>
+            <p>- <strong>Adjust weights</strong> up or down</p>
+            <p>Every rebalance is logged with a timestamped snapshot: what was added, removed, and weight-changed. Full audit trail.</p>
+          </Collapsible>
+          <Collapsible title="Full Analytics">
+            <p>Custom portfolios get the same analytical treatment as AI portfolios:</p>
+            <p>- <strong>5-Year Backtest</strong> vs Nifty 50 (CAGR, Alpha, Sharpe, Max Drawdown)</p>
+            <p>- <strong>4-Model Ensemble + Monte Carlo</strong> forward simulation (fan chart, VaR, CVaR, P(Profit))</p>
+            <p>- <strong>Sector allocation pie chart</strong></p>
+            <p>- <strong>Holdings table</strong> with live P&L, signal badges</p>
+            <p>This means you can directly compare your picks against the AI's picks — same metrics, same benchmarks, no excuses.</p>
+          </Collapsible>
+          <Card className="bg-[hsl(var(--surface-2))] border-[hsl(var(--border))]">
+            <CardContent className="p-3">
+              <p className="text-xs font-semibold text-[hsl(var(--foreground))] mb-2">The Portfolio Construction Playbook</p>
+              <div className="space-y-1 text-[10px] text-[hsl(var(--muted-foreground))]">
+                <p>1. Diversify across sectors — max 30% in any single sector</p>
+                <p>2. Size by conviction — higher weight = higher conviction, cap at 20%</p>
+                <p>3. Mix time horizons — compounders + momentum</p>
+                <p>4. Mind liquidity — daily volume &gt; ₹5 Cr</p>
+                <p>5. Set a stop-loss mentally — 8-10% is professional</p>
+                <p>6. Rebalance quarterly — trim winners, cut losers</p>
+                <p>7. Track against Nifty 50 — if you can't beat the index, buy the index</p>
+              </div>
+            </CardContent>
+          </Card>
         </Section>
 
         {/* BSE Guidance */}
@@ -457,6 +546,29 @@ export default function HowItWorks() {
           </div>
         </Section>
 
+        {/* TOTP Security */}
+        <Section id="security" icon={Lock} iconColor="bg-red-500/15" title="TOTP 2FA Security" subtitle="RFC 6238 authentication — same protocol as Google Authenticator">
+          <p>
+            BMIA is secured with Time-based One-Time Password (TOTP) authentication — the same cryptographic protocol used by Google Authenticator, Authy, and every major bank's 2FA system.
+          </p>
+          <Collapsible title="How it works" defaultOpen>
+            <p><strong>Shared Secret:</strong> A 32-character base32 secret key is configured via environment variable (TOTP_SECRET). This same key is added to your authenticator app.</p>
+            <p><strong>Code Generation:</strong> Every 30 seconds, the authenticator app computes HMAC-SHA1(secret, floor(unix_time / 30)) → truncates to 6 digits. The server does the same computation.</p>
+            <p><strong>Verification:</strong> When you enter a code, the server computes the expected code for the current 30-second window (±1 window tolerance for clock drift). If they match → access granted.</p>
+            <p><strong>Session:</strong> Successful verification issues a JWT token (1-hour expiry). The frontend checks token validity every 30 seconds and force-logouts on expiry.</p>
+          </Collapsible>
+          <Collapsible title="Master Code (Persistent Session)">
+            <p>A master code exists for the account owner. It is bcrypt-hashed (salt round 12) and stored encrypted in MongoDB — never in plaintext, never in code, never in environment variables after initial seeding.</p>
+            <p>Entering the master code issues a 365-day persistent JWT — no auto-logout. The frontend detects the "persistent" flag in the JWT payload and skips expiry polling.</p>
+          </Collapsible>
+          <Collapsible title="Security Properties">
+            <p><strong>No QR code or secret is ever served</strong> — the /api/auth/totp-setup endpoint only initializes the DB, returns a ready status. Zero information leakage.</p>
+            <p><strong>Brute force resistant:</strong> 6-digit code = 1,000,000 combinations, valid for 60 seconds (±1 window). At 1 attempt/second, probability of guessing: 0.006%.</p>
+            <p><strong>Replay resistant:</strong> Each code is valid for exactly one 30-second window. Using the same code twice fails.</p>
+            <p><strong>Clock drift tolerant:</strong> ±1 window (60 seconds total) handles minor time sync differences between phone and server.</p>
+          </Collapsible>
+        </Section>
+
         {/* Risk Framework */}
         <Section id="risk-framework" icon={Shield} iconColor="bg-amber-500/15" title="Risk Management Framework" subtitle="Multi-layered defense against drawdowns">
           <p>
@@ -480,7 +592,8 @@ export default function HowItWorks() {
                   ['Signal Validation', 'Target/stop bounds, ±30% target cap, 15% stop max', 'Code (_validate_signal_bounds)'],
                   ['Data Sanitization', 'NaN/Inf removal, value capping, garbage detection', 'Code (validate_fundamentals)'],
                   ['LLM Consensus', '2+ model agreement required for stock selection', 'Architecture (God Mode)'],
-                  ['LSTM Clamping', '±50% annualized cap on predicted returns', 'Code (train_lstm_forecaster)'],
+                  ['Ensemble Clamping', '±50% annualized cap on ensemble-predicted returns', 'Code (train_ensemble)'],
+                  ['Daemon Kill Switch', 'DB-driven pause/resume, holiday/weekend awareness', 'UI toggle + MongoDB'],
                   ['Backtest Evidence', '5-year lookback required before live deployment', 'Workflow'],
                   ['Walk-Forward', 'Forecast vs actual tracking for simulation calibration', 'Monitoring'],
                 ].map(([layer, mech, enf]) => (
