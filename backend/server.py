@@ -26,6 +26,7 @@ from routes.signals import router as signals_router
 from routes.guidance import router as guidance_router
 from routes.bse import router as bse_router
 from routes.portfolios import router as portfolios_router
+from routes.custom_portfolios import router as custom_portfolios_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -80,6 +81,7 @@ app.include_router(signals_router)
 app.include_router(guidance_router)
 app.include_router(bse_router)
 app.include_router(portfolios_router)
+app.include_router(custom_portfolios_router)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { RefreshCw, TrendingUp, TrendingDown, ChevronRight, ArrowRightLeft, Clock, Zap, Target, Shield, Rocket, BarChart3, Gem, Loader2, IndianRupee, ArrowUpRight, ArrowDownRight, History, CheckCircle2 } from 'lucide-react';
+import { RefreshCw, TrendingUp, TrendingDown, ChevronRight, ArrowRightLeft, Clock, Zap, Target, Shield, Rocket, BarChart3, Gem, Loader2, IndianRupee, ArrowUpRight, ArrowDownRight, History, CheckCircle2, Plus } from 'lucide-react';
 import { Card, CardContent } from '../components/ui/card';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -284,28 +284,33 @@ function GlobalRebalanceActivity({ logs }) {
 }
 
 export default function Watchlist() {
+  const navigate = useNavigate();
   const [overview, setOverview] = useState(null);
   const [portfolios, setPortfolios] = useState([]);
   const [strategies, setStrategies] = useState({});
   const [rebalanceLogs, setRebalanceLogs] = useState([]);
+  const [customPortfolios, setCustomPortfolios] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
-      const [ovRes, pfRes, logRes] = await Promise.all([
+      const [ovRes, pfRes, logRes, cpRes] = await Promise.all([
         fetch(`${BACKEND_URL}/api/portfolios/overview`),
         fetch(`${BACKEND_URL}/api/portfolios`),
         fetch(`${BACKEND_URL}/api/portfolios/rebalance-log-all/recent?limit=30`),
+        fetch(`${BACKEND_URL}/api/custom-portfolios`),
       ]);
       const ovData = await ovRes.json();
       const pfData = await pfRes.json();
       const logData = await logRes.json();
+      const cpData = await cpRes.json();
 
       setOverview(ovData);
       setPortfolios(pfData.portfolios || []);
       setStrategies(pfData.strategies || {});
       setRebalanceLogs(logData.logs || []);
+      setCustomPortfolios(cpData.portfolios || []);
     } catch (e) {
       console.error(e);
     }
@@ -426,6 +431,61 @@ export default function Watchlist() {
 
       {/* Global Rebalance Activity */}
       <GlobalRebalanceActivity logs={rebalanceLogs} />
+
+      {/* Custom Portfolios Section */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-base font-display font-bold text-[hsl(var(--foreground))]">Your Portfolios</h2>
+          <button onClick={() => navigate('/portfolio/custom/new')}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[hsl(var(--primary))]/15 border border-[hsl(var(--primary))]/30 text-[hsl(var(--primary))] hover:bg-[hsl(var(--primary))]/25"
+            data-testid="make-your-own-btn">
+            <Plus className="w-3.5 h-3.5" /> Make Your Own
+          </button>
+        </div>
+        {customPortfolios.length === 0 ? (
+          <div onClick={() => navigate('/portfolio/custom/new')}
+            className="p-6 rounded-xl border-2 border-dashed border-[hsl(var(--border))] hover:border-[hsl(var(--primary))]/50 cursor-pointer text-center group" style={{ transition: 'border-color 0.2s' }}
+            data-testid="create-first-portfolio">
+            <Plus className="w-8 h-8 text-[hsl(var(--muted-foreground))] group-hover:text-[hsl(var(--primary))] mx-auto mb-2" style={{ transition: 'color 0.2s' }} />
+            <p className="text-sm text-[hsl(var(--muted-foreground))] group-hover:text-[hsl(var(--foreground))]">Create your first custom portfolio</p>
+            <p className="text-xs text-[hsl(var(--muted-foreground))] mt-1">Pick up to 10 stocks, set weights, track performance</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {customPortfolios.map(cp => {
+              const cpPnl = cp.total_pnl || 0;
+              const cpPnlPct = cp.total_pnl_pct || 0;
+              return (
+                <div key={cp.id} onClick={() => navigate(`/portfolio/custom/${cp.id}`)}
+                  className="p-4 rounded-xl border border-[hsl(var(--primary))]/20 bg-gradient-to-br from-[hsl(var(--primary))]/5 to-transparent cursor-pointer hover:scale-[1.01]" style={{ transition: 'transform 0.15s' }}
+                  data-testid={`custom-portfolio-${cp.id}`}>
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-base font-semibold text-[hsl(var(--foreground))]">{cp.name}</h3>
+                        <span className="text-[9px] bg-[hsl(var(--primary))]/15 text-[hsl(var(--primary))] px-1.5 py-0.5 rounded font-mono">Custom</span>
+                      </div>
+                      <p className="text-xs text-[hsl(var(--muted-foreground))] mt-0.5">{(cp.holdings || []).length} stocks | {cp.rebalance_count || 0}x rebalanced</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-lg font-mono font-bold text-[hsl(var(--foreground))]">
+                        <IndianRupee className="w-3 h-3 inline" />{(cp.current_value || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                      </p>
+                      <p className={`text-sm font-mono ${cpPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {cpPnl >= 0 ? '+' : ''}{cpPnlPct.toFixed(2)}%
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-center mt-2 text-[hsl(var(--muted-foreground))]">
+                    <span className="text-[10px] mr-1">View Details</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
