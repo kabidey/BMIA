@@ -15,7 +15,8 @@ import { TerminalPanel } from '../components/layout/TerminalPanel';
 import {
   TrendingUp, TrendingDown, Minus, Activity, BarChart3, Zap,
   RefreshCw, Timer, ArrowUpRight, ArrowDownRight, Eye,
-  Gauge, PieChart as PieChartIcon, Layers, FileText, Bell, Scale, Loader2
+  Gauge, PieChart as PieChartIcon, Layers, FileText, Bell, Scale, Loader2,
+  AlertTriangle, Users, CalendarDays, Newspaper, Sparkles, ChevronRight
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer,
@@ -192,6 +193,235 @@ function CustomTreemapContent({ x, y, width, height, name, change_pct }) {
         </>
       )}
     </g>
+  );
+}
+
+// ── Guidance Intelligence Briefing Card ──
+function GuidanceBriefingCard() {
+  const [briefing, setBriefing] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const navigate = useNavigate();
+
+  const fetchBriefing = useCallback(async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/guidance/briefing`);
+      if (res.ok) setBriefing(await res.json());
+    } catch { /* silent */ }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { fetchBriefing(); }, [fetchBriefing]);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/guidance/briefing/refresh`, { method: 'POST' });
+      if (res.ok) setBriefing(await res.json());
+    } catch { /* */ }
+    setRefreshing(false);
+  };
+
+  if (loading) {
+    return (
+      <div className="rounded-xl border border-[hsl(var(--primary))]/20 bg-gradient-to-r from-[hsl(var(--primary))]/5 to-transparent p-4">
+        <div className="flex items-center gap-2">
+          <Sparkles className="w-4 h-4 text-[hsl(var(--primary))] animate-pulse" />
+          <Skeleton className="h-5 w-48" />
+        </div>
+        <Skeleton className="h-4 w-full mt-3" />
+        <Skeleton className="h-4 w-3/4 mt-1" />
+      </div>
+    );
+  }
+
+  if (!briefing) return null;
+
+  const critical = briefing.critical_filings || [];
+  const insider = briefing.insider_activity || [];
+  const agms = briefing.upcoming_agms || [];
+  const boardMeetings = briefing.board_meetings || [];
+  const topActive = briefing.top_active_stocks || [];
+
+  const totalAlerts = critical.length + insider.length;
+
+  return (
+    <div className="rounded-xl border border-[hsl(var(--primary))]/20 bg-gradient-to-br from-[hsl(var(--primary))]/[0.04] via-transparent to-[hsl(var(--amber))]/[0.02] overflow-hidden"
+      data-testid="guidance-briefing-card">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-[hsl(var(--border))]/50">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-[hsl(var(--primary))]/15 flex items-center justify-center">
+            <Sparkles className="w-4 h-4 text-[hsl(var(--primary))]" />
+          </div>
+          <div>
+            <h3 className="text-sm font-display font-semibold tracking-wide" data-testid="briefing-title">
+              Guidance Intelligence Briefing
+            </h3>
+            <span className="text-[10px] text-[hsl(var(--muted-foreground))] font-mono">
+              {briefing.generated_at ? new Date(briefing.generated_at).toLocaleString('en-IN', {
+                day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
+              }) : 'Today'}
+            </span>
+          </div>
+          {totalAlerts > 0 && (
+            <Badge variant="destructive" className="text-[10px] ml-1 px-1.5 py-0" data-testid="briefing-alert-count">
+              {totalAlerts} alert{totalAlerts > 1 ? 's' : ''}
+            </Badge>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5">
+          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={handleRefresh} disabled={refreshing}
+            title="Refresh briefing" data-testid="briefing-refresh-btn">
+            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+          </Button>
+          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1" onClick={() => setExpanded(!expanded)}
+            data-testid="briefing-expand-btn">
+            {expanded ? 'Less' : 'Details'}
+            <ChevronRight className={`w-3 h-3 transition-transform ${expanded ? 'rotate-90' : ''}`} />
+          </Button>
+        </div>
+      </div>
+
+      {/* Narrative */}
+      {briefing.narrative && (
+        <div className="px-4 py-3 text-xs leading-relaxed text-[hsl(var(--foreground))]/85" data-testid="briefing-narrative">
+          {briefing.narrative}
+        </div>
+      )}
+
+      {/* Quick Stats Row */}
+      <div className="flex items-center gap-3 px-4 pb-3 flex-wrap">
+        {critical.length > 0 && (
+          <div className="flex items-center gap-1.5 text-[10px]" data-testid="briefing-critical-count">
+            <AlertTriangle className="w-3 h-3 text-[hsl(var(--down))]" />
+            <span className="text-[hsl(var(--down))] font-medium">{critical.length} Critical</span>
+          </div>
+        )}
+        {insider.length > 0 && (
+          <div className="flex items-center gap-1.5 text-[10px]" data-testid="briefing-insider-count">
+            <Users className="w-3 h-3 text-[hsl(var(--amber))]" />
+            <span className="text-[hsl(var(--amber))] font-medium">{insider.length} Insider</span>
+          </div>
+        )}
+        {agms.length > 0 && (
+          <div className="flex items-center gap-1.5 text-[10px]" data-testid="briefing-agm-count">
+            <CalendarDays className="w-3 h-3 text-[hsl(var(--info))]" />
+            <span className="text-[hsl(var(--info))] font-medium">{agms.length} AGM/EGM</span>
+          </div>
+        )}
+        {boardMeetings.length > 0 && (
+          <div className="flex items-center gap-1.5 text-[10px]" data-testid="briefing-board-count">
+            <Newspaper className="w-3 h-3 text-[hsl(var(--muted-foreground))]" />
+            <span className="text-[hsl(var(--muted-foreground))] font-medium">{boardMeetings.length} Board</span>
+          </div>
+        )}
+        {topActive.length > 0 && (
+          <div className="flex items-center gap-1 ml-auto">
+            <span className="text-[10px] text-[hsl(var(--muted-foreground))]">Most active:</span>
+            {topActive.slice(0, 3).map((s) => (
+              <Badge key={s.symbol} variant="outline" className="text-[9px] px-1 py-0 font-mono">
+                {s.symbol}
+                <span className="text-[hsl(var(--muted-foreground))] ml-0.5">{s.filings_7d}</span>
+              </Badge>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Expanded Details */}
+      {expanded && (
+        <div className="border-t border-[hsl(var(--border))]/50 px-4 py-3 space-y-3" data-testid="briefing-details">
+          {/* Critical Filings */}
+          {critical.length > 0 && (
+            <div>
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <AlertTriangle className="w-3 h-3 text-[hsl(var(--down))]" />
+                <span className="text-[11px] font-semibold text-[hsl(var(--down))] uppercase tracking-wider">Critical Filings</span>
+              </div>
+              <div className="space-y-1">
+                {critical.map((f, i) => (
+                  <div key={i} className="flex items-start gap-2 text-xs py-1 px-2 rounded-md hover:bg-[hsl(var(--surface-2))] cursor-pointer"
+                    onClick={() => navigate(`/analyze/${encodeURIComponent((f.stock_symbol || '') + '.NS')}`)}>
+                    <span className="font-mono font-semibold text-[hsl(var(--primary))] shrink-0 w-16">{f.stock_symbol}</span>
+                    <span className="text-[hsl(var(--foreground))]/80 truncate flex-1">{f.headline}</span>
+                    <span className="text-[10px] text-[hsl(var(--muted-foreground))] font-mono shrink-0">{(f.news_date || '').slice(0, 10)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Insider Activity */}
+          {insider.length > 0 && (
+            <div>
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <Users className="w-3 h-3 text-[hsl(var(--amber))]" />
+                <span className="text-[11px] font-semibold text-[hsl(var(--amber))] uppercase tracking-wider">Insider Activity (14d)</span>
+              </div>
+              <div className="space-y-1">
+                {insider.slice(0, 5).map((f, i) => (
+                  <div key={i} className="flex items-start gap-2 text-xs py-1 px-2 rounded-md hover:bg-[hsl(var(--surface-2))] cursor-pointer"
+                    onClick={() => navigate(`/analyze/${encodeURIComponent((f.stock_symbol || '') + '.NS')}`)}>
+                    <span className="font-mono font-semibold text-[hsl(var(--primary))] shrink-0 w-16">{f.stock_symbol}</span>
+                    <span className="text-[hsl(var(--foreground))]/80 truncate flex-1">{f.headline}</span>
+                    <span className="text-[10px] text-[hsl(var(--muted-foreground))] font-mono shrink-0">{(f.news_date || '').slice(0, 10)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Upcoming AGMs */}
+          {agms.length > 0 && (
+            <div>
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <CalendarDays className="w-3 h-3 text-[hsl(var(--info))]" />
+                <span className="text-[11px] font-semibold text-[hsl(var(--info))] uppercase tracking-wider">Upcoming AGMs/EGMs</span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {agms.slice(0, 6).map((f, i) => (
+                  <Badge key={i} variant="outline" className="text-[10px] px-2 py-0.5 font-mono gap-1 cursor-pointer hover:bg-[hsl(var(--surface-2))]"
+                    onClick={() => navigate(`/analyze/${encodeURIComponent((f.stock_symbol || '') + '.NS')}`)}>
+                    {f.stock_symbol}
+                    <span className="text-[hsl(var(--muted-foreground))]">{(f.news_date || '').slice(5, 10)}</span>
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Board Meetings */}
+          {boardMeetings.length > 0 && (
+            <div>
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <Newspaper className="w-3 h-3 text-[hsl(var(--muted-foreground))]" />
+                <span className="text-[11px] font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wider">Recent Board Meetings</span>
+              </div>
+              <div className="space-y-1">
+                {boardMeetings.map((f, i) => (
+                  <div key={i} className="flex items-start gap-2 text-xs py-1 px-2 rounded-md hover:bg-[hsl(var(--surface-2))] cursor-pointer"
+                    onClick={() => navigate(`/analyze/${encodeURIComponent((f.stock_symbol || '') + '.NS')}`)}>
+                    <span className="font-mono font-semibold text-[hsl(var(--primary))] shrink-0 w-16">{f.stock_symbol}</span>
+                    <span className="text-[hsl(var(--foreground))]/80 truncate flex-1">{f.headline}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Go to Guidance */}
+          <div className="pt-1">
+            <Button variant="outline" size="sm" className="text-xs h-7 gap-1" onClick={() => navigate('/guidance')}
+              data-testid="briefing-go-to-guidance">
+              <FileText className="w-3 h-3" /> Open Full Guidance
+              <ChevronRight className="w-3 h-3" />
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -385,6 +615,9 @@ export default function MarketOverview() {
           )}
         </div>
       </div>
+
+      {/* ── Guidance Briefing Card ── */}
+      <GuidanceBriefingCard />
 
       {/* ════════════════════════════════════════════════════════════════════ */}
       {/* SECTION 1: MACRO VIEW (Market Weather)                              */}

@@ -13,6 +13,7 @@ from services.guidance_service import (
 from services.guidance_ai_service import ask_guidance_ai, get_suggested_questions
 from services.pdf_extractor_service import process_unprocessed_pdfs, get_pdf_extraction_stats
 from services.vector_store import guidance_vector_store
+from services.briefing_service import get_daily_briefing, generate_daily_briefing
 
 logger = logging.getLogger(__name__)
 
@@ -133,3 +134,17 @@ async def trigger_prune(request: Request):
     db = request.app.db
     deleted = await prune_old_guidance(db)
     return {"pruned": deleted, "retention_days": 90}
+
+
+@router.get("/guidance/briefing")
+async def daily_briefing(request: Request):
+    """Get auto-generated daily intelligence briefing (cached 6h)."""
+    db = request.app.db
+    return await get_daily_briefing(db)
+
+
+@router.post("/guidance/briefing/refresh")
+async def refresh_briefing(request: Request):
+    """Force-regenerate the daily briefing."""
+    db = request.app.db
+    return await generate_daily_briefing(db)
