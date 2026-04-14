@@ -173,45 +173,76 @@ async def all_rebalance_logs(request: Request, limit: int = 30):
     return {"logs": logs}
 
 
+_backtest_locks = {}  # strategy_type -> bool
+
+
 @router.get("/portfolios/backtest/{strategy_type}")
 async def portfolio_backtest(strategy_type: str, request: Request):
-    """Run 5-year lookback backtest for a portfolio's holdings vs Nifty 50."""
+    """Run 5-year lookback backtest for a portfolio's holdings vs Nifty 50.
+    Returns cached result or triggers background computation."""
     from services.portfolio_hardening import compute_backtest
+    import logging
+    logger = logging.getLogger(__name__)
 
     db = request.app.db
     portfolio = await get_portfolio(db, strategy_type)
     if not portfolio:
         raise HTTPException(status_code=404, detail="Portfolio not found")
 
-    # Check cache
+    # Check cache (24h TTL)
     cached = await db.portfolio_backtests.find_one(
         {"portfolio_type": strategy_type}, {"_id": 0}
     )
     if cached:
-        # Return cached if less than 24h old
         cached_at = cached.get("computed_at", "")
         try:
             ct = datetime.fromisoformat(cached_at)
             if (datetime.now(timezone.utc) - ct.replace(tzinfo=timezone.utc)).total_seconds() < 86400:
+                cached["status"] = "complete"
                 return cached
         except Exception:
             pass
 
+    # If already computing, return status
+    if _backtest_locks.get(strategy_type):
+        return {"status": "computing", "portfolio_type": strategy_type,
+                "message": f"Backtest computation in progress for {strategy_type}..."}
+
     symbols = [h["symbol"] for h in portfolio.get("holdings", []) if h.get("symbol")]
     strategy_name = portfolio.get("name", strategy_type)
 
-    result = compute_backtest(symbols, strategy_name)
-    result["portfolio_type"] = strategy_type
-    result["computed_at"] = datetime.now(timezone.utc).isoformat()
+    import os
+    mongo_url = os.environ["MONGO_URL"]
+    db_name = os.environ["DB_NAME"]
 
-    # Cache result
-    await db.portfolio_backtests.update_one(
-        {"portfolio_type": strategy_type},
-        {"$set": result},
-        upsert=True,
-    )
+    def _run_backtest_bg():
+        import pymongo
+        try:
+            _backtest_locks[strategy_type] = True
+            result = compute_backtest(symbols, strategy_name)
+            result["portfolio_type"] = strategy_type
+            result["computed_at"] = datetime.now(timezone.utc).isoformat()
+            result["status"] = "complete"
 
-    return result
+            client = pymongo.MongoClient(mongo_url)
+            sync_db = client[db_name]
+            sync_db.portfolio_backtests.update_one(
+                {"portfolio_type": strategy_type},
+                {"$set": result},
+                upsert=True,
+            )
+            client.close()
+            logger.info(f"Backtest stored for {strategy_type}")
+        except Exception as e:
+            logger.error(f"Background backtest error for {strategy_type}: {e}")
+        finally:
+            _backtest_locks[strategy_type] = False
+
+    thread = threading.Thread(target=_run_backtest_bg, daemon=True)
+    thread.start()
+
+    return {"status": "computing", "portfolio_type": strategy_type,
+            "message": f"Backtest started for {strategy_type}. Poll again in ~30s."}
 
 
 @router.get("/portfolios/simulation/{strategy_type}")

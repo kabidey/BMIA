@@ -429,33 +429,59 @@ function SimulationCard({ strategyType, strategyName }) {
 function BacktestCard({ strategyType, strategyName }) {
   const [bt, setBt] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [computing, setComputing] = useState(false);
   const [error, setError] = useState(null);
 
-  const runBacktest = async () => {
-    setLoading(true);
-    setError(null);
+  const fetchBacktest = useCallback(async () => {
     try {
       const res = await fetch(`${BACKEND_URL}/api/portfolios/backtest/${strategyType}`);
       const d = await res.json();
+      if (d.status === 'computing') {
+        setComputing(true);
+        setLoading(false);
+        return false;
+      }
       if (d.error) {
         setError(d.error);
-      } else {
-        setBt(d);
+        setComputing(false);
+        setLoading(false);
+        return true;
       }
+      setBt(d);
+      setComputing(false);
+      setLoading(false);
+      return true;
     } catch (e) {
       setError('Failed to load backtest');
+      setComputing(false);
+      setLoading(false);
+      return true;
     }
-    setLoading(false);
-  };
+  }, [strategyType]);
 
-  useEffect(() => { runBacktest(); }, [strategyType]);
+  useEffect(() => {
+    setLoading(true);
+    fetchBacktest();
+  }, [fetchBacktest]);
 
-  if (loading) return (
+  useEffect(() => {
+    if (!computing) return;
+    const interval = setInterval(async () => {
+      const done = await fetchBacktest();
+      if (done) clearInterval(interval);
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [computing, fetchBacktest]);
+
+  if (loading || computing) return (
     <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))] p-4">
       <div className="flex items-center gap-2">
         <Loader2 className="w-4 h-4 animate-spin text-[hsl(var(--primary))]" />
-        <span className="text-xs text-[hsl(var(--muted-foreground))]">Running 5Y backtest for {strategyName}...</span>
+        <span className="text-xs text-[hsl(var(--muted-foreground))]">
+          {computing ? 'Computing 5Y backtest...' : `Loading backtest for ${strategyName}...`}
+        </span>
       </div>
+      {computing && <p className="text-[9px] text-[hsl(var(--muted-foreground))] mt-2">Auto-refreshing every 10s</p>}
     </Card>
   );
 
