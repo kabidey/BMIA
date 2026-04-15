@@ -48,6 +48,21 @@ IMPORTANT:
 - Consider Indian market context (SEBI regulations, NSE/BSE norms, Indian corporate governance)
 """
 
+GEMINI_REWRITE_PROMPT = """You are a senior financial editor at a top Indian brokerage. Your job is to take raw analyst notes and transform them into a polished, professional intelligence report.
+
+RULES:
+- Preserve every factual claim, stock symbol, date, number, and citation from the raw notes
+- Never invent new facts or stocks not mentioned in the raw notes
+- Structure the response with clear markdown headers (##), bullet points, and bold emphasis on key findings
+- Start with a brief Executive Summary (2-3 lines)
+- Group related findings under logical section headers
+- End with a 'Key Takeaways' section as a bulleted list
+- Use Indian market terminology naturally (SEBI, NSE, BSE, scrip, etc.)
+- Keep the tone professional but direct — traders read this before market open
+- If the raw notes mention data gaps or insufficient evidence, preserve that transparency
+- Format numbers in Indian style (lakhs, crores) where appropriate
+"""
+
 
 def _extract_query_context(question: str):
     """Parse the user question to extract stocks, categories, and intent."""
@@ -332,28 +347,51 @@ async def ask_guidance_ai(db, question: str, conversation_history: list = None):
         ])
         user_prompt = f"PREVIOUS CONVERSATION:\n{history_text}\n\n{user_prompt}"
 
-    # Step 5: Call LLM
+    # Step 5: Two-stage LLM pipeline — GPT analyzes, Gemini structures
     try:
         from emergentintegrations.llm.chat import LlmChat, UserMessage
 
-        chat = LlmChat(
+        # Stage 1: GPT-4.1 — raw analysis from filings data
+        gpt_chat = LlmChat(
             api_key=api_key,
-            session_id=f"guidance-ai-{datetime.now(IST).isoformat()}",
+            session_id=f"guidance-gpt-{datetime.now(IST).isoformat()}",
             system_message=GUIDANCE_SYSTEM_PROMPT,
         )
-        chat.with_model("openai", "gpt-4.1")
-        response = await chat.send_message(UserMessage(text=user_prompt))
+        gpt_chat.with_model("openai", "gpt-4.1")
+        raw_analysis = await gpt_chat.send_message(UserMessage(text=user_prompt))
+
+        logger.info(f"GUIDANCE AI: GPT raw analysis done ({len(raw_analysis)} chars)")
+
+        # Stage 2: Gemini — rewrite into a polished, structured response
+        gemini_chat = LlmChat(
+            api_key=api_key,
+            session_id=f"guidance-gemini-{datetime.now(IST).isoformat()}",
+            system_message=GEMINI_REWRITE_PROMPT,
+        )
+        gemini_chat.with_model("gemini", "gemini-2.5-flash")
+
+        rewrite_prompt = (
+            f"ORIGINAL USER QUESTION:\n{question}\n\n"
+            f"RAW ANALYST NOTES (from GPT):\n{raw_analysis}\n\n"
+            f"Rewrite the above into a clear, well-structured intelligence report. "
+            f"Preserve all factual claims, stock names, dates, and citations. "
+            f"Improve flow, add proper section headers, and make it readable."
+        )
+        final_response = await gemini_chat.send_message(UserMessage(text=rewrite_prompt))
+
+        logger.info(f"GUIDANCE AI: Gemini structured response done ({len(final_response)} chars)")
 
         # Step 6: Build source citations
         sources = _build_source_citations(filings)
 
         return {
-            "answer": response.strip(),
+            "answer": final_response.strip(),
             "sources": sources,
             "filings_retrieved": len(filings),
             "stocks_in_context": list(set(f.get("stock_symbol", "") for f in filings)),
             "query_context": context,
             "timestamp": datetime.now(IST).isoformat(),
+            "pipeline": "gpt-4.1 → gemini-2.5-flash",
         }
 
     except Exception as e:
