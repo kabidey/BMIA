@@ -8,6 +8,15 @@ Expo React Native Android app for the BMIA (Bharat Market Intel Agent) - an AI-p
 - **Backend**: External API at `https://bmia.pesmifs.com` (no local backend needed)
 - **Navigation**: 5-tab bottom navigation (Market, Signals, Scanner, Portfolio, More)
 
+## Authentication
+- **OrgLens employee verification** + JWT token auth
+- Flow: Email → OrgLens API (active SMIFS employee check) → Password (set or login) → JWT session
+- JWT stored securely via `expo-secure-store` (native) / `localStorage` (web)
+- Bearer token attached to all API calls automatically
+- Auto-logout on token expiry (30s check interval, skip for superadmin)
+- 3-step login: Email check → Password/Set-Password → Dashboard
+- Logout from Settings screen
+
 ## Features
 ### Core Screens (5 Tabs)
 1. **Market Overview** - Live cockpit dashboard with indices, breadth, VIX, PCR, sector rotation
