@@ -345,6 +345,126 @@ async def portfolio_rebalance_log(strategy_type: str, request: Request, limit: i
     return {"logs": logs}
 
 
+@router.get("/portfolios/xirr/{strategy_type}")
+async def portfolio_xirr(strategy_type: str, request: Request):
+    """Compute XIRR for a portfolio based on investment date and current value."""
+    db = request.app.db
+    portfolio = await get_portfolio(db, strategy_type)
+    if not portfolio or portfolio.get("status") != "active":
+        raise HTTPException(status_code=404, detail="Active portfolio not found")
+
+    invested = portfolio.get("actual_invested", INITIAL_CAPITAL)
+    current_value = portfolio.get("current_value", invested)
+    created_at = portfolio.get("created_at")
+
+    # Parse creation date
+    if not created_at:
+        return {"xirr_pct": None, "error": "No creation date"}
+
+    try:
+        if isinstance(created_at, str):
+            start_date = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        elif isinstance(created_at, datetime):
+            start_date = created_at
+        else:
+            return {"xirr_pct": None, "error": "Invalid creation date"}
+    except Exception:
+        return {"xirr_pct": None, "error": "Cannot parse creation date"}
+
+    now = datetime.now(timezone.utc)
+    days_held = (now - start_date.replace(tzinfo=timezone.utc)).days
+    if days_held <= 0:
+        return {"xirr_pct": 0.0, "days_held": 0}
+
+    # Cash flows: negative outflow at start, positive inflow now
+    # XIRR via Newton's method
+    cash_flows = [(-invested, start_date), (current_value, now)]
+
+    # Collect rebalance log flows if any (realized P&L from exits)
+    rebal_logs = await get_rebalance_log(db, strategy_type, limit=50)
+    realized_pnl = 0.0
+    exit_count = 0
+    for log in rebal_logs:
+        for ch in (log.get("changes") or []):
+            if ch.get("type") == "OUT" and ch.get("realized_pnl"):
+                realized_pnl += ch["realized_pnl"]
+                exit_count += 1
+
+    # Compute XIRR using Newton-Raphson
+    def xirr(flows, guess=0.1):
+        def npv(rate):
+            return sum(
+                cf / (1 + rate) ** ((dt - flows[0][1]).days / 365.25)
+                for cf, dt in flows
+            )
+
+        def dnpv(rate):
+            return sum(
+                -((dt - flows[0][1]).days / 365.25) * cf / (1 + rate) ** ((dt - flows[0][1]).days / 365.25 + 1)
+                for cf, dt in flows
+            )
+
+        rate = guess
+        for _ in range(100):
+            nv = npv(rate)
+            dnv = dnpv(rate)
+            if abs(dnv) < 1e-12:
+                break
+            rate -= nv / dnv
+            if abs(nv) < 1e-6:
+                break
+        return rate
+
+    try:
+        if days_held < 7:
+            # Too short for meaningful XIRR — use simple return
+            xirr_pct = round((current_value - invested) / invested * 100, 2)
+        else:
+            xirr_val = xirr(cash_flows)
+            xirr_pct = round(xirr_val * 100, 2)
+            # Sanity cap: XIRR beyond ±500% is usually a numerical artifact
+            if abs(xirr_pct) > 500:
+                xirr_pct = round((current_value - invested) / invested * 100, 2)
+    except Exception:
+        # Fallback to simple return
+        simple_return = (current_value - invested) / invested * 100
+        xirr_pct = round(simple_return, 2)
+
+    # Per-stock P&L breakdown
+    holdings = portfolio.get("holdings", [])
+    unrealized_pnl = sum(h.get("pnl", 0) or 0 for h in holdings)
+    unrealized_pnl_pct = portfolio.get("total_pnl_pct", 0)
+
+    # Winners/losers
+    winners = [h for h in holdings if (h.get("pnl_pct") or 0) > 0]
+    losers = [h for h in holdings if (h.get("pnl_pct") or 0) < 0]
+
+    return {
+        "strategy_type": strategy_type,
+        "xirr_pct": xirr_pct,
+        "days_held": days_held,
+        "invested": round(invested, 2),
+        "current_value": round(current_value, 2),
+        "unrealized_pnl": round(unrealized_pnl, 2),
+        "unrealized_pnl_pct": round(unrealized_pnl_pct, 2),
+        "realized_pnl": round(realized_pnl, 2),
+        "exit_count": exit_count,
+        "total_pnl": round(unrealized_pnl + realized_pnl, 2),
+        "winners": len(winners),
+        "losers": len(losers),
+        "win_rate_pct": round(len(winners) / max(len(holdings), 1) * 100, 1),
+        "top_gainer": {
+            "symbol": max(holdings, key=lambda h: h.get("pnl_pct", 0)).get("symbol", "").replace(".NS", ""),
+            "pnl_pct": round(max(h.get("pnl_pct", 0) for h in holdings), 2),
+        } if holdings else None,
+        "top_loser": {
+            "symbol": min(holdings, key=lambda h: h.get("pnl_pct", 0)).get("symbol", "").replace(".NS", ""),
+            "pnl_pct": round(min(h.get("pnl_pct", 0) for h in holdings), 2),
+        } if holdings else None,
+        "created_at": str(created_at),
+    }
+
+
 @router.get("/portfolios/walk-forward")
 async def walk_forward_all(request: Request):
     """Get walk-forward tracking for all portfolios."""

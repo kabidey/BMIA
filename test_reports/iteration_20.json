@@ -1,0 +1,51 @@
+{
+  "summary": "Iteration 20: Complete testing of Portfolio Detail Page Enhancements. All 9 backend tests passed (100%). All 11 frontend UI elements verified working correctly. The portfolio detail page now shows: (1) Portfolio Rationale & Construction with Investment Thesis, Risk Assessment, Data Quality, (2) Returns & P&L Breakdown with XIRR, unrealized/realized P&L, win rate, (3) Top Gainer and Biggest Loss, (4) Rebalance History with '0 swaps' empty state message.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "GET /api/portfolios/xirr/bespoke_forward_looking - returns 200 with xirr_pct, days_held, unrealized_pnl, realized_pnl, win_rate_pct, top_gainer, top_loser",
+    "GET /api/portfolios/xirr/quick_entry - returns 200 with valid XIRR data",
+    "GET /api/portfolios/xirr/{all_6_portfolios} - all return valid responses (200 or 404 for inactive)",
+    "GET /api/portfolios/xirr/invalid_portfolio - returns 404 correctly",
+    "GET /api/portfolios/rebalance-log/bespoke_forward_looking - returns 200 with logs array (empty is valid)",
+    "GET /api/portfolios/bespoke_forward_looking - returns portfolio_thesis, risk_assessment, data_quality_note",
+    "GET /api/portfolios/bespoke_forward_looking - returns holdings array with stock details",
+    "GET /api/health - returns status 'ok'",
+    "Frontend: [data-testid='portfolio-detail-page'] visible",
+    "Frontend: [data-testid='construction-notes'] visible with Investment Thesis, Risk Assessment, Data Quality",
+    "Frontend: [data-testid='xirr-section'] visible with Returns & P&L Breakdown",
+    "Frontend: [data-testid='xirr-value'] shows 'XIRR: +3.2%'",
+    "Frontend: Top Gainer (MTARTECH +9.38%) visible",
+    "Frontend: Biggest Loss (NIACL -3.36%) visible",
+    "Frontend: [data-testid='rebalance-log'] shows '0 swaps' (correct empty state)",
+    "Frontend: [data-testid='holdings-table'] shows 10 stocks with entry/current prices, P&L%, weight, value, signal",
+    "Frontend: [data-testid='sector-allocation'] shows pie chart with 6 sectors",
+    "Frontend: 5-Year Backtest section shows Alpha: +24.93%, CAGR: +35.62%",
+    "Frontend: Walk-Forward Tracking section visible"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration20_portfolio_detail.py",
+    "/app/test_reports/pytest/iteration20_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/backend/tests/test_iteration20_portfolio_detail.py"
+  ],
+  "success_rate": {
+    "backend": "100% (9/9 tests passed)",
+    "frontend": "100% (11/11 UI elements verified)"
+  },
+  "test_credentials": "somnath.dey@smifs.com / admin123 (OrgLens auth flow)",
+  "seed_data_creation": "None - using existing portfolio data (6 AI-managed portfolios)",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 20 verified the Portfolio Detail Page Enhancements. Key findings: (1) GET /api/portfolios/xirr/{strategy_type} returns XIRR calculation with xirr_pct, days_held, unrealized_pnl, realized_pnl, win_rate_pct, top_gainer, top_loser. For short holding periods (<7 days), it falls back to simple return. (2) GET /api/portfolios/rebalance-log/{strategy_type} returns logs array (empty for new portfolios). (3) Portfolio detail endpoint returns portfolio_thesis, risk_assessment, data_quality_note from construction_log. (4) Frontend PortfolioDetail.js has ConstructionNotes, XirrSection, RebalanceLog components with proper data-testid attributes. (5) All 6 portfolios (bespoke_forward_looking, quick_entry, long_term, swing, alpha_generator, value_stocks) have active status with XIRR data."
+}

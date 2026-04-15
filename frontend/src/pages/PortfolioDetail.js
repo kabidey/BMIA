@@ -106,7 +106,6 @@ function RebalanceLog({ strategyType }) {
   }, [strategyType]);
 
   const swapLogs = logs.filter(l => l.action === 'REBALANCE' && l.changes?.length > 0);
-  if (swapLogs.length === 0) return null;
 
   return (
     <div data-testid="rebalance-log">
@@ -118,7 +117,13 @@ function RebalanceLog({ strategyType }) {
       </button>
       {open && (
         <div className="space-y-3">
-          {swapLogs.map((log, i) => (
+          {swapLogs.length === 0 ? (
+            <Card className="bg-[hsl(var(--surface-1))] border-[hsl(var(--border))] p-4">
+              <p className="text-xs text-[hsl(var(--muted-foreground))] text-center">
+                No rebalances executed yet. The AI daemon monitors daily and will rebalance when market conditions warrant stock swaps.
+              </p>
+            </Card>
+          ) : swapLogs.map((log, i) => (
             <Card key={i} className="bg-[hsl(var(--surface-1))] border-amber-500/20 p-3">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[10px] text-amber-400 font-mono">
@@ -156,37 +161,67 @@ function RebalanceLog({ strategyType }) {
 }
 
 // ═══════════════════════════════════════════
-// AI CONSTRUCTION NOTES
+// AI CONSTRUCTION NOTES & PORTFOLIO RATIONALE
 // ═══════════════════════════════════════════
 function ConstructionNotes({ portfolio }) {
-  const [open, setOpen] = useState(false);
-  const notes = portfolio?.construction_log || portfolio?.ai_rationale || portfolio?.rationale;
-  const models = portfolio?.construction_log?.models_succeeded || portfolio?.models_used;
-  if (!notes && !models) return null;
+  const [open, setOpen] = useState(true);
 
-  const rationale = typeof notes === 'string' ? notes : notes?.rationale || notes?.thesis || '';
-  const modelList = models || notes?.models_succeeded || [];
+  const thesis = portfolio?.portfolio_thesis || '';
+  const riskAssessment = portfolio?.risk_assessment || '';
+  const dataNote = portfolio?.data_quality_note || '';
+  const logData = portfolio?.construction_log || {};
+  const models = logData?.models_used || logData?.models_succeeded || [];
+  const pipeline = logData?.pipeline || '';
+  const oldRationale = typeof logData === 'string' ? logData : logData?.rationale || logData?.thesis || '';
 
-  if (!rationale && modelList.length === 0) return null;
+  // If nothing to show, return null
+  if (!thesis && !riskAssessment && !oldRationale && models.length === 0) return null;
 
   return (
     <div data-testid="construction-notes">
       <button onClick={() => setOpen(!open)} className="flex items-center gap-2 mb-2 w-full text-left">
         <Brain className="w-4 h-4 text-[hsl(var(--primary))]" />
-        <p className="text-sm font-semibold text-[hsl(var(--foreground))]">AI Construction Notes</p>
+        <p className="text-sm font-semibold text-[hsl(var(--foreground))]">Portfolio Rationale & Construction</p>
         {open ? <ChevronDown className="w-3.5 h-3.5 text-[hsl(var(--muted-foreground))] ml-auto" /> : <ChevronRight className="w-3.5 h-3.5 text-[hsl(var(--muted-foreground))] ml-auto" />}
       </button>
       {open && (
-        <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))] p-4">
-          {modelList.length > 0 && (
-            <div className="flex items-center gap-2 mb-3">
-              <span className="text-[10px] text-[hsl(var(--muted-foreground))]">Models:</span>
-              {(Array.isArray(modelList) ? modelList : []).map(m => (
-                <span key={m} className="text-[9px] bg-[hsl(var(--primary))]/15 text-[hsl(var(--primary))] px-1.5 py-0.5 rounded font-mono">{m}</span>
-              ))}
+        <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))] p-4 space-y-3">
+          {/* Pipeline & Models */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {pipeline && <span className="text-[9px] bg-emerald-500/15 text-emerald-400 px-1.5 py-0.5 rounded font-mono">{pipeline}</span>}
+            {(Array.isArray(models) ? models : []).map(m => (
+              <span key={m} className="text-[9px] bg-[hsl(var(--primary))]/15 text-[hsl(var(--primary))] px-1.5 py-0.5 rounded font-mono">{m}</span>
+            ))}
+          </div>
+
+          {/* Portfolio Thesis */}
+          {thesis && (
+            <div>
+              <p className="text-[10px] text-emerald-400 font-semibold uppercase tracking-wider mb-1">Investment Thesis</p>
+              <p className="text-xs text-[hsl(var(--foreground))]/80 leading-relaxed">{thesis}</p>
             </div>
           )}
-          {rationale && <p className="text-xs text-[hsl(var(--foreground))]/80 leading-relaxed whitespace-pre-line">{rationale}</p>}
+
+          {/* Risk Assessment */}
+          {riskAssessment && (
+            <div>
+              <p className="text-[10px] text-red-400 font-semibold uppercase tracking-wider mb-1">Risk Assessment</p>
+              <p className="text-xs text-[hsl(var(--foreground))]/70 leading-relaxed">{riskAssessment}</p>
+            </div>
+          )}
+
+          {/* Data Quality */}
+          {dataNote && (
+            <div>
+              <p className="text-[10px] text-amber-400 font-semibold uppercase tracking-wider mb-1">Data Quality</p>
+              <p className="text-[11px] text-[hsl(var(--muted-foreground))] leading-relaxed">{dataNote}</p>
+            </div>
+          )}
+
+          {/* Legacy rationale fallback */}
+          {!thesis && oldRationale && (
+            <p className="text-xs text-[hsl(var(--foreground))]/80 leading-relaxed whitespace-pre-line">{oldRationale}</p>
+          )}
         </Card>
       )}
     </div>
@@ -488,6 +523,103 @@ function WalkForwardSection({ strategyType }) {
 }
 
 // ═══════════════════════════════════════════
+// XIRR & P&L BREAKDOWN
+// ═══════════════════════════════════════════
+function XirrSection({ strategyType }) {
+  const [data, setData] = useState(null);
+  const [open, setOpen] = useState(true);
+
+  useEffect(() => {
+    fetch(`${BACKEND_URL}/api/portfolios/xirr/${strategyType}`)
+      .then(r => r.json())
+      .then(d => { if (!d.error) setData(d); })
+      .catch(() => {});
+  }, [strategyType]);
+
+  if (!data) return null;
+
+  const xirr = data.xirr_pct || 0;
+  const isPositive = xirr >= 0;
+
+  return (
+    <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))] p-4" data-testid="xirr-section">
+      <button onClick={() => setOpen(!open)} className="flex items-center justify-between w-full text-left mb-2">
+        <div className="flex items-center gap-2">
+          <IndianRupee className="w-4 h-4 text-emerald-400" />
+          <p className="text-sm font-semibold text-[hsl(var(--foreground))]">Returns & P&L Breakdown</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={`text-sm font-mono font-bold px-2 py-0.5 rounded ${isPositive ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}
+            data-testid="xirr-value">
+            XIRR: {isPositive ? '+' : ''}{xirr}%
+          </span>
+          {open ? <ChevronDown className="w-3.5 h-3.5 text-[hsl(var(--muted-foreground))]" /> : <ChevronRight className="w-3.5 h-3.5 text-[hsl(var(--muted-foreground))]" />}
+        </div>
+      </button>
+      {open && (
+        <div className="space-y-3">
+          {/* Key metrics grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="bg-[hsl(var(--surface-2))] rounded-lg p-2.5 border border-[hsl(var(--border))]/30">
+              <p className="text-[9px] text-[hsl(var(--muted-foreground))] uppercase tracking-wider">XIRR (Annualized)</p>
+              <p className={`text-lg font-mono font-bold ${isPositive ? 'text-emerald-400' : 'text-red-400'}`} data-testid="xirr-annualized">
+                {isPositive ? '+' : ''}{xirr}%
+              </p>
+              <p className="text-[10px] text-[hsl(var(--muted-foreground))]">{data.days_held} days held</p>
+            </div>
+            <div className="bg-[hsl(var(--surface-2))] rounded-lg p-2.5 border border-[hsl(var(--border))]/30">
+              <p className="text-[9px] text-[hsl(var(--muted-foreground))] uppercase tracking-wider">Unrealized P&L</p>
+              <p className={`text-lg font-mono font-bold ${(data.unrealized_pnl || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                {(data.unrealized_pnl || 0) >= 0 ? '+' : ''}{((data.unrealized_pnl || 0) / 1e5).toFixed(2)}L
+              </p>
+              <p className="text-[10px] text-[hsl(var(--muted-foreground))]">{data.unrealized_pnl_pct >= 0 ? '+' : ''}{data.unrealized_pnl_pct}%</p>
+            </div>
+            <div className="bg-[hsl(var(--surface-2))] rounded-lg p-2.5 border border-[hsl(var(--border))]/30">
+              <p className="text-[9px] text-[hsl(var(--muted-foreground))] uppercase tracking-wider">Realized P&L</p>
+              <p className={`text-lg font-mono font-bold ${(data.realized_pnl || 0) >= 0 ? 'text-emerald-400' : data.realized_pnl === 0 ? 'text-[hsl(var(--foreground))]' : 'text-red-400'}`}>
+                {data.realized_pnl > 0 ? '+' : ''}{data.realized_pnl === 0 ? '0' : ((data.realized_pnl || 0) / 1e5).toFixed(2) + 'L'}
+              </p>
+              <p className="text-[10px] text-[hsl(var(--muted-foreground))]">{data.exit_count} exits</p>
+            </div>
+            <div className="bg-[hsl(var(--surface-2))] rounded-lg p-2.5 border border-[hsl(var(--border))]/30">
+              <p className="text-[9px] text-[hsl(var(--muted-foreground))] uppercase tracking-wider">Win Rate</p>
+              <p className={`text-lg font-mono font-bold ${data.win_rate_pct >= 55 ? 'text-emerald-400' : data.win_rate_pct >= 40 ? 'text-amber-400' : 'text-red-400'}`}>
+                {data.win_rate_pct}%
+              </p>
+              <p className="text-[10px] text-[hsl(var(--muted-foreground))]">{data.winners}W / {data.losers}L</p>
+            </div>
+          </div>
+
+          {/* Top gainer / loser */}
+          <div className="grid grid-cols-2 gap-3">
+            {data.top_gainer && (
+              <div className="flex items-center gap-2 bg-emerald-500/5 rounded-lg p-2 border border-emerald-500/10">
+                <ArrowUpRight className="w-4 h-4 text-emerald-400" />
+                <div>
+                  <p className="text-[10px] text-emerald-400 uppercase tracking-wider">Top Gainer</p>
+                  <p className="font-mono font-bold text-sm text-[hsl(var(--foreground))]">{data.top_gainer.symbol}</p>
+                </div>
+                <span className="ml-auto font-mono text-sm font-bold text-emerald-400">+{data.top_gainer.pnl_pct}%</span>
+              </div>
+            )}
+            {data.top_loser && (
+              <div className="flex items-center gap-2 bg-red-500/5 rounded-lg p-2 border border-red-500/10">
+                <ArrowDownRight className="w-4 h-4 text-red-400" />
+                <div>
+                  <p className="text-[10px] text-red-400 uppercase tracking-wider">Biggest Loss</p>
+                  <p className="font-mono font-bold text-sm text-[hsl(var(--foreground))]">{data.top_loser.symbol}</p>
+                </div>
+                <span className="ml-auto font-mono text-sm font-bold text-red-400">{data.top_loser.pnl_pct}%</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// ═══════════════════════════════════════════
 // MAIN PAGE
 // ═══════════════════════════════════════════
 export default function PortfolioDetail() {
@@ -577,6 +709,12 @@ export default function PortfolioDetail() {
 
       {isActive && (
         <>
+          {/* Portfolio Rationale (open by default at top) */}
+          <ConstructionNotes portfolio={portfolio} />
+
+          {/* XIRR + P&L Breakdown */}
+          <XirrSection strategyType={type} />
+
           {/* Summary Stats */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
@@ -602,6 +740,9 @@ export default function PortfolioDetail() {
             <SectorPie holdings={holdings} />
           </div>
 
+          {/* Rebalance History */}
+          <RebalanceLog strategyType={type} />
+
           {/* Backtest + Simulation */}
           <div className="grid grid-cols-1 gap-4">
             <BacktestSection strategyType={type} />
@@ -610,10 +751,6 @@ export default function PortfolioDetail() {
 
           {/* Walk-Forward */}
           <WalkForwardSection strategyType={type} />
-
-          {/* Rebalance Log + AI Notes */}
-          <RebalanceLog strategyType={type} />
-          <ConstructionNotes portfolio={portfolio} />
         </>
       )}
     </div>
