@@ -1,0 +1,137 @@
+{
+  "theme": "dark",
+  "archetype": "4 (Swiss & High-Contrast)",
+  "vibe": "Command-center focus, data-dense, technical, authoritative.",
+  "colors": {
+    "background": "#09090b",
+    "surface": "#18181b",
+    "surface_elevated": "#27272a",
+    "border": "#27272a",
+    "border_focus": "#3f3f46",
+    "text_primary": "#fafafa",
+    "text_secondary": "#a1a1aa",
+    "text_tertiary": "#71717a",
+    "accent_positive": "#10b981",
+    "accent_negative": "#ef4444",
+    "accent_warning": "#f59e0b",
+    "brand_primary": "#3b82f6",
+    "brand_hover": "#2563eb",
+    "chart_grid": "#27272a",
+    "glass_background": "rgba(9, 9, 11, 0.8)"
+  },
+  "typography": {
+    "font_family": {
+      "headings": "Chivo, sans-serif",
+      "body": "Manrope, sans-serif",
+      "mono": "IBM Plex Mono, monospace"
+    },
+    "scale": {
+      "h1": "text-3xl font-bold tracking-tight",
+      "h2": "text-2xl font-bold tracking-tight",
+      "h3": "text-xl font-semibold tracking-tight",
+      "h4": "text-lg font-semibold",
+      "body_large": "text-base font-medium",
+      "body": "text-sm",
+      "small": "text-xs",
+      "tiny": "text-[10px] uppercase tracking-wider font-semibold",
+      "price_large": "text-4xl font-bold tracking-tighter font-mono",
+      "price_medium": "text-2xl font-semibold tracking-tight font-mono",
+      "ticker": "text-base font-bold tracking-widest font-mono"
+    },
+    "rules": [
+      "Headings must use Chivo with tight tracking to maximize screen real estate.",
+      "All financial figures, tickers, and percentages MUST use IBM Plex Mono for vertical alignment.",
+      "Overlines/Labels must use tiny size, uppercase, and wide letter spacing."
+    ]
+  },
+  "spacing_and_layout": {
+    "container": "w-full max-w-md mx-auto min-h-screen bg-zinc-950",
+    "grid_system": "Control Room Grid (Dense, Data-focused)",
+    "gaps": {
+      "micro": "gap-1",
+      "small": "gap-2",
+      "base": "gap-4",
+      "section": "gap-6"
+    },
+    "padding": {
+      "screen": "p-4",
+      "card": "p-3",
+      "pill": "px-3 py-1"
+    },
+    "rules": [
+      "Use sharp edges or maximum 8px border-radius (rounded-md). No pill-shaped cards.",
+      "Utilize 1px solid borders (border-zinc-800) instead of heavy shadows for separation.",
+      "Every pixel must be utilized. Ensure elements stretch to fill empty spaces in data widgets.",
+      "Mobile-first constraint: Since it's an app, fix the max-width to mobile dimensions if running in a browser, or ensure fluid full-width for native views.",
+      "Ensure Bottom Navigation is fixed at the bottom with backdrop-blur-xl."
+    ]
+  },
+  "components": {
+    "cards": {
+      "base_classes": "bg-zinc-900 border border-zinc-800 rounded-md p-4",
+      "hover_classes": "active:bg-zinc-800 active:border-zinc-700 transition-colors"
+    },
+    "buttons": {
+      "primary": "bg-blue-600 text-white font-semibold rounded-md py-3 px-4 active:bg-blue-700 w-full flex items-center justify-center",
+      "secondary": "bg-zinc-800 text-zinc-100 border border-zinc-700 font-semibold rounded-md py-3 px-4 active:bg-zinc-700 flex items-center justify-center",
+      "buy": "bg-emerald-600 text-white font-semibold rounded-md py-3 px-4 active:bg-emerald-700 flex items-center justify-center",
+      "sell": "bg-red-600 text-white font-semibold rounded-md py-3 px-4 active:bg-red-700 flex items-center justify-center"
+    },
+    "bottom_navigation": {
+      "classes": "fixed bottom-0 left-0 right-0 h-16 bg-zinc-950/90 backdrop-blur-xl border-t border-zinc-800 flex justify-around items-center pb-safe z-50",
+      "item_active": "text-blue-500 flex flex-col items-center gap-1",
+      "item_inactive": "text-zinc-500 flex flex-col items-center gap-1"
+    },
+    "header": {
+      "classes": "sticky top-0 bg-zinc-950/90 backdrop-blur-xl border-b border-zinc-800 px-4 py-3 z-40 flex justify-between items-center pt-safe"
+    },
+    "data_row": {
+      "classes": "flex justify-between items-center py-2 border-b border-zinc-800/50 last:border-0",
+      "label": "text-sm text-zinc-400 font-medium",
+      "value": "text-sm text-zinc-100 font-mono text-right"
+    },
+    "badges": {
+      "positive": "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 px-2 py-0.5 rounded text-xs font-mono font-bold",
+      "negative": "bg-red-500/10 text-red-500 border border-red-500/20 px-2 py-0.5 rounded text-xs font-mono font-bold",
+      "neutral": "bg-zinc-800 text-zinc-300 border border-zinc-700 px-2 py-0.5 rounded text-xs font-mono font-bold"
+    }
+  },
+  "interactive_states": {
+    "hover": "In mobile context, use :active states instead of :hover. Active states should instantly darken the surface (e.g., active:bg-zinc-800) and provide a subtle scale down (active:scale-[0.98]).",
+    "focus": "focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-zinc-950"
+  },
+  "icons_and_assets": {
+    "icon_library": "lucide-react",
+    "icon_sizing": {
+      "nav": "w-6 h-6",
+      "inline": "w-4 h-4",
+      "hero": "w-8 h-8"
+    },
+    "image_urls": {
+      "onboarding_background": {
+        "url": "https://images.unsplash.com/photo-1762279389020-eeeb69c25813?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzV8MHwxfHNlYXJjaHwxfHxhYnN0cmFjdCUyMGZpbmFuY2lhbCUyMG1hcmtldCUyMGdyYXBoJTIwZGF0YSUyMHZpc3VhbGl6YXRpb258ZW58MHx8fHwxNzc2MjM0NzkxfDA&ixlib=rb-4.1.0&q=85",
+        "description": "Abstract financial data visualization background for onboarding/auth screens."
+      }
+    }
+  },
+  "accessibility": {
+    "contrast": "Adhere strictly to minimum 4.5:1 contrast for text. Use pure white against zinc-900/950 for high legibility.",
+    "color_blindness": "Never rely solely on color to indicate market direction. Always pair Green/Red with Up/Down arrows (\u2191/\u2193) or Plus/Minus signs (+/-).",
+    "test_ids": "All interactive elements, buttons, inputs, and major data points MUST include data-testid attributes (e.g., data-testid='buy-button', data-testid='stock-price')."
+  },
+  "motion": {
+    "page_transition": "Fast, minimal opacity fades. Slide-in from right for new screens.",
+    "data_update": "Flash background of cell to subtle green/red when price ticks up/down, then fade to transparent over 500ms.",
+    "microinteractions": "Provide haptic feedback (if native) or instant visual state changes on button press."
+  },
+  "instructions_to_main_agent": [
+    "This is a data-heavy application. Prioritize information density over generous whitespace.",
+    "Ensure the application structure follows a mobile app paradigm (Bottom Tabs, Stack Navigation, Sticky Headers).",
+    "Use standard HTML tags (div, span) combined with Tailwind for complex data grids, rather than forcing Shadcn Cards everywhere.",
+    "Shadcn forms and inputs should be heavily customized to look flat, border-based (border-zinc-800), and dark-themed.",
+    "Do not use placeholder image URLs. Use the provided Unsplash URL for any required backgrounds.",
+    "Remember to build for .js files. Avoid TypeScript specific syntax.",
+    "All financial figures (prices, volumes, percentages) MUST use the font-mono utility class to utilize the chosen monospace font for vertical alignment.",
+    "Ensure all interactive UI elements have data-testid attributes for testing."
+  ]
+}
