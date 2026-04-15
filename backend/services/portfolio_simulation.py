@@ -11,8 +11,18 @@ import time
 from datetime import datetime, timezone
 
 import numpy as np
-import torch
-import torch.nn as nn
+
+# Lazy torch import — deferred to first use to prevent slow startup
+torch = None
+nn = None
+
+def _ensure_torch():
+    global torch, nn
+    if torch is None:
+        import torch as _torch
+        import torch.nn as _nn
+        torch = _torch
+        nn = _nn
 
 logger = logging.getLogger(__name__)
 
@@ -23,77 +33,77 @@ SEQ_LEN = 30
 TRAIN_EPOCHS = 25
 LEARNING_RATE = 0.003
 
-
-# ═══════════════════════════════════════════════════════════════════
-# MODEL 1: LSTM — Sequential momentum & trend persistence
-# ═══════════════════════════════════════════════════════════════════
-
-class LSTMForecaster(nn.Module):
-    def __init__(self, input_size=1, hidden=32, layers=1):
-        super().__init__()
-        self.lstm = nn.LSTM(input_size, hidden, layers, batch_first=True)
-        self.fc_mu = nn.Linear(hidden, 1)
-        self.fc_log_sigma = nn.Linear(hidden, 1)
-
-    def forward(self, x):
-        out, _ = self.lstm(x)
-        h = out[:, -1, :]
-        return self.fc_mu(h), self.fc_log_sigma(h)
+# Model classes created lazily on first call to _ensure_torch()
+_LSTMForecaster = None
+_AttentionLayer = None
+_AttentionLSTM = None
+_GRUForecaster = None
 
 
-# ═══════════════════════════════════════════════════════════════════
-# MODEL 2: Attention-LSTM — Long-range dependencies (earnings, seasonal)
-# ═══════════════════════════════════════════════════════════════════
+def _define_models():
+    """Define PyTorch model classes. Called once on first use."""
+    global _LSTMForecaster, _AttentionLayer, _AttentionLSTM, _GRUForecaster
+    _ensure_torch()
 
-class AttentionLayer(nn.Module):
-    def __init__(self, hidden):
-        super().__init__()
-        self.query = nn.Linear(hidden, hidden)
-        self.key = nn.Linear(hidden, hidden)
-        self.value = nn.Linear(hidden, hidden)
-        self.scale = math.sqrt(hidden)
+    class LSTMForecaster(nn.Module):
+        def __init__(self, input_size=1, hidden=32, layers=1):
+            super().__init__()
+            self.lstm = nn.LSTM(input_size, hidden, layers, batch_first=True)
+            self.fc_mu = nn.Linear(hidden, 1)
+            self.fc_log_sigma = nn.Linear(hidden, 1)
 
-    def forward(self, x):
-        # x: (batch, seq, hidden)
-        Q = self.query(x)
-        K = self.key(x)
-        V = self.value(x)
-        attn = torch.softmax(Q @ K.transpose(-2, -1) / self.scale, dim=-1)
-        return attn @ V
+        def forward(self, x):
+            out, _ = self.lstm(x)
+            h = out[:, -1, :]
+            return self.fc_mu(h), self.fc_log_sigma(h)
 
+    class AttentionLayer(nn.Module):
+        def __init__(self, hidden):
+            super().__init__()
+            self.query = nn.Linear(hidden, hidden)
+            self.key = nn.Linear(hidden, hidden)
+            self.value = nn.Linear(hidden, hidden)
+            self.scale = math.sqrt(hidden)
 
-class AttentionLSTM(nn.Module):
-    def __init__(self, input_size=1, hidden=32, layers=1):
-        super().__init__()
-        self.lstm = nn.LSTM(input_size, hidden, layers, batch_first=True)
-        self.attention = AttentionLayer(hidden)
-        self.norm = nn.LayerNorm(hidden)
-        self.fc_mu = nn.Linear(hidden, 1)
-        self.fc_log_sigma = nn.Linear(hidden, 1)
+        def forward(self, x):
+            Q = self.query(x)
+            K = self.key(x)
+            V = self.value(x)
+            attn = torch.softmax(Q @ K.transpose(-2, -1) / self.scale, dim=-1)
+            return attn @ V
 
-    def forward(self, x):
-        lstm_out, _ = self.lstm(x)
-        attn_out = self.attention(lstm_out)
-        combined = self.norm(lstm_out + attn_out)
-        h = combined[:, -1, :]
-        return self.fc_mu(h), self.fc_log_sigma(h)
+    class AttentionLSTM(nn.Module):
+        def __init__(self, input_size=1, hidden=32, layers=1):
+            super().__init__()
+            self.lstm = nn.LSTM(input_size, hidden, layers, batch_first=True)
+            self.attention = AttentionLayer(hidden)
+            self.norm = nn.LayerNorm(hidden)
+            self.fc_mu = nn.Linear(hidden, 1)
+            self.fc_log_sigma = nn.Linear(hidden, 1)
 
+        def forward(self, x):
+            lstm_out, _ = self.lstm(x)
+            attn_out = self.attention(lstm_out)
+            combined = self.norm(lstm_out + attn_out)
+            h = combined[:, -1, :]
+            return self.fc_mu(h), self.fc_log_sigma(h)
 
-# ═══════════════════════════════════════════════════════════════════
-# MODEL 3: GRU — Different gradient flow, captures different dynamics
-# ═══════════════════════════════════════════════════════════════════
+    class GRUForecaster(nn.Module):
+        def __init__(self, input_size=1, hidden=32, layers=1):
+            super().__init__()
+            self.gru = nn.GRU(input_size, hidden, layers, batch_first=True)
+            self.fc_mu = nn.Linear(hidden, 1)
+            self.fc_log_sigma = nn.Linear(hidden, 1)
 
-class GRUForecaster(nn.Module):
-    def __init__(self, input_size=1, hidden=32, layers=1):
-        super().__init__()
-        self.gru = nn.GRU(input_size, hidden, layers, batch_first=True)
-        self.fc_mu = nn.Linear(hidden, 1)
-        self.fc_log_sigma = nn.Linear(hidden, 1)
+        def forward(self, x):
+            out, _ = self.gru(x)
+            h = out[:, -1, :]
+            return self.fc_mu(h), self.fc_log_sigma(h)
 
-    def forward(self, x):
-        out, _ = self.gru(x)
-        h = out[:, -1, :]
-        return self.fc_mu(h), self.fc_log_sigma(h)
+    _LSTMForecaster = LSTMForecaster
+    _AttentionLayer = AttentionLayer
+    _AttentionLSTM = AttentionLSTM
+    _GRUForecaster = GRUForecaster
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -128,6 +138,7 @@ def _prepare_sequences(returns, seq_len=SEQ_LEN):
 
 def _train_model(model, X_t, y_t, name, epochs=TRAIN_EPOCHS):
     """Train a single model with Gaussian NLL loss + early stopping."""
+    _ensure_torch()
     optimizer = torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
     model.train()
@@ -158,6 +169,7 @@ def _train_model(model, X_t, y_t, name, epochs=TRAIN_EPOCHS):
 
 def _predict_model(model, last_seq_norm):
     """Get prediction from a trained model."""
+    _ensure_torch()
     model.eval()
     with torch.no_grad():
         mu, log_sigma = model(last_seq_norm)
@@ -199,6 +211,10 @@ def train_ensemble(daily_returns):
             "models": {},
         }
 
+    # Ensure models are defined
+    if _LSTMForecaster is None:
+        _define_models()
+
     # Split: last 20% for validation-weighted ensemble
     split = int(len(X) * 0.8)
     X_train, y_train = torch.from_numpy(X[:split]), torch.from_numpy(y[:split])
@@ -213,9 +229,9 @@ def train_ensemble(daily_returns):
     predictions = {}
 
     model_configs = [
-        ("lstm", LSTMForecaster(1, 32, 1)),
-        ("attention_lstm", AttentionLSTM(1, 32, 1)),
-        ("gru", GRUForecaster(1, 32, 1)),
+        ("lstm", _LSTMForecaster(1, 32, 1)),
+        ("attention_lstm", _AttentionLSTM(1, 32, 1)),
+        ("gru", _GRUForecaster(1, 32, 1)),
     ]
 
     for name, model in model_configs:

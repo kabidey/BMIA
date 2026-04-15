@@ -59,11 +59,14 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.error(f"{name} start failed (non-fatal): {e}")
 
-    # Build vector store eagerly so it's ready before accepting requests
-    try:
-        await guidance_vector_store.build(app.db)
-    except Exception as e:
-        logger.error(f"Vector store initial build failed (non-fatal): {e}")
+    # Build vector store in background (non-blocking — server starts immediately)
+    import asyncio
+    async def _build_vector_store():
+        try:
+            await guidance_vector_store.build(app.db)
+        except Exception as e:
+            logger.error(f"Vector store initial build failed (non-fatal): {e}")
+    asyncio.ensure_future(_build_vector_store())
 
     yield
     app.mongodb_client.close()
