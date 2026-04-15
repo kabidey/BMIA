@@ -7,10 +7,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as Application from 'expo-application';
 import * as LocalAuthentication from 'expo-local-authentication';
+import { useAuth } from '../src/contexts/AuthContext';
 import { Colors, Spacing, FontSize } from '../src/constants/theme';
 
 export default function SettingsScreen() {
   const router = useRouter();
+  const { user, logout } = useAuth();
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [biometricType, setBiometricType] = useState('');
   const [authenticated, setAuthenticated] = useState(false);
@@ -101,6 +103,40 @@ export default function SettingsScreen() {
           </View>
           {authenticated && <Ionicons name="checkmark-circle" size={22} color={Colors.positive} />}
         </TouchableOpacity>
+
+        {/* User Info */}
+        {user && (
+          <>
+            <Text style={styles.sectionTitle}>ACCOUNT</Text>
+            <View style={styles.settingItem}>
+              <View style={styles.settingIcon}>
+                <Ionicons name="person" size={22} color={Colors.brandPrimary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.settingLabel}>{user.name || user.email}</Text>
+                <Text style={styles.settingDesc}>{user.designation} | {user.department}</Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              testID="logout-btn"
+              style={[styles.settingItem, { marginTop: 8 }]}
+              onPress={() => {
+                Alert.alert('Logout', 'Are you sure you want to logout?', [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: 'Logout', style: 'destructive', onPress: () => logout() },
+                ]);
+              }}
+            >
+              <View style={[styles.settingIcon, { backgroundColor: 'rgba(239,68,68,0.1)' }]}>
+                <Ionicons name="log-out" size={22} color={Colors.negative} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.settingLabel, { color: Colors.negative }]}>Logout</Text>
+                <Text style={styles.settingDesc}>Sign out of your account</Text>
+              </View>
+            </TouchableOpacity>
+          </>
+        )}
 
         {/* About */}
         <Text style={styles.sectionTitle}>ABOUT</Text>

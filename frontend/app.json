@@ -46,7 +46,8 @@
         {
           "faceIDPermission": "Secure access to your market data"
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true
