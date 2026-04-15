@@ -21,7 +21,7 @@ Build a Tier-1 Quant Analyst specializing in Indian Equity and Commodity markets
 ### 5-Year Backtest Engine — CAGR, Sharpe, Alpha vs Nifty 50, cached 24h
 
 ### 4-Model ML Ensemble + Monte Carlo Forward Simulation
-- LSTM, Attention-LSTM, GRU, GARCH models
+- LSTM, Attention-LSTM, GRU, GARCH
 - 10K GBM paths, VaR, CVaR, P(Profit), cached 12h
 
 ### Portfolio v3 Rebuild — Manual construct via UI button, daemon with kill switch
@@ -30,82 +30,58 @@ Build a Tier-1 Quant Analyst specializing in Indian Equity and Commodity markets
 
 ### Scanner History — Past God Mode scans cached and browsable
 
-### Dedicated Portfolio Detail Pages — /portfolio/:type with holdings, sector pie, backtest, simulation, walk-forward
+### Dedicated Portfolio Detail Pages — /portfolio/:type
 
 ### Custom Portfolios ("Make Your Own")
-- Create up to 5 custom portfolios, 10 stocks each, Rs 50L capital
-- Stock search autocomplete (2400+ NSE), weight allocation, auto-balance
+- Create up to 5 custom portfolios, 10 stocks each
 - Manual rebalancing with full change tracking
-- 5Y backtest + LSTM/MC simulation per custom portfolio
 
 ### How It Works Documentation — 14-section exhaustive page
 
 ### OrgLens JWT Authentication
 - Email -> OrgLens scan -> Password -> JWT (1h regular, 365d superadmin)
-- Superadmin: somnath.dey@smifs.com
 
 ### Audit Log — Comprehensive tracking with superadmin UI
 
-### DB-driven NSE Holiday Calendar and Market Session Intelligence
+### DB-driven NSE Holiday Calendar
 
 ### 3-Month Rolling RAG Vectorization (Apr 2026)
-- TF-IDF vectorization using sklearn (25,000+ vectors: announcements + PDF chunks)
-- Cosine similarity search for semantic retrieval
+- TF-IDF vectorization (25K+ vectors), cosine similarity search
 - 90-day rolling window with automatic pruning
-- Vector store built on startup, rebuilt after each scrape
 
 ### Guidance Intelligence Briefing (Apr 2026)
-- Auto-generated daily briefing with LLM narrative (GPT-4.1)
-- Surfaces: top 5 critical filings, insider activity (14d), upcoming AGMs/EGMs, recent board meetings
-- Most active stocks by filing volume (7d)
-- Cached in MongoDB (6h), regenerate-on-demand via API
-- Frontend card on Market Cockpit with expandable details, alert badges, refresh button
+- Auto-generated daily briefing with GPT-4.1 narrative
+- Surfaces: critical filings, insider activity, AGMs, board meetings
+- Frontend card on Market Cockpit
 
 ### Two-Stage Guidance AI Pipeline (Apr 2026)
-- GPT-4.1 analyzes RAG data → Gemini 2.5 Flash restructures into polished report
-- Output: Executive Summary, structured sections, Key Takeaways
+- GPT-4.1 analyzes RAG data → Gemini 2.5 Flash restructures output
 
 ### Portfolio Detail Enhancements (Apr 2026)
-- **XIRR Calculation**: Annualized returns via Newton-Raphson (fallback to simple return <7d)
-- **P&L Breakdown**: Unrealized/Realized P&L, win rate, top gainer/loser
-- **Portfolio Rationale**: Investment thesis, risk assessment, data quality notes (open by default)
-- **Rebalance History**: Shows swap count with "no rebalances yet" empty state
-- New endpoint: GET /api/portfolios/xirr/{strategy_type}
+- XIRR Calculation, P&L Breakdown, Win Rate
+- Portfolio Rationale (thesis, risk assessment, data quality)
+- Rebalance History with empty state
+
+### Screener.in-Style Stock Documents (Apr 2026)
+- Per-stock documents view: Announcements, Important, Board Meetings, Insider/SAST, AGM/EGM, Credit Ratings, Annual Reports
+- Tabbed category navigation, search, PDF links
+- BSE external link per stock
+- Endpoint: GET /api/guidance/stock/{symbol}/documents
 
 ## Architecture
 ```
 /app/backend/
   server.py, routes/ (11 modules), daemons/, services/
-  services/vector_store.py — TF-IDF vector store
-  services/guidance_service.py — BSE scraper with 3-month retention
-  services/guidance_ai_service.py — Two-stage RAG pipeline (GPT → Gemini)
-  services/briefing_service.py — Daily intelligence briefing generator
+  services/vector_store.py, briefing_service.py, guidance_ai_service.py
 /app/frontend/src/
-  components/TOTPGate.js (OrgLens Auth Gate)
+  pages/Guidance.js (StockDocuments, DocItem components)
   pages/MarketOverview.js (GuidanceBriefingCard)
-  pages/PortfolioDetail.js (XirrSection, ConstructionNotes enhanced)
-  pages/ (11+ pages)
+  pages/PortfolioDetail.js (XirrSection, ConstructionNotes)
 ```
-
-## Env Vars (Production)
-- TOTP_JWT_SECRET, ORGLENS_API_KEY, MASTER_CODE
-- MONGO_URL, DB_NAME, EMERGENT_LLM_KEY, CORS_ORIGINS
-
-## Key API Endpoints
-- POST /api/auth/verify-orglens — Employee verification
-- POST /api/custom-portfolios — Create manual portfolio
-- GET /api/audit-log — Superadmin only
-- POST /api/portfolios/rebuild-all — Superadmin kill switch
-- GET /api/portfolios/xirr/{strategy_type} — XIRR + P&L breakdown
-- GET /api/guidance/vectors/stats — Vector store statistics
-- POST /api/guidance/vectors/rebuild — Manual vector rebuild
-- POST /api/guidance/ask — AI RAG query (GPT → Gemini pipeline)
-- GET /api/guidance/briefing — Daily intelligence briefing
-- POST /api/guidance/briefing/refresh — Force regenerate briefing
 
 ## Backlog
 - P2: CSV/PDF export for portfolio reports
 - P2: WebSocket/SSE for real-time Market Cockpit
-- Future: Portfolio alerts (push notifications on rebalance/P&L threshold)
+- Future: Portfolio alerts
 - Future: Benchmark comparison dashboard
 - Refactor: Rename TOTPGate.js -> AuthGate.js
