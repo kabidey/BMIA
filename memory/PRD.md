@@ -61,24 +61,34 @@ Build a Tier-1 Quant Analyst specializing in Indian Equity and Commodity markets
 - Cached in MongoDB (6h), regenerate-on-demand via API
 - Frontend card on Market Cockpit with expandable details, alert badges, refresh button
 
+### Two-Stage Guidance AI Pipeline (Apr 2026)
+- GPT-4.1 analyzes RAG data → Gemini 2.5 Flash restructures into polished report
+- Output: Executive Summary, structured sections, Key Takeaways
+
+### Portfolio Detail Enhancements (Apr 2026)
+- **XIRR Calculation**: Annualized returns via Newton-Raphson (fallback to simple return <7d)
+- **P&L Breakdown**: Unrealized/Realized P&L, win rate, top gainer/loser
+- **Portfolio Rationale**: Investment thesis, risk assessment, data quality notes (open by default)
+- **Rebalance History**: Shows swap count with "no rebalances yet" empty state
+- New endpoint: GET /api/portfolios/xirr/{strategy_type}
+
 ## Architecture
 ```
 /app/backend/
   server.py, routes/ (11 modules), daemons/, services/
-  services/vector_store.py — TF-IDF vector store (GuidanceVectorStore)
+  services/vector_store.py — TF-IDF vector store
   services/guidance_service.py — BSE scraper with 3-month retention
-  services/guidance_ai_service.py — RAG pipeline using vector search
+  services/guidance_ai_service.py — Two-stage RAG pipeline (GPT → Gemini)
   services/briefing_service.py — Daily intelligence briefing generator
 /app/frontend/src/
   components/TOTPGate.js (OrgLens Auth Gate)
-  pages/MarketOverview.js (GuidanceBriefingCard component)
+  pages/MarketOverview.js (GuidanceBriefingCard)
+  pages/PortfolioDetail.js (XirrSection, ConstructionNotes enhanced)
   pages/ (11+ pages)
 ```
 
 ## Env Vars (Production)
-- TOTP_JWT_SECRET — JWT signing key
-- ORGLENS_API_KEY — OrgLens employee verification
-- MASTER_CODE — Superadmin master code
+- TOTP_JWT_SECRET, ORGLENS_API_KEY, MASTER_CODE
 - MONGO_URL, DB_NAME, EMERGENT_LLM_KEY, CORS_ORIGINS
 
 ## Key API Endpoints
@@ -86,11 +96,11 @@ Build a Tier-1 Quant Analyst specializing in Indian Equity and Commodity markets
 - POST /api/custom-portfolios — Create manual portfolio
 - GET /api/audit-log — Superadmin only
 - POST /api/portfolios/rebuild-all — Superadmin kill switch
+- GET /api/portfolios/xirr/{strategy_type} — XIRR + P&L breakdown
 - GET /api/guidance/vectors/stats — Vector store statistics
 - POST /api/guidance/vectors/rebuild — Manual vector rebuild
-- POST /api/guidance/prune — Prune old guidance data
-- POST /api/guidance/ask — AI RAG query (vector-powered)
-- GET /api/guidance/briefing — Daily intelligence briefing (cached 6h)
+- POST /api/guidance/ask — AI RAG query (GPT → Gemini pipeline)
+- GET /api/guidance/briefing — Daily intelligence briefing
 - POST /api/guidance/briefing/refresh — Force regenerate briefing
 
 ## Backlog
