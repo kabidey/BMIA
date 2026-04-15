@@ -11,17 +11,8 @@ import time
 from datetime import datetime, timezone
 
 import numpy as np
-
-try:
-    import torch
-    import torch.nn as nn
-    TORCH_AVAILABLE = True
-except ImportError:
-    TORCH_AVAILABLE = False
-    torch = None
-    nn = None
-    logger = logging.getLogger(__name__)
-    logger.warning("SIMULATION: PyTorch not available — ML ensemble disabled, fallback to statistical model")
+import torch
+import torch.nn as nn
 
 logger = logging.getLogger(__name__)
 
@@ -34,16 +25,10 @@ LEARNING_RATE = 0.001
 
 
 # ═══════════════════════════════════════════════════════════════════
-# Neural network models (only defined when PyTorch is available)
+# MODEL 1: LSTM — Sequential momentum & trend persistence
 # ═══════════════════════════════════════════════════════════════════
 
-if TORCH_AVAILABLE:
-
-    # ═══════════════════════════════════════════════════════════════════
-    # MODEL 1: LSTM — Sequential momentum & trend persistence
-    # ═══════════════════════════════════════════════════════════════════
-
-    class LSTMForecaster(nn.Module):
+class LSTMForecaster(nn.Module):
     def __init__(self, input_size=1, hidden=128, layers=2):
         super().__init__()
         self.lstm = nn.LSTM(input_size, hidden, layers, batch_first=True, dropout=0.3)
@@ -56,59 +41,59 @@ if TORCH_AVAILABLE:
         return self.fc_mu(h), self.fc_log_sigma(h)
 
 
-    # ═══════════════════════════════════════════════════════════════════
-    # MODEL 2: Attention-LSTM — Long-range dependencies (earnings, seasonal)
-    # ═══════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
+# MODEL 2: Attention-LSTM — Long-range dependencies (earnings, seasonal)
+# ═══════════════════════════════════════════════════════════════════
 
-    class AttentionLayer(nn.Module):
-        def __init__(self, hidden):
-            super().__init__()
-            self.query = nn.Linear(hidden, hidden)
-            self.key = nn.Linear(hidden, hidden)
-            self.value = nn.Linear(hidden, hidden)
-            self.scale = math.sqrt(hidden)
+class AttentionLayer(nn.Module):
+    def __init__(self, hidden):
+        super().__init__()
+        self.query = nn.Linear(hidden, hidden)
+        self.key = nn.Linear(hidden, hidden)
+        self.value = nn.Linear(hidden, hidden)
+        self.scale = math.sqrt(hidden)
 
-        def forward(self, x):
-            # x: (batch, seq, hidden)
-            Q = self.query(x)
-            K = self.key(x)
-            V = self.value(x)
-            attn = torch.softmax(Q @ K.transpose(-2, -1) / self.scale, dim=-1)
-            return attn @ V
-
-
-    class AttentionLSTM(nn.Module):
-        def __init__(self, input_size=1, hidden=128, layers=2):
-            super().__init__()
-            self.lstm = nn.LSTM(input_size, hidden, layers, batch_first=True, dropout=0.3)
-            self.attention = AttentionLayer(hidden)
-            self.norm = nn.LayerNorm(hidden)
-            self.fc_mu = nn.Linear(hidden, 1)
-            self.fc_log_sigma = nn.Linear(hidden, 1)
-
-        def forward(self, x):
-            lstm_out, _ = self.lstm(x)
-            attn_out = self.attention(lstm_out)
-            combined = self.norm(lstm_out + attn_out)
-            h = combined[:, -1, :]
-            return self.fc_mu(h), self.fc_log_sigma(h)
+    def forward(self, x):
+        # x: (batch, seq, hidden)
+        Q = self.query(x)
+        K = self.key(x)
+        V = self.value(x)
+        attn = torch.softmax(Q @ K.transpose(-2, -1) / self.scale, dim=-1)
+        return attn @ V
 
 
-    # ═══════════════════════════════════════════════════════════════════
-    # MODEL 3: GRU — Different gradient flow, captures different dynamics
-    # ═══════════════════════════════════════════════════════════════════
+class AttentionLSTM(nn.Module):
+    def __init__(self, input_size=1, hidden=128, layers=2):
+        super().__init__()
+        self.lstm = nn.LSTM(input_size, hidden, layers, batch_first=True, dropout=0.3)
+        self.attention = AttentionLayer(hidden)
+        self.norm = nn.LayerNorm(hidden)
+        self.fc_mu = nn.Linear(hidden, 1)
+        self.fc_log_sigma = nn.Linear(hidden, 1)
 
-    class GRUForecaster(nn.Module):
-        def __init__(self, input_size=1, hidden=96, layers=2):
-            super().__init__()
-            self.gru = nn.GRU(input_size, hidden, layers, batch_first=True, dropout=0.3)
-            self.fc_mu = nn.Linear(hidden, 1)
-            self.fc_log_sigma = nn.Linear(hidden, 1)
+    def forward(self, x):
+        lstm_out, _ = self.lstm(x)
+        attn_out = self.attention(lstm_out)
+        combined = self.norm(lstm_out + attn_out)
+        h = combined[:, -1, :]
+        return self.fc_mu(h), self.fc_log_sigma(h)
 
-        def forward(self, x):
-            out, _ = self.gru(x)
-            h = out[:, -1, :]
-            return self.fc_mu(h), self.fc_log_sigma(h)
+
+# ═══════════════════════════════════════════════════════════════════
+# MODEL 3: GRU — Different gradient flow, captures different dynamics
+# ═══════════════════════════════════════════════════════════════════
+
+class GRUForecaster(nn.Module):
+    def __init__(self, input_size=1, hidden=96, layers=2):
+        super().__init__()
+        self.gru = nn.GRU(input_size, hidden, layers, batch_first=True, dropout=0.3)
+        self.fc_mu = nn.Linear(hidden, 1)
+        self.fc_log_sigma = nn.Linear(hidden, 1)
+
+    def forward(self, x):
+        out, _ = self.gru(x)
+        h = out[:, -1, :]
+        return self.fc_mu(h), self.fc_log_sigma(h)
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -182,31 +167,8 @@ def _predict_model(model, last_seq_norm):
 def train_ensemble(daily_returns):
     """Train all 4 models and return ensemble forecast.
     Weights models by inverse validation loss (better model = more weight).
-    Falls back to statistical model when PyTorch is unavailable.
     """
     n = len(daily_returns)
-
-    # Fallback when PyTorch is not available (e.g., deployment with memory limits)
-    if not TORCH_AVAILABLE:
-        mu = float(np.mean(daily_returns))
-        sigma = float(np.std(daily_returns))
-        # Use EWMA for a smarter statistical forecast
-        ewma_span = min(60, n // 2)
-        ewma_weights = np.array([(1 - 2/(ewma_span+1))**i for i in range(min(ewma_span, n))])[::-1]
-        ewma_weights /= ewma_weights.sum()
-        ewma_mu = float(np.sum(daily_returns[-len(ewma_weights):] * ewma_weights))
-        ewma_sigma = float(np.sqrt(np.sum(ewma_weights * (daily_returns[-len(ewma_weights):] - ewma_mu)**2)))
-        return {
-            "method": "statistical_ewma (PyTorch unavailable)",
-            "daily_mu": ewma_mu,
-            "daily_sigma": max(ewma_sigma, sigma * 0.5),
-            "annualized_mu": ewma_mu * TRADING_DAYS_PER_YEAR,
-            "annualized_sigma": max(ewma_sigma, sigma * 0.5) * math.sqrt(TRADING_DAYS_PER_YEAR),
-            "historical_mu": mu,
-            "historical_sigma": sigma,
-            "models": {"ewma": {"status": "statistical_fallback"}},
-        }
-
     if n < SEQ_LEN + 30:
         mu = float(np.mean(daily_returns))
         sigma = float(np.std(daily_returns))
