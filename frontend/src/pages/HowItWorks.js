@@ -41,7 +41,7 @@ function Collapsible({ title, children, defaultOpen = false }) {
 
 function MetricBadge({ label, value, color }) {
   return (
-    <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-mono border ${color || 'border-[hsl(var(--border))] bg-[hsl(var(--surface-2))]'}`}>
+    <div className={`inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md text-[10px] sm:text-xs font-mono border ${color || 'border-[hsl(var(--border))] bg-[hsl(var(--surface-2))]'}`}>
       <span className="text-[hsl(var(--muted-foreground))]">{label}:</span>
       <span className="font-bold">{value}</span>
     </div>
@@ -98,7 +98,7 @@ export default function HowItWorks() {
       </nav>
 
       {/* Main content */}
-      <div className="flex-1 max-w-4xl mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-8 sm:space-y-10">
+      <div className="flex-1 max-w-4xl mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-8 sm:space-y-10 overflow-x-hidden">
         {/* Hero */}
         <div className="relative overflow-hidden rounded-xl sm:rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4 sm:p-8" data-testid="how-hero">
           <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-[hsl(var(--primary))]/5 via-transparent to-cyan-500/3 pointer-events-none" />
@@ -110,11 +110,11 @@ export default function HowItWorks() {
             <h1 className="text-2xl sm:text-3xl font-display font-bold tracking-tight text-[hsl(var(--foreground))]">
               How BMIA Works
             </h1>
-            <p className="text-base text-[hsl(var(--muted-foreground))] mt-2 max-w-2xl leading-relaxed">
-              Bharat Market Intel Agent is an autonomous, emotion-free quantitative analyst for Indian Equity and Commodity markets. It replaces the human-in-the-middle with code-enforced mathematical discipline, 3-model AI consensus, and real-time data pipelines covering 2,400+ NSE stocks.
+            <p className="text-sm sm:text-base text-[hsl(var(--muted-foreground))] mt-2 leading-relaxed break-words">
+              Bharat Market Intel Agent is an autonomous, emotion-free quantitative analyst for Indian Equity and Commodity markets. It replaces the human-in-the-middle with code-enforced mathematical discipline, 3-model AI consensus, and real-time data pipelines covering 2,400+ NSE + BSE Group A stocks.
             </p>
-            <div className="flex flex-wrap gap-2 mt-4">
-              <MetricBadge label="Stocks" value="2,400+" />
+            <div className="flex flex-wrap gap-1.5 sm:gap-2 mt-4">
+              <MetricBadge label="Stocks" value="3,400+" />
               <MetricBadge label="LLMs" value="3 (Consensus)" />
               <MetricBadge label="Strategies" value="6 AI + Custom" />
               <MetricBadge label="Capital" value="₹3 Cr" />

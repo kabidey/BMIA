@@ -11,8 +11,11 @@ export function useApi() {
     setError(null);
     try {
       const url = `${BACKEND_URL}${endpoint}`;
+      // Always include JWT token if available
+      const token = localStorage.getItem('bmia_session_token');
+      const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
       const res = await fetch(url, {
-        headers: { 'Content-Type': 'application/json', ...options.headers },
+        headers: { 'Content-Type': 'application/json', ...authHeaders, ...options.headers },
         ...options,
       });
       if (!res.ok) {

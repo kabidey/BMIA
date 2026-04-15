@@ -21,11 +21,25 @@ SKIP_PATHS = {
 
 async def audit_middleware(request: Request, call_next):
     """Middleware — logs every authenticated API request."""
-    response = await call_next(request)
-
     path = request.url.path
+    
+    # Skip early for non-API or noisy paths
     if path in SKIP_PATHS or not path.startswith("/api"):
-        return response
+        return await call_next(request)
+
+    # Cache body BEFORE call_next for auth endpoints (body can only be read once)
+    cached_body_email = None
+    if path in {"/api/auth/check-email", "/api/auth/login", "/api/auth/set-password"}:
+        try:
+            body_bytes = await request.body()
+            if body_bytes:
+                import json as _json
+                body = _json.loads(body_bytes)
+                cached_body_email = body.get("email", "")
+        except Exception:
+            pass
+
+    response = await call_next(request)
 
     # Extract user from JWT
     auth = request.headers.get("Authorization", "")
@@ -42,7 +56,11 @@ async def audit_middleware(request: Request, call_next):
         except Exception:
             pass
 
-    if not user_email and path not in {"/api/auth/check-email", "/api/auth/login", "/api/auth/set-password"}:
+    # For auth endpoints without JWT, use cached body email
+    if not user_email and cached_body_email:
+        user_email = cached_body_email
+
+    if not user_email and path not in {"/api/auth/check-email", "/api/auth/login", "/api/auth/set-password", "/api/auth/verify-orglens"}:
         return response
 
     # Build log entry
@@ -59,7 +77,6 @@ async def audit_middleware(request: Request, call_next):
         "status_code": response.status_code,
     }
 
-    # Auth events get special logging
     if path == "/api/auth/check-email":
         entry["action"] = "Checked email access"
     elif path == "/api/auth/login":

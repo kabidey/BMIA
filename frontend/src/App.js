@@ -22,6 +22,26 @@ import { Toaster } from './components/ui/sonner';
 function App() {
   React.useEffect(() => {
     document.documentElement.classList.add('dark');
+
+    // Global fetch interceptor: auto-attach JWT to all /api/ requests
+    const originalFetch = window.fetch;
+    window.fetch = function(url, options = {}) {
+      if (typeof url === 'string' && url.includes('/api/')) {
+        const token = localStorage.getItem('bmia_session_token');
+        if (token) {
+          options = {
+            ...options,
+            headers: {
+              ...options.headers,
+              Authorization: `Bearer ${token}`,
+            },
+          };
+        }
+      }
+      return originalFetch.call(window, url, options);
+    };
+
+    return () => { window.fetch = originalFetch; };
   }, []);
 
   return (

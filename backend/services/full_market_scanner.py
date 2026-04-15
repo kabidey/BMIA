@@ -1,6 +1,6 @@
 """
-Full Market Scanner — Scans ALL NSE EQ stocks (2400+) with multi-stage pipeline.
-Stage A: Ingest full NSE bhav copy (2400+ stocks)
+Full Market Scanner — Scans ALL NSE EQ + BSE Group A stocks with multi-stage pipeline.
+Stage A: Ingest full NSE bhav copy (2400+) + BSE Group A (~1000) — merged & deduped
 Stage B: Quantitative pre-filter → ~50-150 candidates
 Stage C: Deep feature computation → ~20-40 shortlist
 Stage D: God Mode LLM ensemble → distilled BUY calls
@@ -26,6 +26,40 @@ def _safe_float(val, default=None):
         return v if not (isinstance(v, float) and v != v) else default  # NaN check
     except (ValueError, TypeError):
         return default
+
+
+def get_bse_universe():
+    """Fetch BSE Group A stocks for broader market coverage."""
+    try:
+        from services.guidance_service import get_stock_universe
+        bse_stocks = get_stock_universe()
+        if not bse_stocks:
+            return []
+
+        universe = []
+        for stock in bse_stocks:
+            sym = stock.get("symbol", "")
+            if not sym:
+                continue
+            universe.append({
+                "symbol": f"{sym}.NS",
+                "ticker": sym,
+                "close": None,
+                "prev_close": None,
+                "change_pct": 0,
+                "open": None,
+                "high": None,
+                "low": None,
+                "volume": 0,
+                "traded_value": 0,
+                "range_pct": 0,
+                "source": "BSE",
+            })
+        logger.info(f"BSE universe: {len(universe)} Group A stocks")
+        return universe
+    except Exception as e:
+        logger.warning(f"BSE universe fetch error: {e}")
+        return []
 
 
 def get_nse_universe(trade_date=None):
@@ -86,12 +120,32 @@ def get_nse_universe(trade_date=None):
             "volume": int(volume),
             "traded_value": traded_value,
             "range_pct": range_pct,
+            "source": "NSE",
         })
 
     _bhav_cache["data"] = universe
     _bhav_cache["date"] = today.isoformat()
     logger.info(f"NSE universe: {len(universe)} EQ stocks")
     return universe
+
+
+def get_combined_universe():
+    """Merge NSE bhav copy + BSE Group A, deduped by ticker symbol."""
+    nse = get_nse_universe()
+    bse = get_bse_universe()
+
+    # NSE data has OHLCV — it's primary. BSE fills gaps.
+    seen_tickers = {s["ticker"] for s in nse}
+    merged = list(nse)
+    bse_added = 0
+    for s in bse:
+        if s["ticker"] not in seen_tickers:
+            merged.append(s)
+            seen_tickers.add(s["ticker"])
+            bse_added += 1
+
+    logger.info(f"Combined universe: {len(nse)} NSE + {bse_added} BSE-only = {len(merged)} total")
+    return merged
 
 
 def prefilter_candidates(universe, max_candidates=100):
@@ -102,48 +156,60 @@ def prefilter_candidates(universe, max_candidates=100):
     - High trading activity (volume/value)
     - Range expansion (big moves)
     - Not penny stocks
+    BSE-only stocks without OHLCV get a baseline score and are fetched in Stage C.
     """
     if not universe:
         return []
 
-    # Basic liquidity filter: traded value > 50 lakhs, price > 10
-    liquid = [s for s in universe if s["traded_value"] > 5_000_000 and s["close"] > 10]
-    logger.info(f"After liquidity filter: {len(liquid)} stocks (from {len(universe)})")
+    nse_stocks = []
+    bse_only_stocks = []
 
-    # Score each stock
+    for s in universe:
+        if s.get("close") and s.get("traded_value"):
+            nse_stocks.append(s)
+        else:
+            bse_only_stocks.append(s)
+
+    # Basic liquidity filter for NSE stocks: traded value > 50 lakhs, price > 10
+    liquid = [s for s in nse_stocks if s["traded_value"] > 5_000_000 and s["close"] > 10]
+    logger.info(f"After liquidity filter: {len(liquid)} NSE stocks (from {len(nse_stocks)}), {len(bse_only_stocks)} BSE-only")
+
+    # Score each NSE stock
     for s in liquid:
         score = 0.0
-
-        # Positive momentum (change_pct > 0)
         if s["change_pct"] > 0:
-            score += min(s["change_pct"] * 2, 15)  # cap at 15 pts for momentum
+            score += min(s["change_pct"] * 2, 15)
         elif s["change_pct"] < -3:
-            score += 3  # oversold bounce candidates get some points too
-
-        # Range expansion (high range_pct means big move = institutional activity)
+            score += 3
         if s["range_pct"] > 3:
             score += min(s["range_pct"], 10)
-
-        # Volume - higher traded value means more institutional interest
-        if s["traded_value"] > 1e9:  # >100 Cr
+        if s["traded_value"] > 1e9:
             score += 8
-        elif s["traded_value"] > 5e8:  # >50 Cr
+        elif s["traded_value"] > 5e8:
             score += 5
-        elif s["traded_value"] > 1e8:  # >10 Cr
+        elif s["traded_value"] > 1e8:
             score += 3
-
-        # Price action - close near high (strength)
         if s["high"] and s["low"] and s["high"] != s["low"]:
             close_position = (s["close"] - s["low"]) / (s["high"] - s["low"])
-            if close_position > 0.7:  # Closed in top 30% of range
+            if close_position > 0.7:
                 score += 5
-
         s["prefilter_score"] = round(score, 2)
 
-    # Sort by score and take top N
+    # Sort NSE by score
     liquid.sort(key=lambda x: x["prefilter_score"], reverse=True)
-    candidates = liquid[:max_candidates]
-    logger.info(f"Pre-filter top {len(candidates)} candidates selected")
+
+    # Take top NSE candidates + a few BSE-only (which will be evaluated in Stage C)
+    bse_slots = max(max_candidates // 5, 5)
+    candidates = liquid[:max_candidates - bse_slots]
+
+    # Add BSE-only stocks (random sample — they'll get real data in Stage C)
+    import random
+    bse_sample = random.sample(bse_only_stocks, min(bse_slots, len(bse_only_stocks))) if bse_only_stocks else []
+    for s in bse_sample:
+        s["prefilter_score"] = 5.0  # baseline
+    candidates.extend(bse_sample)
+
+    logger.info(f"Pre-filter: {len(candidates)} candidates ({len(candidates) - len(bse_sample)} NSE + {len(bse_sample)} BSE-only)")
     return candidates
 
 
@@ -238,6 +304,7 @@ async def god_mode_scan(market="NSE", max_candidates=80, max_shortlist=15, top_n
     """
     Full pipeline: Universe → Prefilter → Shortlist → God Mode → Ranked BUY calls.
     HARDENED: 3-minute hard cap, sanitized data, factor scores attached.
+    Scans both NSE (2400+) and BSE Group A (~1000) stocks merged & deduped.
     """
     import asyncio
     from services.intelligence_engine import generate_god_mode_batch_ranking
@@ -248,13 +315,22 @@ async def god_mode_scan(market="NSE", max_candidates=80, max_shortlist=15, top_n
         "started_at": datetime.now(timezone.utc).isoformat(),
     }
 
-    # Stage A: Universe
-    logger.info("GOD SCAN Stage A: Loading universe...")
-    universe = get_nse_universe()
+    # Stage A: Combined Universe (NSE + BSE)
+    logger.info("GOD SCAN Stage A: Loading NSE + BSE universe...")
+    universe = get_combined_universe()
     pipeline_status["universe_size"] = len(universe)
+    pipeline_status["nse_count"] = sum(1 for s in universe if s.get("source") == "NSE")
+    pipeline_status["bse_only_count"] = sum(1 for s in universe if s.get("source") == "BSE")
 
     if not universe:
-        return {"error": "Failed to load universe", "pipeline": pipeline_status}
+        # Retry with just NSE
+        logger.warning("GOD SCAN: Combined universe empty, retrying NSE only...")
+        universe = get_nse_universe()
+        pipeline_status["universe_size"] = len(universe)
+        pipeline_status["retry"] = "nse_only"
+
+    if not universe:
+        return {"error": "Failed to load universe from both NSE and BSE. Market may be closed.", "pipeline": pipeline_status}
 
     # Stage B: Prefilter
     logger.info("GOD SCAN Stage B: Pre-filtering...")

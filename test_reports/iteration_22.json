@@ -1,0 +1,64 @@
+{
+  "summary": "Iteration 22: Hardening fixes testing complete. Fixed critical bug in audit log where auth endpoints showed 'anonymous' instead of user email. All 7 backend tests passed (100%). All 8 frontend UI elements verified working correctly.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "GET /api/health returns ok status",
+    "GET /api/guidance/vectors/stats returns ready=true with 25,401 vectors",
+    "GET /api/portfolios returns 6 portfolios (all types present)",
+    "POST /api/auth/check-email captures user email in audit log",
+    "POST /api/auth/login captures user email in audit log",
+    "GET /api/audit-log shows user emails (not all anonymous)",
+    "GET /api/batch/scan-history returns valid response",
+    "Frontend mobile (390x844): How It Works page - no horizontal overflow, text wraps properly",
+    "Frontend mobile (390x844): How It Works page - badges wrap correctly (Stocks: 3,400+)",
+    "Frontend mobile (390x844): Market Cockpit - briefing card visible",
+    "Frontend mobile (390x844): BatchScanner page - '3400+ NSE + BSE stocks' text visible",
+    "Frontend desktop: How It Works page - 'Stocks: 3,400+' badge visible",
+    "Frontend desktop: BatchScanner page - '3400+ NSE + BSE stocks' text visible",
+    "Frontend desktop: Audit Log page accessible with 115 entries showing user emails"
+  ],
+  "bugs_fixed": [
+    {
+      "file": "/app/backend/routes/audit_log.py",
+      "issue": "Audit log showed 'anonymous' for auth endpoints (/api/auth/check-email, /api/auth/login) instead of user email",
+      "root_cause": "Request body was being read AFTER call_next() consumed it. In FastAPI/Starlette, once the body is consumed by the route handler, it cannot be read again in middleware.",
+      "fix": "Cache the request body BEFORE calling call_next() for auth endpoints. The email is now extracted from the cached body and used in the audit log entry."
+    }
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration22_hardening.py",
+    "/app/test_reports/pytest/iteration22_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/backend/routes/audit_log.py",
+    "/app/backend/tests/test_iteration22_hardening.py"
+  ],
+  "success_rate": {
+    "backend": "100% (7/7 tests passed)",
+    "frontend": "100% (8/8 UI elements verified)"
+  },
+  "test_credentials": "somnath.dey@smifs.com / admin123 (OrgLens auth flow)",
+  "seed_data_creation": "None - using existing data",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 22 verified the hardening fixes: (1) Audit log now correctly captures user email from request body for auth endpoints - fixed by caching body BEFORE call_next(). (2) God Mode scanner text updated to '3400+ NSE + BSE stocks' on BatchScanner page. (3) How It Works page is mobile responsive with no horizontal overflow. (4) Market Cockpit briefing card visible on mobile. (5) All 6 portfolios returned by /api/portfolios. (6) Guidance vectors ready with 25,401 vectors.",
+  "rca_of_the_issue": {
+    "issue": "Audit log showing 'anonymous' for auth endpoints",
+    "root_cause": "In FastAPI/Starlette middleware, the request body can only be read once. The code was attempting to read the body AFTER call_next(request) had already consumed it, resulting in an empty body and no email extraction.",
+    "reproduction_steps": [
+      "1. POST /api/auth/check-email with body {\"email\":\"test@example.com\"}",
+      "2. Check audit log - entry shows 'anonymous' instead of 'test@example.com'"
+    ],
+    "mitigation": "Cache the request body BEFORE calling call_next() for auth endpoints. The cached email is then used when building the audit log entry."
+  }
+}

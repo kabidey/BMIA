@@ -48,7 +48,7 @@ function PipelineTracker({ pipeline, isRunning }) {
   if (!pipeline && !isRunning) return null;
 
   const stages = [
-    { key: 'universe', label: 'Universe', desc: 'Loading 2400+ NSE stocks', icon: Layers },
+    { key: 'universe', label: 'Universe', desc: 'Loading 3400+ NSE + BSE stocks', icon: Layers },
     { key: 'prefilter', label: 'Pre-Filter', desc: 'Quantitative screening', icon: Filter },
     { key: 'shortlist', label: 'Shortlist', desc: 'Deep feature computation', icon: BarChart3 },
     { key: 'god_mode', label: 'God Mode', desc: '3-LLM ensemble analysis', icon: Sparkles },
@@ -343,7 +343,7 @@ export default function BatchScanner() {
                 God Mode Scanner
               </h1>
               <p className="text-sm text-[hsl(var(--muted-foreground))] mt-0.5">
-                Full-market scan &bull; 2400+ NSE stocks &bull; 3-LLM ensemble consensus &bull; Distilled BUY calls
+                Full-market scan &bull; 3400+ NSE + BSE stocks &bull; 3-LLM ensemble consensus &bull; Distilled BUY calls
               </p>
             </div>
           </div>
@@ -398,7 +398,7 @@ export default function BatchScanner() {
               <div className="text-center">
                 <p className="text-base font-display font-semibold">God Mode Activated</p>
                 <p className="text-xs text-[hsl(var(--muted-foreground))] mt-1">
-                  Scanning full NSE universe, filtering candidates, running 3-LLM ensemble...
+                  Scanning full NSE + BSE universe, filtering candidates, running 3-LLM ensemble...
                 </p>
               </div>
               <div className="flex gap-3">
@@ -555,7 +555,7 @@ export default function BatchScanner() {
           <CardContent className="p-12 text-center">
             <Sparkles className="w-16 h-16 text-[hsl(var(--muted-foreground))] mx-auto mb-4 opacity-20" />
             <h3 className="font-display text-xl font-semibold mb-2">Ready to Scan</h3>
-            <p className="text-sm text-[hsl(var(--muted-foreground))]">Click Launch God Scan to analyze the full NSE universe</p>
+            <p className="text-sm text-[hsl(var(--muted-foreground))]">Click Launch God Scan to analyze the full NSE + BSE universe</p>
           </CardContent>
         </Card>
       )}
@@ -567,7 +567,7 @@ export default function BatchScanner() {
       <div className="bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))] rounded-lg p-4" data-testid="sebi-disclaimer-alert">
         <p className="text-xs text-[hsl(var(--muted-foreground))] leading-relaxed">
           <strong>Disclaimer:</strong> God Mode Scanner uses 3 independent AI models (GPT-4.1, Claude Sonnet, Gemini Flash) to create consensus-driven analysis.
-          Scans 2400+ NSE EQ stocks through a quantitative pre-filter before AI analysis.
+          Scans 3400+ NSE + BSE Group A stocks through a quantitative pre-filter before AI analysis.
           This is NOT investment advice. Past performance does not guarantee future results.
           Always conduct your own research and consult a SEBI-registered financial advisor.
         </p>
