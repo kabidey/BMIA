@@ -1,0 +1,56 @@
+{
+  "summary": "Iteration 21: Complete testing of Screener.in-style Stock Documents feature. All 7 backend tests passed (100%). All 10 frontend UI elements verified working correctly. The feature shows categorized documents for each stock with tabs for Announcements, Important, Board Meetings, Insider/SAST, AGM/EGM, Credit Ratings, and Annual Reports.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Guidance page category dropdown",
+        "issues": ["Console warning: 'In HTML, <span> cannot be a child of <option>' - minor hydration warning from React, does not affect functionality"]
+      }
+    ]
+  },
+  "passed_tests": [
+    "GET /api/guidance/stock/HDFCBANK/documents - returns 200 with categorized documents (24 total)",
+    "GET /api/guidance/stock/HDFCBANK/documents - returns stock_name, scrip_code, bse_link, all category arrays",
+    "GET /api/guidance/stock/RELIANCE/documents - returns 200 with categorized docs (8 total)",
+    "GET /api/guidance/stock/NONEXISTENT/documents - returns 200 with total=0 gracefully",
+    "GET /api/guidance/stock/hdfcbank/documents - case-insensitive lookup works",
+    "GET /api/guidance/stock/TCS/documents - returns valid response",
+    "GET /api/guidance/stocks - returns list of 663 stocks",
+    "Frontend: Guidance page loads with data-testid='guidance-page'",
+    "Frontend: Stock filter dropdown opens with data-testid='stock-dropdown'",
+    "Frontend: Stock search input filters stocks correctly",
+    "Frontend: Selecting HDFCBANK shows StockDocuments view with data-testid='stock-documents-view'",
+    "Frontend: Stock docs title shows 'HDFC Bank Ltd'",
+    "Frontend: Badges show 'HDFCBANK' and 'BSE: 500180'",
+    "Frontend: Tabbed categories visible with data-testid='stock-docs-tabs' (Announcements 18, Important 5, Board Meetings 2, Insider/SAST 1, AGM/EGM 2, Credit Ratings 1)",
+    "Frontend: Search bar filters documents - searching 'ESG' shows 1 result",
+    "Frontend: Tab switching works - Board Meetings tab shows 2 documents",
+    "Frontend: 'Back to all stocks' button returns to main guidance view"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration21_stock_documents.py",
+    "/app/test_reports/pytest/iteration21_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Minor: Console warning about <span> inside <option> in category dropdown - cosmetic issue, does not affect functionality"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration21_stock_documents.py"
+  ],
+  "success_rate": {
+    "backend": "100% (7/7 tests passed)",
+    "frontend": "100% (10/10 UI elements verified)"
+  },
+  "test_credentials": "somnath.dey@smifs.com / admin123 (OrgLens auth flow)",
+  "seed_data_creation": "None - using existing guidance data (2,488 filings, 663 stocks)",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 21 verified the Screener.in-style Stock Documents feature. Key findings: (1) GET /api/guidance/stock/{symbol}/documents returns categorized documents with announcements, important, annual_reports, credit_ratings, board_meetings, results, insider_activity, agm_egm, corporate_actions arrays. (2) Response includes stock_name, scrip_code, total count, and bse_link. (3) Frontend StockDocuments component shows tabbed view with document counts per category. (4) Search filters documents within the stock. (5) Back button returns to main guidance view. (6) Stocks with data include HDFCBANK (24 docs), RELIANCE (8 docs), TCS, INFY, etc. (7) 3-month retention window applies to all documents."
+}

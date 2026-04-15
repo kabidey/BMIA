@@ -148,3 +148,99 @@ async def refresh_briefing(request: Request):
     """Force-regenerate the daily briefing."""
     db = request.app.db
     return await generate_daily_briefing(db)
+
+
+@router.get("/guidance/stock/{symbol}/documents")
+async def stock_documents(symbol: str, request: Request):
+    """Get Screener.in-style categorized documents for a stock."""
+    from datetime import datetime, timedelta, timezone
+    IST = timezone(timedelta(hours=5, minutes=30))
+    cutoff = (datetime.now(IST) - timedelta(days=90)).isoformat()
+
+    db = request.app.db
+
+    # Fetch all docs for this stock in the 3-month window
+    docs = await db.guidance.find(
+        {
+            "$or": [
+                {"stock_symbol": {"$regex": f"^{symbol}$", "$options": "i"}},
+                {"stock_name": {"$regex": symbol, "$options": "i"}},
+                {"scrip_code": symbol},
+            ],
+            "scraped_at": {"$gte": cutoff},
+        },
+        {"_id": 0}
+    ).sort("news_date", -1).to_list(length=500)
+
+    if not docs:
+        return {"symbol": symbol, "total": 0, "announcements": [], "annual_reports": [],
+                "credit_ratings": [], "board_meetings": [], "results": [], "insider_activity": [],
+                "agm_egm": [], "corporate_actions": []}
+
+    # Categorize
+    announcements_recent = []
+    announcements_important = []
+    annual_reports = []
+    credit_ratings = []
+    board_meetings = []
+    results = []
+    insider_activity = []
+    agm_egm = []
+    corporate_actions = []
+
+    for d in docs:
+        cat = (d.get("category") or "").lower()
+        headline = (d.get("headline") or "").lower()
+        item = {
+            "news_id": d.get("news_id", ""),
+            "headline": d.get("headline", ""),
+            "category": d.get("category", "General"),
+            "news_date": d.get("news_date", ""),
+            "pdf_url": d.get("pdf_url"),
+            "critical": d.get("critical", False),
+            "more_text": (d.get("more_text", "") or "")[:300],
+            "stock_symbol": d.get("stock_symbol", ""),
+            "stock_name": d.get("stock_name", ""),
+        }
+
+        # Sort into categories (Screener.in style)
+        if "annual report" in headline or "annual report" in cat:
+            annual_reports.append(item)
+        elif "credit rating" in headline or "rating" in cat or "credit" in headline:
+            credit_ratings.append(item)
+        elif "board meeting" in cat:
+            board_meetings.append(item)
+        elif "result" in cat:
+            results.append(item)
+        elif "insider" in cat or "sast" in cat:
+            insider_activity.append(item)
+        elif "agm" in cat or "egm" in cat:
+            agm_egm.append(item)
+        elif "corp" in cat and "action" in cat:
+            corporate_actions.append(item)
+        else:
+            announcements_recent.append(item)
+
+        # Mark important: critical filings + results + insider
+        if d.get("critical") or "result" in cat or "insider" in cat or "sast" in cat:
+            announcements_important.append(item)
+
+    stock_name = docs[0].get("stock_name", "") if docs else ""
+    scrip_code = docs[0].get("scrip_code", "") if docs else ""
+
+    return {
+        "symbol": symbol,
+        "stock_name": stock_name,
+        "scrip_code": scrip_code,
+        "total": len(docs),
+        "announcements": announcements_recent[:50],
+        "important": announcements_important[:20],
+        "annual_reports": annual_reports[:15],
+        "credit_ratings": credit_ratings[:10],
+        "board_meetings": board_meetings[:15],
+        "results": results[:10],
+        "insider_activity": insider_activity[:15],
+        "agm_egm": agm_egm[:10],
+        "corporate_actions": corporate_actions[:10],
+        "bse_link": f"https://www.bseindia.com/stock-share-price/x/{symbol}/{scrip_code}/corp-announcements/" if scrip_code else None,
+    }

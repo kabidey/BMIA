@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Search, FileText, Download, RefreshCw, Filter, ChevronLeft, ChevronRight, AlertCircle, Database, MessageSquare, Send, X, Sparkles, BookOpen, ExternalLink, Loader2 } from 'lucide-react';
+import { Search, FileText, Download, RefreshCw, Filter, ChevronLeft, ChevronRight, AlertCircle, Database, MessageSquare, Send, X, Sparkles, BookOpen, ExternalLink, Loader2, ArrowLeft, AlertTriangle, Users, CalendarDays, BarChart3, Star, Clock, Briefcase } from 'lucide-react';
 import { Card, CardContent } from '../components/ui/card';
+import { Badge } from '../components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
+import { ScrollArea } from '../components/ui/scroll-area';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -216,6 +219,193 @@ function AIChatPanel({ onClose }) {
 }
 
 
+// ── Document Item Row ──────────────────────────────────────────────────────
+function DocItem({ item, compact = false }) {
+  const formatDate = (d) => {
+    if (!d) return '';
+    try {
+      const dt = new Date(d);
+      const now = new Date();
+      const diffMs = now - dt;
+      const diffH = diffMs / (1000 * 60 * 60);
+      if (diffH < 1) return `${Math.floor(diffMs / 60000)}m`;
+      if (diffH < 24) return `${Math.floor(diffH)}h`;
+      if (diffH < 48) return '1d';
+      if (diffH < 168) return `${Math.floor(diffH / 24)}d`;
+      return dt.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: diffH > 8760 ? 'numeric' : undefined });
+    } catch { return d; }
+  };
+
+  return (
+    <a href={item.pdf_url || '#'} target={item.pdf_url ? '_blank' : undefined} rel="noopener noreferrer"
+      className={`group flex items-start gap-3 px-3 py-2.5 rounded-lg border transition-colors hover:border-[hsl(var(--primary))]/30 ${
+        item.critical ? 'bg-red-500/5 border-red-500/20' : 'bg-[hsl(var(--card))] border-[hsl(var(--border))]/50'
+      }`}
+      data-testid={`doc-item-${item.news_id}`}>
+      <FileText className={`w-4 h-4 mt-0.5 flex-shrink-0 ${item.pdf_url ? 'text-[hsl(var(--primary))]' : 'text-[hsl(var(--muted-foreground))]'}`} />
+      <div className="flex-1 min-w-0">
+        <p className={`${compact ? 'text-xs' : 'text-sm'} text-[hsl(var(--foreground))] leading-snug`}>
+          {item.headline}
+        </p>
+        {!compact && item.more_text && (
+          <p className="text-[11px] text-[hsl(var(--muted-foreground))] mt-1 line-clamp-2">{item.more_text}</p>
+        )}
+      </div>
+      <div className="flex items-center gap-2 flex-shrink-0">
+        <span className="text-[10px] text-[hsl(var(--muted-foreground))] font-mono whitespace-nowrap">
+          {formatDate(item.news_date)}
+        </span>
+        {item.pdf_url && (
+          <Download className="w-3.5 h-3.5 text-[hsl(var(--primary))] opacity-0 group-hover:opacity-100 transition-opacity" />
+        )}
+      </div>
+    </a>
+  );
+}
+
+// ── Stock Documents View (Screener.in Style) ───────────────────────────────
+function StockDocuments({ symbol, stockName, onBack }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  useEffect(() => {
+    setLoading(true);
+    fetch(`${BACKEND_URL}/api/guidance/stock/${encodeURIComponent(symbol)}/documents`)
+      .then(r => r.json())
+      .then(d => { setData(d); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [symbol]);
+
+  if (loading) {
+    return (
+      <div className="space-y-4 p-4">
+        <div className="flex items-center gap-3">
+          <button onClick={onBack} className="p-1.5 rounded hover:bg-[hsl(var(--surface-2))]"><ArrowLeft className="w-4 h-4" /></button>
+          <div className="h-6 w-48 bg-[hsl(var(--surface-2))] animate-pulse rounded" />
+        </div>
+        {[...Array(6)].map((_, i) => <div key={i} className="h-16 bg-[hsl(var(--surface-2))] animate-pulse rounded-lg" />)}
+      </div>
+    );
+  }
+
+  if (!data || data.total === 0) {
+    return (
+      <div className="p-4 space-y-4">
+        <button onClick={onBack} className="flex items-center gap-1 text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]">
+          <ArrowLeft className="w-3.5 h-3.5" /> Back to all stocks
+        </button>
+        <div className="text-center py-12">
+          <AlertCircle className="w-10 h-10 mx-auto mb-3 text-[hsl(var(--muted-foreground))]" />
+          <p className="text-sm text-[hsl(var(--muted-foreground))]">No documents found for {symbol}</p>
+        </div>
+      </div>
+    );
+  }
+
+  const allDocs = [
+    ...(data.announcements || []),
+    ...(data.board_meetings || []),
+    ...(data.results || []),
+    ...(data.insider_activity || []),
+    ...(data.agm_egm || []),
+    ...(data.corporate_actions || []),
+    ...(data.annual_reports || []),
+    ...(data.credit_ratings || []),
+  ];
+  const filtered = searchTerm
+    ? allDocs.filter(d => (d.headline || '').toLowerCase().includes(searchTerm.toLowerCase()))
+    : null;
+
+  const sections = [
+    { key: 'announcements', label: 'Announcements', icon: Clock, items: data.announcements, color: 'text-[hsl(var(--foreground))]' },
+    { key: 'important', label: 'Important', icon: Star, items: data.important, color: 'text-amber-400' },
+    { key: 'results', label: 'Results', icon: BarChart3, items: data.results, color: 'text-emerald-400' },
+    { key: 'board_meetings', label: 'Board Meetings', icon: Briefcase, items: data.board_meetings, color: 'text-blue-400' },
+    { key: 'insider_activity', label: 'Insider / SAST', icon: Users, items: data.insider_activity, color: 'text-red-400' },
+    { key: 'agm_egm', label: 'AGM / EGM', icon: CalendarDays, items: data.agm_egm, color: 'text-purple-400' },
+    { key: 'corporate_actions', label: 'Corp. Actions', icon: AlertTriangle, items: data.corporate_actions, color: 'text-cyan-400' },
+    { key: 'credit_ratings', label: 'Credit Ratings', icon: Star, items: data.credit_ratings, color: 'text-amber-400' },
+    { key: 'annual_reports', label: 'Annual Reports', icon: BookOpen, items: data.annual_reports, color: 'text-[hsl(var(--primary))]' },
+  ];
+
+  return (
+    <div className="space-y-5" data-testid="stock-documents-view">
+      {/* Header */}
+      <div>
+        <button onClick={onBack} className="flex items-center gap-1 text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] mb-3" data-testid="stock-docs-back">
+          <ArrowLeft className="w-3.5 h-3.5" /> Back to all stocks
+        </button>
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <h2 className="text-xl font-display font-bold text-[hsl(var(--foreground))]" data-testid="stock-docs-title">
+              {data.stock_name || symbol}
+            </h2>
+            <div className="flex items-center gap-2 mt-1">
+              <Badge variant="outline" className="text-xs font-mono">{symbol}</Badge>
+              {data.scrip_code && <Badge variant="outline" className="text-[10px]">BSE: {data.scrip_code}</Badge>}
+              <span className="text-xs text-[hsl(var(--muted-foreground))]">{data.total} documents (3-month window)</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {data.bse_link && (
+              <a href={data.bse_link} target="_blank" rel="noopener noreferrer"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+                data-testid="bse-link">
+                <ExternalLink className="w-3 h-3" /> All on BSE
+              </a>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Search */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[hsl(var(--muted-foreground))]" />
+        <input type="text" placeholder="Search all documents..." value={searchTerm}
+          onChange={e => setSearchTerm(e.target.value)}
+          className="w-full pl-10 pr-3 py-2.5 rounded-lg bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))] text-sm text-[hsl(var(--foreground))]"
+          data-testid="stock-docs-search" />
+      </div>
+
+      {/* Search results */}
+      {filtered ? (
+        <div className="space-y-2">
+          <p className="text-xs text-[hsl(var(--muted-foreground))]">{filtered.length} results for "{searchTerm}"</p>
+          {filtered.slice(0, 30).map((item, i) => <DocItem key={item.news_id || i} item={item} />)}
+          {filtered.length === 0 && <p className="text-sm text-[hsl(var(--muted-foreground))] text-center py-4">No matching documents</p>}
+        </div>
+      ) : (
+        /* Tabbed sections — Screener.in style */
+        <Tabs defaultValue="announcements" className="w-full" data-testid="stock-docs-tabs">
+          <TabsList className="w-full flex flex-wrap h-auto gap-1 bg-[hsl(var(--surface-2))] p-1 rounded-lg">
+            {sections.filter(s => s.items?.length > 0).map(s => (
+              <TabsTrigger key={s.key} value={s.key} className="flex items-center gap-1.5 text-xs px-3 py-1.5 data-[state=active]:bg-[hsl(var(--card))] data-[state=active]:shadow-sm rounded-md"
+                data-testid={`tab-${s.key}`}>
+                <s.icon className={`w-3 h-3 ${s.color}`} />
+                {s.label}
+                <span className="text-[10px] opacity-60 font-mono">{s.items.length}</span>
+              </TabsTrigger>
+            ))}
+          </TabsList>
+
+          {sections.filter(s => s.items?.length > 0).map(s => (
+            <TabsContent key={s.key} value={s.key} className="mt-3" data-testid={`panel-${s.key}`}>
+              <ScrollArea className="max-h-[600px]">
+                <div className="space-y-1.5">
+                  {s.items.map((item, i) => <DocItem key={item.news_id || i} item={item} compact={s.key === 'annual_reports'} />)}
+                </div>
+              </ScrollArea>
+            </TabsContent>
+          ))}
+        </Tabs>
+      )}
+    </div>
+  );
+}
+
+
+
 // ── Main Guidance Page ─────────────────────────────────────────────────────
 export default function Guidance() {
   const [items, setItems] = useState([]);
@@ -336,6 +526,15 @@ export default function Guidance() {
     <div className="flex h-[calc(100vh-56px)]" data-testid="guidance-page">
       {/* Main Content */}
       <div className={`flex-1 overflow-y-auto p-4 sm:p-6 space-y-5 max-w-[1920px] ${chatOpen ? 'hidden lg:block' : ''}`}>
+        {/* Show Stock Documents view when a stock is selected */}
+        {selectedStock ? (
+          <StockDocuments
+            symbol={selectedStock.symbol}
+            stockName={selectedStock.name}
+            onBack={() => { setSelectedStock(null); clearFilters(); }}
+          />
+        ) : (
+        <>
         {/* Header */}
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
@@ -519,6 +718,8 @@ export default function Guidance() {
             <span className="text-sm text-[hsl(var(--muted-foreground))] px-3">Page {page}/{totalPages}</span>
             <button onClick={() => fetchItems(page + 1)} disabled={page >= totalPages} className="px-3 py-1.5 rounded text-sm bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))] disabled:opacity-30">Next</button>
           </div>
+        )}
+        </>
         )}
       </div>
 
