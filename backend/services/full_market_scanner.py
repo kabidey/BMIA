@@ -358,16 +358,16 @@ async def god_mode_scan(market="NSE", max_candidates=80, max_shortlist=15, top_n
         except Exception:
             s["factor_score"] = None
 
-    # Stage D: God Mode ensemble (with 120s hard timeout)
+    # Stage D: God Mode ensemble (with 180s hard timeout)
     logger.info(f"GOD SCAN Stage D: God Mode ensemble on {len(shortlist)} stocks...")
     pipeline_status["stage"] = "god_mode"
     try:
         ranking_result = await asyncio.wait_for(
             generate_god_mode_batch_ranking(shortlist),
-            timeout=120,
+            timeout=180,
         )
     except asyncio.TimeoutError:
-        logger.error("GOD SCAN Stage D: LLM ensemble timed out after 120s")
+        logger.error("GOD SCAN Stage D: LLM ensemble timed out after 180s")
         ranking_result = {"error": "LLM ensemble timed out. Try again."}
 
     pipeline_status["stage"] = "complete"

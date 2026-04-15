@@ -19,9 +19,9 @@ logger = logging.getLogger(__name__)
 TRADING_DAYS_PER_YEAR = 252
 SIMULATION_HORIZON_DAYS = 252
 N_MONTE_CARLO_PATHS = 10000
-SEQ_LEN = 60
-TRAIN_EPOCHS = 120
-LEARNING_RATE = 0.001
+SEQ_LEN = 30
+TRAIN_EPOCHS = 25
+LEARNING_RATE = 0.003
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -29,9 +29,9 @@ LEARNING_RATE = 0.001
 # ═══════════════════════════════════════════════════════════════════
 
 class LSTMForecaster(nn.Module):
-    def __init__(self, input_size=1, hidden=128, layers=2):
+    def __init__(self, input_size=1, hidden=32, layers=1):
         super().__init__()
-        self.lstm = nn.LSTM(input_size, hidden, layers, batch_first=True, dropout=0.3)
+        self.lstm = nn.LSTM(input_size, hidden, layers, batch_first=True)
         self.fc_mu = nn.Linear(hidden, 1)
         self.fc_log_sigma = nn.Linear(hidden, 1)
 
@@ -63,9 +63,9 @@ class AttentionLayer(nn.Module):
 
 
 class AttentionLSTM(nn.Module):
-    def __init__(self, input_size=1, hidden=128, layers=2):
+    def __init__(self, input_size=1, hidden=32, layers=1):
         super().__init__()
-        self.lstm = nn.LSTM(input_size, hidden, layers, batch_first=True, dropout=0.3)
+        self.lstm = nn.LSTM(input_size, hidden, layers, batch_first=True)
         self.attention = AttentionLayer(hidden)
         self.norm = nn.LayerNorm(hidden)
         self.fc_mu = nn.Linear(hidden, 1)
@@ -84,9 +84,9 @@ class AttentionLSTM(nn.Module):
 # ═══════════════════════════════════════════════════════════════════
 
 class GRUForecaster(nn.Module):
-    def __init__(self, input_size=1, hidden=96, layers=2):
+    def __init__(self, input_size=1, hidden=32, layers=1):
         super().__init__()
-        self.gru = nn.GRU(input_size, hidden, layers, batch_first=True, dropout=0.3)
+        self.gru = nn.GRU(input_size, hidden, layers, batch_first=True)
         self.fc_mu = nn.Linear(hidden, 1)
         self.fc_log_sigma = nn.Linear(hidden, 1)
 
@@ -150,7 +150,7 @@ def _train_model(model, X_t, y_t, name, epochs=TRAIN_EPOCHS):
             patience = 0
         else:
             patience += 1
-            if patience >= 20:
+            if patience >= 5:
                 break
 
     return best_loss, epoch + 1
@@ -213,9 +213,9 @@ def train_ensemble(daily_returns):
     predictions = {}
 
     model_configs = [
-        ("lstm", LSTMForecaster(1, 128, 2)),
-        ("attention_lstm", AttentionLSTM(1, 128, 2)),
-        ("gru", GRUForecaster(1, 96, 2)),
+        ("lstm", LSTMForecaster(1, 32, 1)),
+        ("attention_lstm", AttentionLSTM(1, 32, 1)),
+        ("gru", GRUForecaster(1, 32, 1)),
     ]
 
     for name, model in model_configs:
