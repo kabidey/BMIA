@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { BarChart3, Search, TrendingUp, LayoutGrid, ChevronLeft, ChevronRight, Zap, Trophy, Menu, X, BookOpen, Briefcase, PieChart, FileText, ClipboardList } from 'lucide-react';
+import { BarChart3, Search, TrendingUp, LayoutGrid, ChevronLeft, ChevronRight, Zap, Trophy, Menu, X, BookOpen, Briefcase, PieChart, FileText, ClipboardList, Globe2 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import SearchCommand from './SearchCommand';
 
 const navItems = [
   { to: '/', icon: LayoutGrid, label: 'Market Overview', shortcut: '1' },
+  { to: '/big-market', icon: Globe2, label: 'Big Market', shortcut: '!' },
   { to: '/analyze', icon: TrendingUp, label: 'Symbol Analysis', shortcut: '2' },
   { to: '/signals', icon: Zap, label: 'AI Signals', shortcut: '3' },
   { to: '/scanner', icon: BarChart3, label: 'Batch Scanner', shortcut: '4' },

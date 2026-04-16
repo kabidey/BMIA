@@ -32,6 +32,7 @@ from routes.custom_portfolios import router as custom_portfolios_router
 from routes.totp_auth import router as totp_auth_router
 from routes.daemon_control import router as daemon_control_router
 from routes.audit_log import router as audit_log_router, audit_middleware
+from routes.big_market import router as big_market_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -100,6 +101,7 @@ app.include_router(custom_portfolios_router)
 app.include_router(totp_auth_router)
 app.include_router(daemon_control_router)
 app.include_router(audit_log_router)
+app.include_router(big_market_router)
 
 app.middleware("http")(audit_middleware)
 

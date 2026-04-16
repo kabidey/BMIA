@@ -16,6 +16,7 @@ import CustomPortfolioCreate from './pages/CustomPortfolioCreate';
 import CustomPortfolioDetail from './pages/CustomPortfolioDetail';
 import HowItWorks from './pages/HowItWorks';
 import AuditLog from './pages/AuditLog';
+import BigMarket from './pages/BigMarket';
 import SignalAlerts from './components/layout/SignalAlerts';
 import { Toaster } from './components/ui/sonner';
 
@@ -52,6 +53,8 @@ function App() {
           <main className="flex-1 overflow-auto ml-0 sm:ml-16 lg:ml-56 pt-14 sm:pt-0">
             <Routes>
               <Route path="/" element={<MarketOverview />} />
+              <Route path="/big-market" element={<BigMarket />} />
+              <Route path="/big-market/snapshot/:symbol" element={<BigMarket />} />
               <Route path="/analyze/:symbol" element={<SymbolAnalysis />} />
               <Route path="/analyze" element={<SymbolAnalysis />} />
               <Route path="/scanner" element={<BatchScanner />} />
