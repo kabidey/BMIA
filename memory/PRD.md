@@ -1,67 +1,42 @@
 # BMIA - Bharat Market Intel Agent
 
 ## Problem Statement
-Build a Tier-1 Quant Analyst specializing in Indian Equity and Commodity markets with autonomous AI-managed portfolios backed by quantitative guardrails and historical evidence.
+Build a Tier-1 Quant Analyst for Indian Equity and Commodity markets.
 
-## What's Implemented
+## What's Implemented (Latest: Apr 2026)
 
-### Core Intelligence Platform
-- Market Cockpit, Symbol Analysis (25+ tech / 30+ fundamental), God Mode 3-LLM Scanner, AI Signal Dashboard, BSE Guidance RAG, PDF Extraction
+### Big Market — Koyfin-Style Global Dashboard (NEW)
+- **Indian Indices**: 13 NSE indices (Nifty 50, Sensex, Bank Nifty, IT, Pharma, FMCG, Auto, Metal, Realty, Energy, Infra, PSU Bank, India VIX) — Price, Chg, %, Z-Score, 1Y%, YTD%, 52W Range, Volume
+- **Global Indices**: 15 (S&P 500, Nasdaq, Dow, DAX, FTSE, Nikkei, Hang Seng, Shanghai, etc.)
+- **Commodities**: 7 (Gold, Silver, WTI, Brent, Natural Gas, Copper, Aluminum)
+- **Currencies**: 7 (USD/INR, EUR/INR, GBP/INR, JPY/INR, EUR/USD, GBP/USD, Bitcoin)
+- **Yields**: 4 (US 3M, 5Y, 10Y, 30Y)
+- **Factor Grid**: Value/Core/Growth × Large/Mid/Small (Indian sectoral)
+- **Market Pulse**: Nifty 50 + India VIX at a glance
+- **Performance Rankings**: 1Y return bar chart
+- **Stock Snapshot**: Koyfin-style per-stock view (Chart, Key Data, Valuation, Capital Structure, Performance Returns)
+- Endpoints: GET /api/big-market/overview, GET /api/big-market/snapshot/{symbol}
 
-### God Mode Scanner — Now NSE + BSE
-- Scans 3400+ stocks (NSE bhav copy + BSE Group A merged & deduped)
-- 4-stage pipeline: Universe → Prefilter → Deep Features → God Mode LLM Ensemble
-- 3-minute hard cap, per-stock timeouts, factor scoring
+### Core Platform
+- Market Cockpit, Symbol Analysis, God Mode Scanner (NSE+BSE 3400+ stocks), AI Signals, BSE Guidance RAG
 
 ### 4-Model ML Ensemble + Monte Carlo
-- LSTM, Attention-LSTM, GRU, GARCH + 10K GBM paths
+- LSTM, Attention-LSTM, GRU, GARCH (optimized: 12s per stock)
 
 ### Portfolio System
-- 6 AI-managed portfolios + Custom ("Make Your Own")
-- XIRR, P&L Breakdown, Portfolio Rationale, Rebalance History
-- Daemon v3 with UI kill switch
+- 6 AI portfolios + Custom, XIRR, P&L, Rebalance History
 
-### 3-Month RAG Vectorization
-- TF-IDF (25K+ vectors), cosine similarity, 90-day pruning
-- GPT-4.1 → Gemini 2.5 Flash two-stage pipeline
+### RAG & Intelligence
+- 3-Month TF-IDF vectorization (25K+ vectors)
+- GPT-4.1 → Gemini 2.5 Flash pipeline
+- Daily Guidance Briefing on Cockpit
+- Screener.in-style per-stock documents
 
-### Guidance Intelligence Briefing
-- Auto-generated daily briefing on Market Cockpit
-- Screener.in-style per-stock documents view
-
-### OrgLens JWT Authentication
-- Email → OrgLens → Password → JWT
-
-### Audit Log
-- Captures user email from JWT (global fetch interceptor) + request body for auth endpoints
-- Body cached BEFORE call_next() to prevent consumption
-
-### Mobile Responsiveness
-- How It Works: overflow-x-hidden, break-words, smaller badges on mobile
-- All pages checked for mobile viewport compatibility
-
-## Architecture
-```
-/app/backend/
-  server.py, routes/ (11 modules), daemons/, services/
-  services/full_market_scanner.py — NSE + BSE combined universe
-  services/vector_store.py, briefing_service.py, guidance_ai_service.py
-/app/frontend/src/
-  App.js — Global fetch interceptor (JWT auto-attach)
-  hooks/useApi.js — Also injects JWT
-  pages/ (13+ pages)
-```
-
-## Key API Endpoints
-- POST /api/auth/verify-orglens, POST /api/auth/login
-- GET /api/portfolios, GET /api/portfolios/xirr/{type}
-- POST /api/batch/god-scan — Full NSE+BSE scan
-- GET /api/guidance/briefing, POST /api/guidance/ask
-- GET /api/guidance/stock/{symbol}/documents
-- GET /api/audit-log — Superadmin only
+### Auth & Audit
+- OrgLens JWT + global fetch interceptor
+- Audit log with proper user tracking
 
 ## Backlog
-- P2: CSV/PDF export for portfolio reports
-- P2: WebSocket/SSE for real-time Market Cockpit
-- Future: Portfolio alerts, Benchmark comparison dashboard
+- P2: CSV/PDF export, WebSocket/SSE
+- Future: Portfolio alerts, Benchmark dashboard
 - Refactor: Rename TOTPGate.js → AuthGate.js
