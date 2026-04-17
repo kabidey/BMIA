@@ -26,6 +26,8 @@ Build a Tier-1 Quant Analyst for Indian Equity and Commodity markets.
 ### Portfolio System
 - 6 AI portfolios + Custom, XIRR, P&L, Rebalance History
 - **Proper rebalance accounting (Feb 2026)**: swap A→B preserves capital, realizes P&L on exits, tracks `cash_balance` + `realized_pnl` + `unrealized_pnl` separately; kept-stock cost basis preserved; invariant `current_value = holdings_value + cash_balance` and `total_pnl = realized + unrealized`
+- **HONEST P&L baseline (Feb 2026)**: All P&L measured against immutable `initial_capital` (AI) / `capital` (custom) — NOT shrunken `actual_invested`. Ensures losses from stop-outs show as real losses. Aggregate `total_pnl = total_value - total_capital`.
+- **SafeJSONResponse** (Feb 2026): Global FastAPI default response class strips NaN/Inf → null, preventing `ValueError: Out of range float values not JSON compliant` crashes on endpoints with pandas/numpy-derived metrics.
 
 ### RAG & Intelligence
 - 3-Month TF-IDF vectorization (25K+ vectors)
