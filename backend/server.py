@@ -20,6 +20,7 @@ from services.pdf_extractor_service import start_pdf_extraction_daemon
 from services.vector_store import guidance_vector_store
 from daemons.evaluation_scheduler import start_evaluation_scheduler
 from daemons.portfolio_daemon import start_portfolio_daemon
+from utils.safe_json import SafeJSONResponse
 
 from routes.symbols import router as symbols_router
 from routes.market import router as market_router
@@ -73,7 +74,11 @@ async def lifespan(app: FastAPI):
     app.mongodb_client.close()
 
 
-app = FastAPI(title="Bharat Market Intel Agent", lifespan=lifespan)
+app = FastAPI(
+    title="Bharat Market Intel Agent",
+    lifespan=lifespan,
+    default_response_class=SafeJSONResponse,
+)
 
 app.add_middleware(
     CORSMiddleware,
