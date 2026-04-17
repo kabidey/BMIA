@@ -25,6 +25,7 @@ Build a Tier-1 Quant Analyst for Indian Equity and Commodity markets.
 
 ### Portfolio System
 - 6 AI portfolios + Custom, XIRR, P&L, Rebalance History
+- **Proper rebalance accounting (Feb 2026)**: swap A→B preserves capital, realizes P&L on exits, tracks `cash_balance` + `realized_pnl` + `unrealized_pnl` separately; kept-stock cost basis preserved; invariant `current_value = holdings_value + cash_balance` and `total_pnl = realized + unrealized`
 
 ### RAG & Intelligence
 - 3-Month TF-IDF vectorization (25K+ vectors)
