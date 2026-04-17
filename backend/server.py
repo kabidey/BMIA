@@ -69,24 +69,6 @@ async def lifespan(app: FastAPI):
             logger.error(f"Vector store initial build failed (non-fatal): {e}")
     asyncio.ensure_future(_build_vector_store())
 
-    # One-shot backfill for historical portfolio accounting damage (idempotent).
-    # Recovers proceeds + realized P&L for old STOP_ENFORCED events that had
-    # deleted holdings without banking proceeds (pre-fix daemon bug).
-    def _run_backfill():
-        try:
-            import pymongo
-            from scripts.backfill_portfolio_accounting import backfill_ai_portfolios
-            client = pymongo.MongoClient(MONGO_URL)
-            sync_db = client[DB_NAME]
-            result = backfill_ai_portfolios(sync_db, dry_run=False)
-            if result:
-                logger.info(f"PORTFOLIO BACKFILL: Restored accounting for {len(result)} portfolios")
-            client.close()
-        except Exception as e:
-            logger.error(f"Portfolio backfill failed (non-fatal): {e}")
-    import threading
-    threading.Thread(target=_run_backfill, daemon=True).start()
-
     yield
     app.mongodb_client.close()
 
