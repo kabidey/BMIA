@@ -141,6 +141,10 @@ async def create_custom_portfolio(req: CreatePortfolioReq, request: Request):
         "status": "active",
         "total_invested": round(total_invested, 2),
         "current_value": round(total_invested, 2),
+        "holdings_value": round(total_invested, 2),
+        "cash_balance": 0.0,
+        "realized_pnl": 0.0,
+        "unrealized_pnl": 0.0,
         "total_pnl": 0,
         "total_pnl_pct": 0,
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -192,7 +196,7 @@ async def get_custom_portfolio(portfolio_id: str, request: Request):
     symbols = [h["symbol"] for h in holdings]
     prices = _fetch_prices(symbols)
 
-    total_value = 0
+    holdings_value = 0
     for h in holdings:
         new_price = prices.get(h["symbol"])
         if new_price and new_price > 0:
@@ -201,10 +205,18 @@ async def get_custom_portfolio(portfolio_id: str, request: Request):
             if h["entry_price"] > 0:
                 h["pnl_pct"] = round((new_price - h["entry_price"]) / h["entry_price"] * 100, 2)
                 h["pnl"] = round((new_price - h["entry_price"]) * h["quantity"], 2)
-        total_value += h.get("value", 0)
+        holdings_value += h.get("value", 0)
 
-    total_invested = doc.get("total_invested", 0)
-    total_pnl = round(total_value - total_invested, 2)
+    # Proper accounting: current_value = holdings value + cash balance
+    cash_balance = _sf(doc.get("cash_balance", 0))
+    realized_pnl = _sf(doc.get("realized_pnl", 0))
+    total_value = holdings_value + cash_balance
+
+    # Total invested = original capital deployed (immutable basis)
+    total_invested = _sf(doc.get("total_invested", doc.get("capital", DEFAULT_CAPITAL)))
+
+    unrealized_pnl = round(sum(h.get("pnl", 0) or 0 for h in holdings), 2)
+    total_pnl = round(realized_pnl + unrealized_pnl, 2)
     total_pnl_pct = round((total_pnl / total_invested * 100) if total_invested > 0 else 0, 2)
 
     await db.custom_portfolios.update_one(
@@ -212,6 +224,10 @@ async def get_custom_portfolio(portfolio_id: str, request: Request):
         {"$set": {
             "holdings": holdings,
             "current_value": round(total_value, 2),
+            "holdings_value": round(holdings_value, 2),
+            "cash_balance": round(cash_balance, 2),
+            "realized_pnl": round(realized_pnl, 2),
+            "unrealized_pnl": unrealized_pnl,
             "total_pnl": total_pnl,
             "total_pnl_pct": total_pnl_pct,
             "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -219,6 +235,10 @@ async def get_custom_portfolio(portfolio_id: str, request: Request):
     )
 
     doc["current_value"] = round(total_value, 2)
+    doc["holdings_value"] = round(holdings_value, 2)
+    doc["cash_balance"] = round(cash_balance, 2)
+    doc["realized_pnl"] = round(realized_pnl, 2)
+    doc["unrealized_pnl"] = unrealized_pnl
     doc["total_pnl"] = total_pnl
     doc["total_pnl_pct"] = total_pnl_pct
     return _serialize(doc)
@@ -226,8 +246,14 @@ async def get_custom_portfolio(portfolio_id: str, request: Request):
 
 @router.put("/custom-portfolios/{portfolio_id}/rebalance")
 async def rebalance_custom_portfolio(portfolio_id: str, req: RebalanceReq, request: Request):
-    """Rebalance a custom portfolio — swap stocks, adjust weights."""
+    """Rebalance a custom portfolio with proper accounting.
+
+    Preserves cost basis for kept stocks, realizes P&L on sells, and
+    tracks a cash_balance for sell proceeds. Total invested (initial
+    capital basis) is never reset — gains are locked in as realized P&L.
+    """
     from bson import ObjectId
+    import yfinance as yf
     db = request.app.db
 
     doc = await db.custom_portfolios.find_one({"_id": ObjectId(portfolio_id)})
@@ -236,45 +262,207 @@ async def rebalance_custom_portfolio(portfolio_id: str, req: RebalanceReq, reque
 
     if len(req.symbols) > 10:
         raise HTTPException(status_code=400, detail="Maximum 10 stocks allowed")
+    if len(req.symbols) == 0:
+        raise HTTPException(status_code=400, detail="At least 1 stock required")
 
-    old_holdings = {h["symbol"]: h for h in doc.get("holdings", [])}
-    old_symbols = set(old_holdings.keys())
-    new_symbols_set = set(s["symbol"] for s in req.symbols)
+    old_holdings = doc.get("holdings", [])
+    old_map = {h["symbol"]: h for h in old_holdings}
+    old_syms = set(old_map.keys())
+    new_syms = set(s["symbol"] for s in req.symbols)
 
-    # Compute changes
+    # Refresh prices for the union of symbols (so current_price is always fresh)
+    all_symbols = list(old_syms | new_syms)
+    prices = _fetch_prices(all_symbols)
+    if not prices:
+        raise HTTPException(status_code=400, detail="Could not fetch prices")
+
+    # Update current prices on old holdings
+    for h in old_holdings:
+        p = prices.get(h["symbol"])
+        if p and p > 0:
+            h["current_price"] = round(p, 2)
+
+    # Current portfolio value V = holdings value + cash balance
+    cash_balance = _sf(doc.get("cash_balance", 0))
+    realized_pnl = _sf(doc.get("realized_pnl", 0))
+    holdings_value = sum(
+        _sf(h.get("current_price", h.get("entry_price", 0))) * h.get("quantity", 0)
+        for h in old_holdings
+    )
+    V = holdings_value + cash_balance
+
+    # Normalize new weights to 100%
+    total_weight = sum(_sf(s.get("weight", 0)) for s in req.symbols) or 100
+    new_weight_map = {
+        s["symbol"]: (_sf(s.get("weight", 0)) / total_weight) * 100
+        for s in req.symbols
+    }
+    new_meta_map = {s["symbol"]: s for s in req.symbols}
+
     changes = []
-    for s in req.symbols:
-        if s["symbol"] not in old_symbols:
-            changes.append({"type": "ADD", "symbol": s["symbol"], "weight": s.get("weight", 10)})
-        elif old_holdings[s["symbol"]].get("weight") != s.get("weight"):
-            changes.append({"type": "WEIGHT_CHANGE", "symbol": s["symbol"],
-                           "old_weight": old_holdings[s["symbol"]].get("weight"),
-                           "new_weight": s.get("weight", 10)})
-    for sym in old_symbols - new_symbols_set:
-        changes.append({"type": "REMOVE", "symbol": sym})
+    new_holdings = []
 
-    # Build new holdings
-    symbol_list = [s["symbol"] for s in req.symbols]
-    prices = _fetch_prices(symbol_list)
-    capital = doc.get("capital", DEFAULT_CAPITAL)
-    holdings, total_invested = _build_holdings(req.symbols, prices, capital)
+    # ---- Step 1: Sell removed stocks (full exit) ----
+    for sym in old_syms - new_syms:
+        h = old_map[sym]
+        cp = _sf(h.get("current_price", h.get("entry_price", 0)))
+        ep = _sf(h.get("entry_price", 0))
+        qty = h.get("quantity", 0)
+        pnl = (cp - ep) * qty
+        realized_pnl += pnl
+        cash_balance += cp * qty
+        changes.append({
+            "type": "OUT",
+            "symbol": sym,
+            "name": h.get("name", ""),
+            "quantity": qty,
+            "entry_price": round(ep, 2),
+            "exit_price": round(cp, 2),
+            "realized_pnl": round(pnl, 2),
+            "realized_pnl_pct": round((cp - ep) / ep * 100, 2) if ep > 0 else 0,
+        })
 
-    if not holdings:
-        raise HTTPException(status_code=400, detail="No valid holdings after rebalance")
+    # ---- Step 2: Kept stocks — rebalance only if weight changed ----
+    for sym in old_syms & new_syms:
+        h = dict(old_map[sym])  # shallow copy
+        cp = _sf(prices.get(sym, h.get("current_price", h.get("entry_price", 0))))
+        if cp <= 0:
+            cp = _sf(h.get("entry_price", 0))
+        old_w = _sf(h.get("weight", 0))
+        new_w = new_weight_map[sym]
+
+        # If weight essentially unchanged, preserve holding completely
+        if abs(old_w - new_w) < 0.5:
+            h["current_price"] = round(cp, 2)
+            h["weight"] = round(new_w, 1)
+            h["value"] = round(cp * h["quantity"], 2)
+            if h["entry_price"] > 0:
+                h["pnl"] = round((cp - h["entry_price"]) * h["quantity"], 2)
+                h["pnl_pct"] = round((cp - h["entry_price"]) / h["entry_price"] * 100, 2)
+            new_holdings.append(h)
+            continue
+
+        # Weight changed — resize position to target value
+        target_value = V * new_w / 100
+        current_value = cp * h["quantity"]
+
+        if target_value > current_value + cp:  # buy more (at least 1 share)
+            extra_qty = int((target_value - current_value) / cp)
+            if extra_qty > 0 and extra_qty * cp <= cash_balance + 1:
+                new_qty = h["quantity"] + extra_qty
+                # Weighted avg entry price
+                new_entry = ((_sf(h["entry_price"]) * h["quantity"]) + (cp * extra_qty)) / new_qty
+                cash_balance -= extra_qty * cp
+                h["quantity"] = new_qty
+                h["entry_price"] = round(new_entry, 2)
+                changes.append({
+                    "type": "BUY_MORE",
+                    "symbol": sym,
+                    "name": h.get("name", ""),
+                    "additional_quantity": extra_qty,
+                    "price": round(cp, 2),
+                })
+        elif target_value < current_value - cp:  # sell some
+            sell_qty = int((current_value - target_value) / cp)
+            if 0 < sell_qty < h["quantity"]:
+                ep = _sf(h.get("entry_price", 0))
+                pnl = (cp - ep) * sell_qty
+                realized_pnl += pnl
+                cash_balance += sell_qty * cp
+                h["quantity"] -= sell_qty
+                changes.append({
+                    "type": "SELL_PARTIAL",
+                    "symbol": sym,
+                    "name": h.get("name", ""),
+                    "quantity_sold": sell_qty,
+                    "price": round(cp, 2),
+                    "realized_pnl": round(pnl, 2),
+                })
+
+        h["current_price"] = round(cp, 2)
+        h["weight"] = round(new_w, 1)
+        h["value"] = round(cp * h["quantity"], 2)
+        if h["entry_price"] > 0:
+            h["pnl"] = round((cp - h["entry_price"]) * h["quantity"], 2)
+            h["pnl_pct"] = round((cp - h["entry_price"]) / h["entry_price"] * 100, 2)
+        new_holdings.append(h)
+
+    # ---- Step 3: Buy added stocks ----
+    for sym in new_syms - old_syms:
+        cp = _sf(prices.get(sym, 0))
+        if cp <= 0:
+            continue
+        new_w = new_weight_map[sym]
+        target_value = V * new_w / 100
+        qty = int(target_value / cp)
+        if qty < 1 and target_value >= cp:
+            qty = 1
+        # Cap to available cash
+        if qty * cp > cash_balance + 1:
+            qty = int(cash_balance / cp)
+        if qty < 1:
+            continue
+        cost = qty * cp
+        cash_balance -= cost
+
+        sector = "N/A"
+        name = new_meta_map[sym].get("name", sym.replace(".NS", ""))
+        try:
+            info = yf.Ticker(sym).info or {}
+            sector = info.get("sector", "N/A")
+        except Exception:
+            pass
+
+        new_holdings.append({
+            "symbol": sym,
+            "name": name,
+            "sector": sector,
+            "entry_price": round(cp, 2),
+            "current_price": round(cp, 2),
+            "quantity": qty,
+            "weight": round(new_w, 1),
+            "value": round(cost, 2),
+            "pnl": 0,
+            "pnl_pct": 0,
+            "entry_date": datetime.now(timezone.utc).isoformat(),
+        })
+        changes.append({
+            "type": "IN",
+            "symbol": sym,
+            "name": name,
+            "quantity": qty,
+            "entry_price": round(cp, 2),
+        })
+
+    # ---- Finalize: compute accounting ----
+    holdings_value = sum(h["current_price"] * h["quantity"] for h in new_holdings)
+    current_value = holdings_value + cash_balance
+    total_invested = _sf(doc.get("total_invested", doc.get("capital", DEFAULT_CAPITAL)))
+    unrealized_pnl = sum(
+        (h["current_price"] - h["entry_price"]) * h["quantity"]
+        for h in new_holdings if h.get("entry_price", 0) > 0
+    )
+    total_pnl = realized_pnl + unrealized_pnl
+    total_pnl_pct = (total_pnl / total_invested * 100) if total_invested > 0 else 0
 
     rebalance_count = doc.get("rebalance_count", 0) + 1
 
+    update_fields = {
+        "holdings": new_holdings,
+        "current_value": round(current_value, 2),
+        "holdings_value": round(holdings_value, 2),
+        "cash_balance": round(cash_balance, 2),
+        "realized_pnl": round(realized_pnl, 2),
+        "unrealized_pnl": round(unrealized_pnl, 2),
+        "total_pnl": round(total_pnl, 2),
+        "total_pnl_pct": round(total_pnl_pct, 2),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "rebalance_count": rebalance_count,
+        "last_rebalanced": datetime.now(timezone.utc).isoformat(),
+    }
     await db.custom_portfolios.update_one(
         {"_id": ObjectId(portfolio_id)},
-        {"$set": {
-            "holdings": holdings,
-            "total_invested": round(total_invested, 2),
-            "current_value": round(total_invested, 2),
-            "total_pnl": 0,
-            "total_pnl_pct": 0,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-            "rebalance_count": rebalance_count,
-        }}
+        {"$set": update_fields},
     )
 
     # Log rebalance
@@ -283,12 +471,16 @@ async def rebalance_custom_portfolio(portfolio_id: str, req: RebalanceReq, reque
         "action": "REBALANCED",
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "changes": changes,
-        "snapshot": {"holdings": holdings, "total_invested": total_invested},
+        "snapshot": {
+            "pre_value": round(V, 2),
+            "post_value": round(current_value, 2),
+            "realized_pnl_total": round(realized_pnl, 2),
+            "cash_balance": round(cash_balance, 2),
+        },
     })
 
-    doc["holdings"] = holdings
-    doc["total_invested"] = round(total_invested, 2)
-    doc["rebalance_count"] = rebalance_count
+    # Return updated doc
+    doc.update(update_fields)
     doc.pop("_id", None)
     doc["id"] = portfolio_id
     return doc

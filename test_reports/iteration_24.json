@@ -1,0 +1,54 @@
+{
+  "summary": "Iteration 24: Portfolio Accounting Bug Fix - All tests passed. Backend: 10/10 tests passed (100%). Frontend: All UI elements verified working correctly including new stat cards (Unrealized P&L, Realized P&L, Cash Balance) and rebalance flow.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "POST /api/custom-portfolios creates portfolio with cash_balance=0 and realized_pnl=0 initialized",
+    "GET /api/custom-portfolios/{id} returns cash_balance, realized_pnl, unrealized_pnl, holdings_value",
+    "GET /api/custom-portfolios/{id} correctly computes current_value = holdings_value + cash_balance",
+    "PUT /api/custom-portfolios/{id}/rebalance preserves cost basis of kept stocks (entry_price, quantity unchanged)",
+    "PUT /api/custom-portfolios/{id}/rebalance updates realized_pnl from sold stock",
+    "After rebalance: invariant current_value ≈ holdings_value + cash_balance holds (within ₹1)",
+    "After rebalance: invariant total_pnl == realized_pnl + unrealized_pnl (within ₹1)",
+    "After rebalance: current_value does NOT reset to initial_capital (bug was wiping gains)",
+    "GET /api/custom-portfolios/{id}/history returns rebalance log with type=OUT/IN changes",
+    "OUT changes in history have realized_pnl and exit_price keys",
+    "GET /api/portfolios/xirr/{strategy_type} returns realized_pnl, unrealized_pnl, cash_balance, exit_count",
+    "Frontend: CustomPortfolioDetail page shows stat-unrealized-pnl card",
+    "Frontend: CustomPortfolioDetail page shows stat-realized-pnl card",
+    "Frontend: CustomPortfolioDetail page shows stat-cash-balance card",
+    "Frontend: Rebalance button (data-testid='rebalance-btn') is clickable",
+    "Frontend: Rebalance panel (data-testid='rebalance-panel') shows stock list with remove buttons",
+    "Frontend: Save Rebalance button (data-testid='save-rebalance-btn') triggers API call",
+    "Frontend: After rebalance, stats update correctly (Unrealized P&L decreased, Realized P&L increased, Cash Balance updated)",
+    "Frontend: Holdings table (data-testid='holdings-table') shows entry/current prices, P&L%, weights",
+    "Frontend: History section (data-testid='history-section') shows tracking events"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration24_portfolio_accounting.py",
+    "/app/backend/tests/test_portfolio_rebalance_accounting.py",
+    "/app/backend/tests/test_rebalance_realized_pnl.py",
+    "/app/test_reports/pytest/iteration24_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/backend/tests/test_iteration24_portfolio_accounting.py"
+  ],
+  "success_rate": {
+    "backend": "100% (10/10 tests passed)",
+    "frontend": "100% (All UI elements verified)"
+  },
+  "test_credentials": "somnath.dey@smifs.com / admin123 (OrgLens auth flow)",
+  "seed_data_creation": "Created test portfolios during pytest runs (auto-cleaned up)",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 24 verified the portfolio accounting bug fix: (1) Custom portfolio rebalance now correctly tracks realized P&L when stocks are sold - sell proceeds are added to cash_balance and realized_pnl is updated. (2) The bug where current_value was reset to initial_capital after rebalance is fixed - portfolio value is now preserved across swaps. (3) Frontend CustomPortfolioDetail page at /watchlist/custom/{id} shows new stat cards: 'Unrealized P&L' (data-testid='stat-unrealized-pnl'), 'Realized P&L' (data-testid='stat-realized-pnl'), 'Cash Balance' (data-testid='stat-cash-balance'). (4) Rebalance flow via UI works: click rebalance-btn → remove/add stocks → save-rebalance-btn → stats update with non-zero cash_balance/realized_pnl. (5) History log at /api/custom-portfolios/{id}/history returns changes with type=OUT/IN and OUT changes include realized_pnl and exit_price. (6) XIRR endpoint at /api/portfolios/xirr/{strategy_type} returns realized_pnl, unrealized_pnl, cash_balance, exit_count fields. Tested with 'My Growth Picks' custom portfolio - removed BAJFINANCE and verified realized P&L of +₹7.8K and cash balance of ₹4.5K were correctly tracked."
+}

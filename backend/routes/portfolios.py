@@ -382,13 +382,17 @@ async def portfolio_xirr(strategy_type: str, request: Request):
 
     # Collect rebalance log flows if any (realized P&L from exits)
     rebal_logs = await get_rebalance_log(db, strategy_type, limit=50)
-    realized_pnl = 0.0
+    log_realized_pnl = 0.0
     exit_count = 0
     for log in rebal_logs:
         for ch in (log.get("changes") or []):
             if ch.get("type") == "OUT" and ch.get("realized_pnl"):
-                realized_pnl += ch["realized_pnl"]
+                log_realized_pnl += ch["realized_pnl"]
                 exit_count += 1
+
+    # Prefer portfolio-level tracked realized_pnl (authoritative);
+    # fall back to log aggregation for older portfolios
+    realized_pnl = float(portfolio.get("realized_pnl", 0) or 0) or log_realized_pnl
 
     # Compute XIRR using Newton-Raphson
     def xirr(flows, guess=0.1):
@@ -445,6 +449,7 @@ async def portfolio_xirr(strategy_type: str, request: Request):
         "days_held": days_held,
         "invested": round(invested, 2),
         "current_value": round(current_value, 2),
+        "cash_balance": round(float(portfolio.get("cash_balance", 0) or 0), 2),
         "unrealized_pnl": round(unrealized_pnl, 2),
         "unrealized_pnl_pct": round(unrealized_pnl_pct, 2),
         "realized_pnl": round(realized_pnl, 2),

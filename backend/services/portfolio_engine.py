@@ -1389,11 +1389,19 @@ async def evaluate_rebalancing(db, strategy_type: str):
 
 
 async def _execute_rebalance(db, strategy_type, portfolio, changes, analysis, model_names, raw_results):
-    """Execute the rebalancing — swap stocks and log rationale."""
+    """Execute the rebalancing — swap stocks, realize P&L, track cash.
+
+    Accounting model:
+      - actual_invested stays as the ORIGINAL capital basis (immutable).
+      - realized_pnl accumulates (cp - ep) * qty on exits.
+      - cash_balance holds truncation leftovers / unreinvested proceeds.
+    """
     import yfinance as yf
 
     holdings = portfolio.get("holdings", [])
     holdings_map = {h["symbol"]: h for h in holdings}
+    cash_balance = float(portfolio.get("cash_balance", 0) or 0)
+    realized_pnl_total = float(portfolio.get("realized_pnl", 0) or 0)
     executed_changes = []
 
     for change in changes[:2]:
@@ -1421,15 +1429,26 @@ async def _execute_rebalance(db, strategy_type, portfolio, changes, analysis, mo
         if in_price <= 0:
             continue
 
-        freed_capital = out_holding["current_price"] * out_holding["quantity"]
-        new_qty = int(freed_capital / in_price)
+        out_cp = float(out_holding.get("current_price", out_holding["entry_price"]))
+        out_ep = float(out_holding["entry_price"])
+        out_qty = out_holding["quantity"]
+
+        # Realize P&L on the sell
+        out_pnl = (out_cp - out_ep) * out_qty
+        out_pnl_pct = ((out_cp - out_ep) / out_ep * 100) if out_ep > 0 else 0
+        proceeds = out_cp * out_qty
+        realized_pnl_total += out_pnl
+
+        # Deploy proceeds + any existing cash into the new buy
+        budget = proceeds + cash_balance
+        new_qty = int(budget / in_price)
         if new_qty < 1:
             new_qty = 1
-
-        out_pnl = round((out_holding.get("current_price", out_holding["entry_price"]) - out_holding["entry_price"]) * out_holding["quantity"], 2)
-        out_pnl_pct = round((out_holding.get("current_price", out_holding["entry_price"]) - out_holding["entry_price"]) / out_holding["entry_price"] * 100, 2)
+        buy_cost = new_qty * in_price
+        cash_balance = budget - buy_cost  # leftover truncation stays as cash
 
         executed_changes.append({
+            "type": "SWAP",
             "incoming": {
                 "symbol": in_sym,
                 "name": incoming_info.get("name", ""),
@@ -1440,13 +1459,17 @@ async def _execute_rebalance(db, strategy_type, portfolio, changes, analysis, mo
                 "sector": incoming_info.get("sector", ""),
             },
             "outgoing": {
+                "type": "OUT",
                 "symbol": out_sym,
                 "name": out_holding.get("name", ""),
-                "exit_price": round(out_holding.get("current_price", out_holding["entry_price"]), 2),
-                "entry_price": out_holding["entry_price"],
-                "quantity": out_holding["quantity"],
-                "pnl": out_pnl,
-                "pnl_pct": out_pnl_pct,
+                "exit_price": round(out_cp, 2),
+                "entry_price": round(out_ep, 2),
+                "quantity": out_qty,
+                "proceeds": round(proceeds, 2),
+                "pnl": round(out_pnl, 2),
+                "pnl_pct": round(out_pnl_pct, 2),
+                "realized_pnl": round(out_pnl, 2),
+                "realized_pnl_pct": round(out_pnl_pct, 2),
                 "rationale": outgoing_info.get("rationale", ""),
                 "held_since": out_holding.get("entry_date", ""),
             },
@@ -1470,15 +1493,47 @@ async def _execute_rebalance(db, strategy_type, portfolio, changes, analysis, mo
             "risk_flag": "",
             "entry_date": datetime.now(IST).isoformat(),
         })
+        # Keep map in sync for subsequent changes
+        holdings_map = {h["symbol"]: h for h in holdings}
 
     if executed_changes:
+        holdings_value = sum(h.get("current_price", h["entry_price"]) * h["quantity"] for h in holdings)
+        current_value = holdings_value + cash_balance
+        actual_invested = float(portfolio.get("actual_invested", INITIAL_CAPITAL) or INITIAL_CAPITAL)
+        unrealized_pnl = sum(
+            (h.get("current_price", h["entry_price"]) - h["entry_price"]) * h["quantity"]
+            for h in holdings
+        )
+        total_pnl = realized_pnl_total + unrealized_pnl
+        total_pnl_pct = (total_pnl / actual_invested * 100) if actual_invested > 0 else 0
+
         await db.portfolios.update_one(
             {"type": strategy_type},
             {"$set": {
                 "holdings": holdings,
+                "cash_balance": round(cash_balance, 2),
+                "realized_pnl": round(realized_pnl_total, 2),
+                "unrealized_pnl": round(unrealized_pnl, 2),
+                "current_value": round(current_value, 2),
+                "holdings_value": round(holdings_value, 2),
+                "total_pnl": round(total_pnl, 2),
+                "total_pnl_pct": round(total_pnl_pct, 2),
                 "last_rebalanced": datetime.now(IST).isoformat(),
             }}
         )
+
+        # Flattened changes list for XIRR/audit (one IN + one OUT per swap)
+        flat_changes = []
+        for ec in executed_changes:
+            flat_changes.append(ec["outgoing"])
+            flat_changes.append({
+                "type": "IN",
+                "symbol": ec["incoming"]["symbol"],
+                "name": ec["incoming"]["name"],
+                "entry_price": ec["incoming"]["entry_price"],
+                "quantity": ec["incoming"]["quantity"],
+                "rationale": ec["incoming"]["rationale"],
+            })
 
         await db.portfolio_rebalance_log.insert_one({
             "portfolio_type": strategy_type,
@@ -1486,11 +1541,19 @@ async def _execute_rebalance(db, strategy_type, portfolio, changes, analysis, mo
             "action": "REBALANCE",
             "analysis_summary": analysis.get("analysis_summary", ""),
             "confidence": analysis.get("confidence", 0),
-            "changes": executed_changes,
+            "swaps": executed_changes,
+            "changes": flat_changes,
             "portfolio_value_before": portfolio.get("current_value", 0),
+            "portfolio_value_after": round(current_value, 2),
+            "realized_pnl_delta": round(
+                sum(ec["outgoing"]["realized_pnl"] for ec in executed_changes), 2
+            ),
         })
 
-        logger.info(f"REBALANCE [{strategy_type}]: Executed {len(executed_changes)} swaps")
+        logger.info(
+            f"REBALANCE [{strategy_type}]: {len(executed_changes)} swaps, "
+            f"realized ₹{sum(ec['outgoing']['realized_pnl'] for ec in executed_changes):,.0f}"
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

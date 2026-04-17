@@ -37,17 +37,20 @@ def _sf(val, default=0.0):
 
 
 def _update_prices(db, portfolio):
-    """Refresh current prices for all holdings using yfinance."""
+    """Refresh current prices for all holdings using yfinance.
+
+    IMPORTANT: Does NOT overwrite actual_invested (that is the immutable
+    cost basis set at portfolio creation / rebalance). Computes total_pnl
+    as realized + unrealized P&L, and current_value as holdings + cash.
+    """
     import yfinance as yf
     holdings = portfolio.get("holdings", [])
-    total_value = 0
-    total_invested = 0
+    holdings_value = 0.0
 
     for h in holdings:
         sym = h.get("symbol", "")
         entry = _sf(h.get("entry_price"))
         qty = h.get("quantity", 0)
-        total_invested += entry * qty
 
         try:
             ticker = yf.Ticker(sym)
@@ -63,20 +66,36 @@ def _update_prices(db, portfolio):
         except Exception:
             pass
 
-        total_value += _sf(h.get("value", entry * qty))
+        cp = _sf(h.get("current_price", entry))
+        holdings_value += cp * qty
         time.sleep(0.3)
 
-    pnl = round(total_value - total_invested, 2)
-    pnl_pct = round((pnl / total_invested * 100) if total_invested > 0 else 0, 2)
+    cash_balance = _sf(portfolio.get("cash_balance", 0))
+    realized_pnl = _sf(portfolio.get("realized_pnl", 0))
+    total_value = holdings_value + cash_balance
+
+    # actual_invested is immutable cost basis (initial capital deployed)
+    actual_invested = _sf(portfolio.get("actual_invested", 0))
+    if actual_invested <= 0:
+        # Backfill one-time: compute from holdings (first run only)
+        actual_invested = sum(_sf(h.get("entry_price")) * h.get("quantity", 0) for h in holdings)
+
+    unrealized_pnl = holdings_value - sum(_sf(h.get("entry_price")) * h.get("quantity", 0) for h in holdings)
+    total_pnl = realized_pnl + unrealized_pnl
+    total_pnl_pct = (total_pnl / actual_invested * 100) if actual_invested > 0 else 0
 
     db.portfolios.update_one(
         {"type": portfolio["type"]},
         {"$set": {
             "holdings": holdings,
             "current_value": round(total_value, 2),
-            "actual_invested": round(total_invested, 2),
-            "total_pnl": pnl,
-            "total_pnl_pct": pnl_pct,
+            "holdings_value": round(holdings_value, 2),
+            "cash_balance": round(cash_balance, 2),
+            "actual_invested": round(actual_invested, 2),
+            "realized_pnl": round(realized_pnl, 2),
+            "unrealized_pnl": round(unrealized_pnl, 2),
+            "total_pnl": round(total_pnl, 2),
+            "total_pnl_pct": round(total_pnl_pct, 2),
             "prices_updated_at": datetime.now(IST).isoformat(),
         }}
     )
@@ -84,7 +103,10 @@ def _update_prices(db, portfolio):
 
 
 def _enforce_stops(db, portfolio):
-    """Enforce 8% stop-loss and 20% take-profit. Returns list of triggered stops."""
+    """Enforce 8% stop-loss and 20% take-profit. Realizes P&L on exit.
+
+    Sell proceeds are added to cash_balance; realized P&L is accumulated.
+    """
     STOP_LOSS_PCT = -8.0
     TAKE_PROFIT_PCT = 20.0
     triggered = []
@@ -102,27 +124,61 @@ def _enforce_stops(db, portfolio):
                               "reason": f"Hit +{TAKE_PROFIT_PCT}% take-profit"})
 
     if triggered:
-        # Remove triggered stocks from holdings
-        remove_syms = {t["symbol"] for t in triggered}
+        trigger_map = {t["symbol"]: t for t in triggered}
+        remove_syms = set(trigger_map.keys())
+
+        # Realize P&L + bank proceeds to cash
+        cash_balance = _sf(portfolio.get("cash_balance", 0))
+        realized_pnl_total = _sf(portfolio.get("realized_pnl", 0))
+        changes = []
+        for h in holdings:
+            if h["symbol"] not in remove_syms:
+                continue
+            cp = _sf(h.get("current_price", h.get("entry_price", 0)))
+            ep = _sf(h.get("entry_price", 0))
+            qty = h.get("quantity", 0)
+            pnl_amt = (cp - ep) * qty
+            pnl_pct = ((cp - ep) / ep * 100) if ep > 0 else 0
+            realized_pnl_total += pnl_amt
+            cash_balance += cp * qty
+            t = trigger_map[h["symbol"]]
+            changes.append({
+                "type": "OUT",
+                "symbol": h["symbol"],
+                "name": h.get("name", ""),
+                "quantity": qty,
+                "entry_price": round(ep, 2),
+                "exit_price": round(cp, 2),
+                "proceeds": round(cp * qty, 2),
+                "realized_pnl": round(pnl_amt, 2),
+                "realized_pnl_pct": round(pnl_pct, 2),
+                "trigger_type": t["type"],
+                "rationale": t["reason"],
+            })
+
         new_holdings = [h for h in holdings if h["symbol"] not in remove_syms]
 
         db.portfolios.update_one(
             {"type": portfolio["type"]},
-            {"$set": {"holdings": new_holdings}}
+            {"$set": {
+                "holdings": new_holdings,
+                "cash_balance": round(cash_balance, 2),
+                "realized_pnl": round(realized_pnl_total, 2),
+            }}
         )
 
-        # Log the stops
         db.portfolio_rebalance_log.insert_one({
             "portfolio_type": portfolio["type"],
             "action": "STOP_ENFORCED",
             "timestamp": datetime.now(IST).isoformat(),
-            "changes": [
-                {"type": "OUT", "symbol": t["symbol"], "rationale": t["reason"], "pnl_pct": t["pnl_pct"]}
-                for t in triggered
-            ],
+            "changes": changes,
+            "realized_pnl_delta": round(sum(c["realized_pnl"] for c in changes), 2),
         })
 
-        logger.info(f"DAEMON: {portfolio['type']} — {len(triggered)} stops triggered: {[t['symbol'] for t in triggered]}")
+        logger.info(
+            f"DAEMON: {portfolio['type']} — {len(triggered)} stops triggered: {list(remove_syms)} "
+            f"| realized ₹{sum(c['realized_pnl'] for c in changes):,.0f}"
+        )
 
     return triggered
 

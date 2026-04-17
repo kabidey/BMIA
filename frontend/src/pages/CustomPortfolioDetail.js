@@ -296,6 +296,11 @@ export default function CustomPortfolioDetail() {
   const pnlPct = portfolio.total_pnl_pct || 0;
   const invested = portfolio.total_invested || 0;
   const currentVal = portfolio.current_value || invested;
+  const realizedPnl = portfolio.realized_pnl || 0;
+  const unrealizedPnl = portfolio.unrealized_pnl != null
+    ? portfolio.unrealized_pnl
+    : holdings.reduce((sum, h) => sum + (h.pnl || 0), 0);
+  const cashBalance = portfolio.cash_balance || 0;
 
   // Sector data for pie
   const sectors = {};
@@ -400,16 +405,33 @@ export default function CustomPortfolioDetail() {
       )}
 
       {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
         {[
-          { l: 'Invested', v: `₹${(invested / 1e5).toFixed(1)}L` },
-          { l: 'Current Value', v: `₹${(currentVal / 1e5).toFixed(1)}L` },
-          { l: 'Holdings', v: holdings.length },
+          { l: 'Invested', v: `₹${(invested / 1e5).toFixed(2)}L` },
+          { l: 'Current Value', v: `₹${(currentVal / 1e5).toFixed(2)}L` },
+          {
+            l: 'Unrealized P&L',
+            v: `${unrealizedPnl >= 0 ? '+' : ''}₹${(Math.abs(unrealizedPnl) / 1e3).toFixed(1)}K`,
+            color: unrealizedPnl >= 0 ? 'text-emerald-400' : 'text-red-400',
+            testId: 'stat-unrealized-pnl',
+          },
+          {
+            l: 'Realized P&L',
+            v: `${realizedPnl >= 0 ? '+' : ''}₹${(Math.abs(realizedPnl) / 1e3).toFixed(1)}K`,
+            color: realizedPnl >= 0 ? 'text-emerald-400' : 'text-red-400',
+            testId: 'stat-realized-pnl',
+          },
+          {
+            l: 'Cash Balance',
+            v: `₹${(cashBalance / 1e3).toFixed(1)}K`,
+            color: 'text-amber-400',
+            testId: 'stat-cash-balance',
+          },
           { l: 'Rebalances', v: portfolio.rebalance_count || 0 },
         ].map(s => (
-          <Card key={s.l} className="bg-[hsl(var(--card))] border-[hsl(var(--border))] p-3">
+          <Card key={s.l} className="bg-[hsl(var(--card))] border-[hsl(var(--border))] p-3" data-testid={s.testId}>
             <p className="text-[10px] text-[hsl(var(--muted-foreground))]">{s.l}</p>
-            <p className="text-base font-mono font-bold text-[hsl(var(--foreground))]">{s.v}</p>
+            <p className={`text-base font-mono font-bold ${s.color || 'text-[hsl(var(--foreground))]'}`}>{s.v}</p>
           </Card>
         ))}
       </div>
