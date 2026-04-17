@@ -11,7 +11,7 @@ import pytest
 import requests
 import os
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://bharat-market-intel-2.preview.emergentagent.com')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://india-equity-scanner.preview.emergentagent.com')
 
 class TestHealthAndOverview:
     """Basic health and overview tests"""

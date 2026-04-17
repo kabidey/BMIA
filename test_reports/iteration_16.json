@@ -43,7 +43,7 @@
     "backend": "100% (11/11 tests passed)",
     "frontend": "100% (All pages load correctly with expected states)"
   },
-  "test_credentials": "No auth required. Backend at https://bharat-market-intel-2.preview.emergentagent.com",
+  "test_credentials": "No auth required. Backend at https://india-equity-scanner.preview.emergentagent.com",
   "seed_data_creation": "None - portfolios being reconstructed by daemon",
   "retest_needed": false,
   "should_main_agent_self_test": false,
