@@ -1584,17 +1584,24 @@ async def get_portfolio_overview(db):
 
     total_invested = 0
     total_value = 0
-    total_pnl = 0
+    total_realized = 0
+    total_cash = 0
     active = 0
 
     portfolio_summaries = []
     for p in portfolios:
         inv = p.get("actual_invested", INITIAL_CAPITAL)
         val = p.get("current_value", inv)
-        pnl = p.get("total_pnl", 0)
+        # Authoritative total_pnl per portfolio: realized + unrealized
+        # (single source of truth = current_value - actual_invested if both are right)
+        realized = float(p.get("realized_pnl", 0) or 0)
+        cash = float(p.get("cash_balance", 0) or 0)
+        pnl = val - inv  # consistent with aggregate math
+
         total_invested += inv
         total_value += val
-        total_pnl += pnl
+        total_realized += realized
+        total_cash += cash
         if p.get("status") == "active":
             active += 1
 
@@ -1607,8 +1614,10 @@ async def get_portfolio_overview(db):
             "status": p.get("status"),
             "invested": inv,
             "current_value": round(val, 2),
+            "cash_balance": round(cash, 2),
+            "realized_pnl": round(realized, 2),
             "total_pnl": round(pnl, 2),
-            "total_pnl_pct": p.get("total_pnl_pct", 0),
+            "total_pnl_pct": round(pnl / inv * 100, 2) if inv else 0,
             "holdings_count": len(p.get("holdings", [])),
             "winners": winners,
             "losers": losers,
@@ -1620,10 +1629,15 @@ async def get_portfolio_overview(db):
     existing_types = {p.get("type") for p in portfolios}
     pending = [t for t in PORTFOLIO_STRATEGIES if t not in existing_types]
 
+    # Aggregate P&L = total_value - total_invested (single consistent basis)
+    total_pnl = total_value - total_invested
+
     return {
         "total_capital": 6 * INITIAL_CAPITAL,
         "total_invested": round(total_invested, 2),
         "total_value": round(total_value, 2),
+        "total_cash_balance": round(total_cash, 2),
+        "total_realized_pnl": round(total_realized, 2),
         "total_pnl": round(total_pnl, 2),
         "total_pnl_pct": round(total_pnl / total_invested * 100, 2) if total_invested else 0,
         "active_portfolios": active,
