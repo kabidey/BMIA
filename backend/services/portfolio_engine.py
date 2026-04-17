@@ -1123,6 +1123,9 @@ async def construct_portfolio(db, strategy_type: str):
         })
 
     actual_invested = sum(h["allocation"] for h in holdings)
+    # Truncation residue from int() quantity sizing → tracked as cash so
+    # newly-created portfolio reports 0 P&L, not a fake tiny loss.
+    truncation_residue = max(0.0, INITIAL_CAPITAL - actual_invested)
 
     # Best thesis from highest-vote model
     best_result = max(all_selections, key=lambda x: len(x[1].get("selections", [])))[1]
@@ -1134,7 +1137,11 @@ async def construct_portfolio(db, strategy_type: str):
         "horizon": cfg["horizon"],
         "initial_capital": INITIAL_CAPITAL,
         "actual_invested": round(actual_invested, 2),
-        "current_value": round(actual_invested, 2),
+        "current_value": round(INITIAL_CAPITAL, 2),
+        "holdings_value": round(actual_invested, 2),
+        "cash_balance": round(truncation_residue, 2),
+        "realized_pnl": 0.0,
+        "unrealized_pnl": 0.0,
         "total_pnl": 0,
         "total_pnl_pct": 0,
         "holdings": holdings,
@@ -1499,13 +1506,14 @@ async def _execute_rebalance(db, strategy_type, portfolio, changes, analysis, mo
     if executed_changes:
         holdings_value = sum(h.get("current_price", h["entry_price"]) * h["quantity"] for h in holdings)
         current_value = holdings_value + cash_balance
-        actual_invested = float(portfolio.get("actual_invested", INITIAL_CAPITAL) or INITIAL_CAPITAL)
+        initial_capital = float(portfolio.get("initial_capital", INITIAL_CAPITAL) or INITIAL_CAPITAL)
         unrealized_pnl = sum(
             (h.get("current_price", h["entry_price"]) - h["entry_price"]) * h["quantity"]
             for h in holdings
         )
-        total_pnl = realized_pnl_total + unrealized_pnl
-        total_pnl_pct = (total_pnl / actual_invested * 100) if actual_invested > 0 else 0
+        # HONEST P&L: current value vs committed capital
+        total_pnl = current_value - initial_capital
+        total_pnl_pct = (total_pnl / initial_capital * 100) if initial_capital > 0 else 0
 
         await db.portfolios.update_one(
             {"type": strategy_type},
@@ -1582,6 +1590,7 @@ async def get_rebalance_log(db, strategy_type: str = None, limit: int = 20):
 async def get_portfolio_overview(db):
     portfolios = await get_all_portfolios(db)
 
+    total_capital = 0
     total_invested = 0
     total_value = 0
     total_realized = 0
@@ -1590,14 +1599,18 @@ async def get_portfolio_overview(db):
 
     portfolio_summaries = []
     for p in portfolios:
-        inv = p.get("actual_invested", INITIAL_CAPITAL)
-        val = p.get("current_value", inv)
-        # Authoritative total_pnl per portfolio: realized + unrealized
-        # (single source of truth = current_value - actual_invested if both are right)
+        # Immutable basis: what user originally committed to this strategy
+        cap = float(p.get("initial_capital", INITIAL_CAPITAL) or INITIAL_CAPITAL)
+        inv = float(p.get("actual_invested", cap) or cap)  # currently deployed
+        val = float(p.get("current_value", inv) or inv)
         realized = float(p.get("realized_pnl", 0) or 0)
         cash = float(p.get("cash_balance", 0) or 0)
-        pnl = val - inv  # consistent with aggregate math
 
+        # Truth: P&L measured against original capital commitment
+        pnl = val - cap
+        pnl_pct = (pnl / cap * 100) if cap > 0 else 0
+
+        total_capital += cap
         total_invested += inv
         total_value += val
         total_realized += realized
@@ -1612,12 +1625,13 @@ async def get_portfolio_overview(db):
             "type": p.get("type"),
             "name": p.get("name"),
             "status": p.get("status"),
-            "invested": inv,
+            "capital": round(cap, 2),
+            "invested": round(inv, 2),
             "current_value": round(val, 2),
             "cash_balance": round(cash, 2),
             "realized_pnl": round(realized, 2),
             "total_pnl": round(pnl, 2),
-            "total_pnl_pct": round(pnl / inv * 100, 2) if inv else 0,
+            "total_pnl_pct": round(pnl_pct, 2),
             "holdings_count": len(p.get("holdings", [])),
             "winners": winners,
             "losers": losers,
@@ -1629,17 +1643,18 @@ async def get_portfolio_overview(db):
     existing_types = {p.get("type") for p in portfolios}
     pending = [t for t in PORTFOLIO_STRATEGIES if t not in existing_types]
 
-    # Aggregate P&L = total_value - total_invested (single consistent basis)
-    total_pnl = total_value - total_invested
+    # Aggregate: P&L vs total committed capital (honest view)
+    agg_pnl = total_value - total_capital
+    agg_pnl_pct = (agg_pnl / total_capital * 100) if total_capital > 0 else 0
 
     return {
-        "total_capital": 6 * INITIAL_CAPITAL,
+        "total_capital": round(total_capital, 2),
         "total_invested": round(total_invested, 2),
         "total_value": round(total_value, 2),
         "total_cash_balance": round(total_cash, 2),
         "total_realized_pnl": round(total_realized, 2),
-        "total_pnl": round(total_pnl, 2),
-        "total_pnl_pct": round(total_pnl / total_invested * 100, 2) if total_invested else 0,
+        "total_pnl": round(agg_pnl, 2),
+        "total_pnl_pct": round(agg_pnl_pct, 2),
         "active_portfolios": active,
         "pending_construction": len(pending),
         "pending_types": pending,

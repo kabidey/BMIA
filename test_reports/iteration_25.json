@@ -1,0 +1,51 @@
+{
+  "summary": "Iteration 25: P&L Math Bug Fix Verification - All tests passed. Backend: 14/14 tests passed (100%). Frontend: Watchlist page correctly displays honest P&L (-7.87L when value 292L < capital 300L). Critical bug fix verified: P&L now calculated against original capital, not shrunken invested amount.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "GET /api/portfolios/overview returns total_pnl = total_value - total_capital (honest basis)",
+    "Honesty invariant: total_value (292L) < total_capital (300L) → total_pnl is negative (-7.87L)",
+    "Aggregation invariant: sum of per-portfolio P&L == aggregate P&L (within ₹5)",
+    "Per-portfolio P&L uses capital basis (value - capital)",
+    "GET /api/portfolios/analytics returns total_pnl = total_value - total_capital",
+    "GET /api/portfolios/xirr/{strategy_type} returns capital field and uses capital basis for P&L",
+    "XIRR endpoint tested for all 6 strategy types: bespoke_forward_looking, quick_entry, long_term, swing, value_stocks, alpha_generator",
+    "GET /api/custom-portfolios/{id} returns total_pnl = current_value - capital",
+    "Custom portfolio value invariant: current_value = holdings_value + cash_balance",
+    "SafeJSONResponse handles NaN/Inf gracefully - /api/big-market/overview returns 200",
+    "Frontend Watchlist page displays Total Capital: 300L",
+    "Frontend Watchlist page displays Current Value: 292.1L",
+    "Frontend Watchlist page displays Total P&L: -7.87L (CRITICAL FIX VERIFIED)",
+    "Frontend Watchlist page displays Return %: -2.62%",
+    "Frontend shows all 6 AI portfolios with individual values",
+    "Frontend shows custom portfolio 'My Growth Picks' with +2.81% return"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration25_pnl_math.py",
+    "/app/backend/tests/test_overview_math.py",
+    "/app/backend/tests/test_portfolio_rebalance_accounting.py",
+    "/app/backend/tests/test_rebalance_realized_pnl.py",
+    "/app/test_reports/pytest/iteration25_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/backend/tests/test_iteration25_pnl_math.py"
+  ],
+  "success_rate": {
+    "backend": "100% (14/14 tests passed)",
+    "frontend": "100% (All P&L math verified correct)"
+  },
+  "test_credentials": "somnath.dey@smifs.com / admin123 (OrgLens auth flow)",
+  "seed_data_creation": "None - used existing 6 AI portfolios and 1 custom portfolio",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 25 verified the critical P&L math bug fix. The user-reported issue was: Capital 300L, Value 275L, but P&L shown as +10L (mathematically impossible). Root cause: P&L was calculated against 'actual_invested' (shrunken by stop-outs) instead of immutable 'initial_capital'. Fix verified across: (1) /api/portfolios/overview - aggregate and per-portfolio P&L uses capital basis, (2) /api/portfolios/xirr/{type} - includes capital field, P&L = value - capital, (3) /api/portfolios/analytics - total_pnl = total_value - total_capital, (4) /api/custom-portfolios/{id} - total_pnl = current_value - capital, (5) SafeJSONResponse sanitizes NaN/Inf to null. Frontend Watchlist page at /watchlist shows honest numbers: Capital 300L, Value 292.1L, P&L -7.87L, Return -2.62%. All 6 AI portfolios displayed with individual values. The 3 portfolios with historical stop-outs (Bespoke, Quick Entry, Value Stocks) now correctly show losses against original 50L capital each."
+}

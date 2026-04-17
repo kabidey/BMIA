@@ -134,15 +134,19 @@ async def create_custom_portfolio(req: CreatePortfolioReq, request: Request):
     if not holdings:
         raise HTTPException(status_code=400, detail="No valid holdings after price fetch")
 
+    # Truncation residue from int() rounding during buy sizing must be
+    # tracked as cash_balance so honest P&L stays 0 at creation.
+    truncation_residue = max(0.0, req.capital - total_invested)
+
     doc = {
         "name": req.name.strip(),
         "capital": req.capital,
         "holdings": holdings,
         "status": "active",
         "total_invested": round(total_invested, 2),
-        "current_value": round(total_invested, 2),
+        "current_value": round(req.capital, 2),
         "holdings_value": round(total_invested, 2),
-        "cash_balance": 0.0,
+        "cash_balance": round(truncation_residue, 2),
         "realized_pnl": 0.0,
         "unrealized_pnl": 0.0,
         "total_pnl": 0,
@@ -212,12 +216,14 @@ async def get_custom_portfolio(portfolio_id: str, request: Request):
     realized_pnl = _sf(doc.get("realized_pnl", 0))
     total_value = holdings_value + cash_balance
 
-    # Total invested = original capital deployed (immutable basis)
-    total_invested = _sf(doc.get("total_invested", doc.get("capital", DEFAULT_CAPITAL)))
+    # IMMUTABLE basis: capital the user originally committed when creating
+    # the portfolio (not the shrunken total_invested which can drift)
+    capital = _sf(doc.get("capital", DEFAULT_CAPITAL))
 
     unrealized_pnl = round(sum(h.get("pnl", 0) or 0 for h in holdings), 2)
-    total_pnl = round(realized_pnl + unrealized_pnl, 2)
-    total_pnl_pct = round((total_pnl / total_invested * 100) if total_invested > 0 else 0, 2)
+    # HONEST P&L vs committed capital
+    total_pnl = round(total_value - capital, 2)
+    total_pnl_pct = round((total_pnl / capital * 100) if capital > 0 else 0, 2)
 
     await db.custom_portfolios.update_one(
         {"_id": ObjectId(portfolio_id)},
@@ -437,13 +443,15 @@ async def rebalance_custom_portfolio(portfolio_id: str, req: RebalanceReq, reque
     # ---- Finalize: compute accounting ----
     holdings_value = sum(h["current_price"] * h["quantity"] for h in new_holdings)
     current_value = holdings_value + cash_balance
-    total_invested = _sf(doc.get("total_invested", doc.get("capital", DEFAULT_CAPITAL)))
+    # IMMUTABLE basis for P&L: original committed capital
+    capital = _sf(doc.get("capital", DEFAULT_CAPITAL))
     unrealized_pnl = sum(
         (h["current_price"] - h["entry_price"]) * h["quantity"]
         for h in new_holdings if h.get("entry_price", 0) > 0
     )
-    total_pnl = realized_pnl + unrealized_pnl
-    total_pnl_pct = (total_pnl / total_invested * 100) if total_invested > 0 else 0
+    # HONEST P&L vs committed capital
+    total_pnl = current_value - capital
+    total_pnl_pct = (total_pnl / capital * 100) if capital > 0 else 0
 
     rebalance_count = doc.get("rebalance_count", 0) + 1
 

@@ -74,15 +74,20 @@ def _update_prices(db, portfolio):
     realized_pnl = _sf(portfolio.get("realized_pnl", 0))
     total_value = holdings_value + cash_balance
 
-    # actual_invested is immutable cost basis (initial capital deployed)
+    # actual_invested reflects currently deployed capital (may shrink over
+    # time due to stop-outs). initial_capital is the IMMUTABLE user-committed
+    # basis and is what P&L must be measured against.
     actual_invested = _sf(portfolio.get("actual_invested", 0))
     if actual_invested <= 0:
         # Backfill one-time: compute from holdings (first run only)
         actual_invested = sum(_sf(h.get("entry_price")) * h.get("quantity", 0) for h in holdings)
 
+    initial_capital = _sf(portfolio.get("initial_capital", 5_000_000))
+
     unrealized_pnl = holdings_value - sum(_sf(h.get("entry_price")) * h.get("quantity", 0) for h in holdings)
-    total_pnl = realized_pnl + unrealized_pnl
-    total_pnl_pct = (total_pnl / actual_invested * 100) if actual_invested > 0 else 0
+    # HONEST P&L: current portfolio value vs committed capital
+    total_pnl = total_value - initial_capital
+    total_pnl_pct = (total_pnl / initial_capital * 100) if initial_capital > 0 else 0
 
     db.portfolios.update_one(
         {"type": portfolio["type"]},

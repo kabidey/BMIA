@@ -19,14 +19,15 @@ def test_portfolio_overview_math_consistent():
     assert r.status_code == 200
     d = r.json()
 
-    # Invariant 1: total_pnl == total_value - total_invested (within rounding)
-    computed = d["total_value"] - d["total_invested"]
+    # Invariant 1: total_pnl == total_value - total_capital (HONEST basis)
+    # NOT total_value - total_invested (which hides damage from past stop-outs)
+    computed = d["total_value"] - d["total_capital"]
     assert abs(d["total_pnl"] - computed) < 1.0, \
         f"total_pnl mismatch: {d['total_pnl']} vs {computed}"
 
-    # Invariant 2: total_pnl_pct matches
-    if d["total_invested"] > 0:
-        expected_pct = round(d["total_pnl"] / d["total_invested"] * 100, 2)
+    # Invariant 2: total_pnl_pct matches (vs capital basis)
+    if d["total_capital"] > 0:
+        expected_pct = round(d["total_pnl"] / d["total_capital"] * 100, 2)
         assert abs(d["total_pnl_pct"] - expected_pct) < 0.1
 
     # Invariant 3: sum of per-portfolio pnl == aggregate
@@ -34,10 +35,10 @@ def test_portfolio_overview_math_consistent():
     assert abs(d["total_pnl"] - per_sum) < 5.0, \
         f"Per-portfolio sum {per_sum} vs aggregate {d['total_pnl']}"
 
-    # Sign check: if value < invested, pnl must be negative (this was the UX bug!)
-    if d["total_value"] < d["total_invested"]:
+    # Invariant 4: sign consistency — value < capital MUST show negative P&L
+    if d["total_value"] < d["total_capital"]:
         assert d["total_pnl"] < 0, \
-            "Value below invested MUST show negative P&L (display bug)"
+            "Value below capital MUST show negative P&L (honest accounting)"
 
     print(f"✅ Capital:   ₹{d['total_capital']/1e5:.1f}L")
     print(f"✅ Invested:  ₹{d['total_invested']/1e5:.1f}L")

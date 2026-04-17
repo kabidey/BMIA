@@ -55,10 +55,12 @@ async def portfolio_analytics(request: Request):
             continue
 
         ptype = p.get("type", "")
-        invested = p.get("actual_invested", INITIAL_CAPITAL)
+        capital = p.get("initial_capital", INITIAL_CAPITAL)
+        invested = p.get("actual_invested", capital)
         current_val = p.get("current_value", invested)
-        pnl = p.get("total_pnl", 0)
-        pnl_pct = p.get("total_pnl_pct", 0)
+        # P&L vs committed capital (honest), not vs shrunken invested
+        pnl = current_val - capital
+        pnl_pct = (pnl / capital * 100) if capital else 0
 
         # Sector allocation for this portfolio
         sector_alloc = defaultdict(float)
@@ -112,6 +114,7 @@ async def portfolio_analytics(request: Request):
         portfolio_analytics.append({
             "type": ptype,
             "name": p.get("name", ""),
+            "capital": round(capital, 2),
             "invested": round(invested, 2),
             "current_value": round(current_val, 2),
             "total_pnl": round(pnl, 2),
@@ -149,12 +152,15 @@ async def portfolio_analytics(request: Request):
     # Aggregate risk
     all_betas = [pa["avg_beta"] for pa in portfolio_analytics if pa["avg_beta"] is not None]
     aggregate_beta = round(sum(all_betas) / len(all_betas), 2) if all_betas else None
+    total_capital = sum(pa["capital"] for pa in portfolio_analytics)
     total_invested = sum(pa["invested"] for pa in portfolio_analytics)
     total_value = sum(pa["current_value"] for pa in portfolio_analytics)
-    total_pnl = round(total_value - total_invested, 2)
-    total_pnl_pct = round(total_pnl / total_invested * 100, 2) if total_invested else 0
+    # Aggregate P&L vs committed capital
+    total_pnl = round(total_value - total_capital, 2)
+    total_pnl_pct = round(total_pnl / total_capital * 100, 2) if total_capital else 0
 
     return {
+        "total_capital": round(total_capital, 2),
         "total_invested": round(total_invested, 2),
         "total_value": round(total_value, 2),
         "total_pnl": total_pnl,
@@ -353,8 +359,11 @@ async def portfolio_xirr(strategy_type: str, request: Request):
     if not portfolio or portfolio.get("status") != "active":
         raise HTTPException(status_code=404, detail="Active portfolio not found")
 
-    invested = portfolio.get("actual_invested", INITIAL_CAPITAL)
-    current_value = portfolio.get("current_value", invested)
+    # Basis for P&L and XIRR is the IMMUTABLE committed capital, not the
+    # shrunken actual_invested (which gets eroded by stop-outs over time).
+    capital = float(portfolio.get("initial_capital", INITIAL_CAPITAL) or INITIAL_CAPITAL)
+    invested = float(portfolio.get("actual_invested", capital) or capital)
+    current_value = float(portfolio.get("current_value", invested) or invested)
     created_at = portfolio.get("created_at")
 
     # Parse creation date
@@ -377,8 +386,8 @@ async def portfolio_xirr(strategy_type: str, request: Request):
         return {"xirr_pct": 0.0, "days_held": 0}
 
     # Cash flows: negative outflow at start, positive inflow now
-    # XIRR via Newton's method
-    cash_flows = [(-invested, start_date), (current_value, now)]
+    # XIRR baseline = COMMITTED CAPITAL (not shrunken invested)
+    cash_flows = [(-capital, start_date), (current_value, now)]
 
     # Collect rebalance log flows if any (realized P&L from exits)
     rebal_logs = await get_rebalance_log(db, strategy_type, limit=50)
@@ -421,23 +430,26 @@ async def portfolio_xirr(strategy_type: str, request: Request):
 
     try:
         if days_held < 7:
-            # Too short for meaningful XIRR — use simple return
-            xirr_pct = round((current_value - invested) / invested * 100, 2)
+            # Too short for meaningful XIRR — use simple return vs capital
+            xirr_pct = round((current_value - capital) / capital * 100, 2)
         else:
             xirr_val = xirr(cash_flows)
             xirr_pct = round(xirr_val * 100, 2)
             # Sanity cap: XIRR beyond ±500% is usually a numerical artifact
             if abs(xirr_pct) > 500:
-                xirr_pct = round((current_value - invested) / invested * 100, 2)
+                xirr_pct = round((current_value - capital) / capital * 100, 2)
     except Exception:
-        # Fallback to simple return
-        simple_return = (current_value - invested) / invested * 100
-        xirr_pct = round(simple_return, 2)
+        # Fallback to simple return vs capital
+        xirr_pct = round((current_value - capital) / capital * 100, 2)
 
-    # Per-stock P&L breakdown
+    # Per-stock P&L breakdown (per-stock P&L is vs each stock's entry price,
+    # which is unrelated to portfolio basis — keep as-is for stock-level view)
     holdings = portfolio.get("holdings", [])
     unrealized_pnl = sum(h.get("pnl", 0) or 0 for h in holdings)
-    unrealized_pnl_pct = portfolio.get("total_pnl_pct", 0)
+
+    # Total portfolio P&L = current_value - committed_capital (HONEST)
+    total_pnl = current_value - capital
+    total_pnl_pct = (total_pnl / capital * 100) if capital > 0 else 0
 
     # Winners/losers
     winners = [h for h in holdings if (h.get("pnl_pct") or 0) > 0]
@@ -447,14 +459,16 @@ async def portfolio_xirr(strategy_type: str, request: Request):
         "strategy_type": strategy_type,
         "xirr_pct": xirr_pct,
         "days_held": days_held,
+        "capital": round(capital, 2),
         "invested": round(invested, 2),
         "current_value": round(current_value, 2),
         "cash_balance": round(float(portfolio.get("cash_balance", 0) or 0), 2),
         "unrealized_pnl": round(unrealized_pnl, 2),
-        "unrealized_pnl_pct": round(unrealized_pnl_pct, 2),
+        "unrealized_pnl_pct": round(total_pnl_pct, 2),
         "realized_pnl": round(realized_pnl, 2),
         "exit_count": exit_count,
-        "total_pnl": round(unrealized_pnl + realized_pnl, 2),
+        "total_pnl": round(total_pnl, 2),
+        "total_pnl_pct": round(total_pnl_pct, 2),
         "winners": len(winners),
         "losers": len(losers),
         "win_rate_pct": round(len(winners) / max(len(holdings), 1) * 100, 1),
