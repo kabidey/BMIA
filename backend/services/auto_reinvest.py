@@ -19,8 +19,8 @@ import yfinance as yf
 
 logger = logging.getLogger(__name__)
 
-# Broad NIFTY-200 universe (liquid, reliable) — strategy filters narrow it
-REPLENISH_UNIVERSE = [
+# Fallback universe if bhav copy is unavailable (NIFTY-200 heavyweights)
+FALLBACK_UNIVERSE = [
     "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "ICICIBANK.NS", "INFY.NS",
     "HINDUNILVR.NS", "ITC.NS", "SBIN.NS", "BHARTIARTL.NS", "KOTAKBANK.NS",
     "LT.NS", "BAJFINANCE.NS", "HCLTECH.NS", "AXISBANK.NS", "MARUTI.NS",
@@ -38,6 +38,41 @@ REPLENISH_UNIVERSE = [
     "IRCTC.NS", "LUPIN.NS", "BIOCON.NS", "TVSMOTOR.NS", "SRF.NS",
     "BANDHANBNK.NS", "HINDPETRO.NS", "PERSISTENT.NS", "MPHASIS.NS", "COFORGE.NS",
 ]
+
+
+def _get_universe(strategy_type: str, min_price: float = 50, min_traded_value: float = 1e7) -> list:
+    """Build replenishment universe from daily bhav copy (top-liquid N stocks).
+
+    For small/mid-cap-friendly strategies (swing, value_stocks, alpha_generator,
+    quick_entry) we take top 400 by traded value → NIFTY-500 equivalent breadth.
+    For blue_chip / momentum strategies we stick to top 150 (large-mid cap).
+    Falls back to a hardcoded NIFTY-200 list if bhav copy is unavailable.
+    """
+    try:
+        from services.full_market_scanner import get_nse_universe
+        nse = get_nse_universe()
+        if not nse:
+            return FALLBACK_UNIVERSE
+
+        # Basic liquidity + price gate
+        liquid = [
+            s for s in nse
+            if s.get("close", 0) >= min_price
+            and s.get("traded_value", 0) >= min_traded_value
+        ]
+        # Rank by traded value descending
+        liquid.sort(key=lambda x: x.get("traded_value", 0), reverse=True)
+
+        # Strategy-appropriate breadth
+        broad_caps = {"swing", "value_stocks", "alpha_generator", "quick_entry"}
+        top_n = 400 if strategy_type in broad_caps else 150
+
+        symbols = [s["symbol"] for s in liquid[:top_n]]
+        logger.info(f"REPLENISH_UNIVERSE [{strategy_type}]: {len(symbols)} liquid stocks from bhav copy")
+        return symbols
+    except Exception as e:
+        logger.warning(f"Bhav copy universe fetch failed ({e}), using fallback NIFTY-200")
+        return FALLBACK_UNIVERSE
 
 
 def _fetch_candidate_data(symbol: str) -> Optional[dict]:
@@ -263,9 +298,25 @@ def pick_replacement_stock(
     cfg = PORTFOLIO_STRATEGIES.get(strategy_type) if strategy_type else None
     scoring = (cfg or {}).get("scoring", "momentum")
     criteria = (cfg or {}).get("screener_criteria", {})
+    min_price = (cfg or {}).get("min_price", 50)
+    min_tv = (cfg or {}).get("min_traded_value", 1e7)
 
-    # Filter universe: skip held, sample up to max_candidates
-    universe = [s for s in REPLENISH_UNIVERSE if s not in held_symbols][:max_candidates]
+    # Build liquid universe from bhav copy (strategy-appropriate breadth)
+    full_universe = _get_universe(strategy_type, min_price=min_price, min_traded_value=min_tv)
+
+    # Exclude already-held
+    available = [s for s in full_universe if s not in held_symbols]
+
+    # Strategy-aware sampling: broad strategies get a diversified sample
+    # across the liquidity spectrum (not just the most liquid mega-caps);
+    # narrow strategies stick to the top of the list.
+    broad_caps = {"swing", "value_stocks", "alpha_generator", "quick_entry"}
+    if strategy_type in broad_caps and len(available) > max_candidates:
+        # Stride sampling across the full list to capture mid-caps
+        stride = max(1, len(available) // max_candidates)
+        universe = available[::stride][:max_candidates]
+    else:
+        universe = available[:max_candidates]
 
     scored = []
     for sym in universe:
