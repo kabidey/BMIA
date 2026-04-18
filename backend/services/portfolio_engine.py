@@ -886,6 +886,13 @@ async def construct_portfolio(db, strategy_type: str):
     if not cfg:
         return {"error": f"Unknown strategy: {strategy_type}"}
 
+    # Hard rule: portfolio construction only during safe market hours
+    from utils.market_hours import is_market_safe
+    ok, reason = await is_market_safe(db)
+    if not ok:
+        logger.info(f"CONSTRUCT [{strategy_type}]: skipped — {reason}")
+        return {"error": reason, "market_closed": True}
+
     logger.info(f"PORTFOLIO: Constructing '{cfg['name']}' with HARDENED pipeline...")
 
     # Stage 1: Get universe
@@ -1403,6 +1410,13 @@ async def _execute_rebalance(db, strategy_type, portfolio, changes, analysis, mo
       - realized_pnl accumulates (cp - ep) * qty on exits.
       - cash_balance holds truncation leftovers / unreinvested proceeds.
     """
+    # Hard rule: rebalance swaps only during safe market hours
+    from utils.market_hours import is_market_safe
+    ok, reason = await is_market_safe(db)
+    if not ok:
+        logger.info(f"REBALANCE [{strategy_type}]: skipped — {reason}")
+        return
+
     import yfinance as yf
 
     holdings = portfolio.get("holdings", [])

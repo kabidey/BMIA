@@ -696,6 +696,9 @@ async def portfolio_construct(strategy_type: str, request: Request):
     db = request.app.db
     if strategy_type not in PORTFOLIO_STRATEGIES:
         raise HTTPException(status_code=400, detail="Invalid strategy type")
+    # Hard rule: portfolio creation only during safe market hours
+    from utils.market_hours import assert_market_safe
+    await assert_market_safe(db)
     result = await construct_portfolio(db, strategy_type)
     return result
 

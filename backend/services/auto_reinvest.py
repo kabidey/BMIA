@@ -351,6 +351,13 @@ def reinvest_proceeds(db, portfolio_type: str, proceeds: float, source_exit: dic
     if proceeds <= 0:
         return None
 
+    # Hard rule: auto-reinvest only during safe market hours
+    from utils.market_hours import is_market_safe_sync
+    ok, reason = is_market_safe_sync(db)
+    if not ok:
+        logger.info(f"REINVEST [{portfolio_type}]: skipped — {reason}")
+        return None
+
     p = db.portfolios.find_one({"type": portfolio_type})
     if not p:
         return None

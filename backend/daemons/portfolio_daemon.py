@@ -112,6 +112,13 @@ def _enforce_stops(db, portfolio):
 
     Sell proceeds are added to cash_balance; realized P&L is accumulated.
     """
+    # Hard rule: stop-loss/take-profit trades only in safe market hours
+    from utils.market_hours import is_market_safe_sync
+    ok, reason = is_market_safe_sync(db)
+    if not ok:
+        logger.debug(f"DAEMON: skipping stop-enforcement for {portfolio['type']} — {reason}")
+        return []
+
     STOP_LOSS_PCT = -8.0
     TAKE_PROFIT_PCT = 20.0
     triggered = []

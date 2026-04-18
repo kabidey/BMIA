@@ -118,6 +118,10 @@ async def create_custom_portfolio(req: CreatePortfolioReq, request: Request):
     if len(req.symbols) > 10:
         raise HTTPException(status_code=400, detail="Maximum 10 stocks allowed")
 
+    # Hard rule: creation only during safe market hours
+    from utils.market_hours import assert_market_safe
+    await assert_market_safe(db)
+
     # Check for duplicates
     existing = await db.custom_portfolios.count_documents({})
     if existing >= 5:
@@ -261,6 +265,10 @@ async def rebalance_custom_portfolio(portfolio_id: str, req: RebalanceReq, reque
     from bson import ObjectId
     import yfinance as yf
     db = request.app.db
+
+    # Hard rule: rebalancing only during safe market hours
+    from utils.market_hours import assert_market_safe
+    await assert_market_safe(db)
 
     doc = await db.custom_portfolios.find_one({"_id": ObjectId(portfolio_id)})
     if not doc:
