@@ -28,6 +28,7 @@ Build a Tier-1 Quant Analyst for Indian Equity and Commodity markets.
 - **Proper rebalance accounting (Feb 2026)**: swap A→B preserves capital, realizes P&L on exits, tracks `cash_balance` + `realized_pnl` + `unrealized_pnl` separately; kept-stock cost basis preserved; invariant `current_value = holdings_value + cash_balance` and `total_pnl = realized + unrealized`
 - **HONEST P&L baseline (Feb 2026)**: All P&L measured against immutable `initial_capital` (AI) / `capital` (custom) — NOT shrunken `actual_invested`. Ensures losses from stop-outs show as real losses. Aggregate `total_pnl = total_value - total_capital`.
 - **SafeJSONResponse** (Feb 2026): Global FastAPI default response class strips NaN/Inf → null, preventing `ValueError: Out of range float values not JSON compliant` crashes on endpoints with pandas/numpy-derived metrics.
+- **PMS auto-reinvest (Feb 2026)**: `services/auto_reinvest.py` — strategy-aware picker using `PORTFOLIO_STRATEGIES` config (6 scoring types: momentum/breakout/blue_chip/oversold/contrarian/value). After every stop-out, daemon immediately redeploys proceeds into a thesis-appropriate stock. No idle cash possible. `GET /api/portfolios/exit-history/{type}` shows Realized Positions with full trail.
 
 ### RAG & Intelligence
 - 3-Month TF-IDF vectorization (25K+ vectors)
