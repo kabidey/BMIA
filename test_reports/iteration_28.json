@@ -1,0 +1,56 @@
+{
+  "summary": "Iteration 28: Strategy-Aware Auto-Reinvest Testing - All 24 tests passed (100%). Verified: (1) PORTFOLIO_STRATEGIES config has correct scoring types for all 6 strategies, (2) _passes_screener enforces strategy-specific filters (value: pe<20, pb<3, de<0.5; long_term: mc>10000Cr, roe>15%), (3) _score_by_strategy rewards thesis-consistent metrics (momentum=high 3M return, oversold=low RSI, value=low PE), (4) Dividend yield scoring caps at 15 points (yfinance bug fix), (5) Portfolio overview shows 6 healthy portfolios with NAV 310.4L (+3.68%), (6) Reconciled holdings: POWERGRID in bespoke (MOMENTUM), ONGC in quick_entry (BREAKOUT), WIPRO in value_stocks (VALUE).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "PORTFOLIO_STRATEGIES has all 6 strategies with correct scoring types",
+    "value_stocks screener_criteria: pe_max=20, price_to_book_max=3.0, debt_to_equity_max=0.5",
+    "long_term screener_criteria: market_cap_min=10000Cr, roe_min=15%",
+    "_passes_screener: valid value stock (pe=15, pb=2, de=30) passes",
+    "_passes_screener: high PE (25) candidate rejected by value_stocks",
+    "_passes_screener: high D/E (80) candidate rejected by value_stocks",
+    "_passes_screener: valid blue-chip (mc=15000Cr, roe=18%) passes long_term",
+    "_passes_screener: small-cap (mc=5000Cr) rejected by long_term",
+    "_score_by_strategy: momentum scoring rewards high 3M returns",
+    "_score_by_strategy: oversold scoring rewards low RSI",
+    "_score_by_strategy: value scoring rewards low PE",
+    "_score_by_strategy: dividend yield contribution capped at 15 points",
+    "GET /api/portfolios/overview returns 200",
+    "Overview has 6 portfolios",
+    "NAV (total_value) is 310.4L (positive)",
+    "total_pnl invariant: 1104187.24 == 0 + 1104187.24 (realized + unrealized)",
+    "Total Return: +11.04L (+3.68%)",
+    "Bespoke has POWERGRID with conviction=RECONCILE_V2 (MOMENTUM strategy)",
+    "Quick Entry has ONGC with conviction=RECONCILE_V2 (BREAKOUT strategy)",
+    "Value Stocks has WIPRO with conviction=RECONCILE_V2 (VALUE strategy)",
+    "Exit history for value_stocks returns 200",
+    "Exit history for bespoke_forward_looking returns 200",
+    "Exit history for quick_entry returns 200",
+    "Per-portfolio P&L invariant holds for all 6 portfolios"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration28_strategy_aware_reinvest.py",
+    "/app/test_reports/pytest/iteration28_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/backend/tests/test_iteration28_strategy_aware_reinvest.py"
+  ],
+  "success_rate": {
+    "backend": "100% (24/24 tests passed)",
+    "frontend": "N/A (backend-only testing requested)"
+  },
+  "test_credentials": "somnath.dey@smifs.com / admin123 (OrgLens auth flow)",
+  "seed_data_creation": "None - used existing 6 AI portfolios with reconciled holdings",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 28 verified the strategy-aware auto-reinvest implementation. Key findings: (1) PORTFOLIO_STRATEGIES config correctly maps 6 strategies to scoring types: bespoke=momentum, quick_entry=breakout, long_term=blue_chip, swing=oversold, alpha_generator=contrarian, value_stocks=value. (2) _passes_screener enforces strategy-specific filters: value_stocks requires pe<20, pb<3, de<0.5 (fractional); long_term requires mc>10000Cr, roe>15%. (3) _score_by_strategy rewards thesis-consistent metrics: momentum rewards high 3M returns, oversold rewards low RSI, value rewards low PE. (4) Dividend yield scoring caps at 15 points (handles yfinance percent-vs-fraction bug). (5) Reconciled holdings show strategy-appropriate picks: POWERGRID in bespoke (MOMENTUM, 3M 24.29%), ONGC in quick_entry (BREAKOUT, 3M 19.26%), WIPRO in value_stocks (VALUE, score 4175.57). (6) Portfolio overview: 6 portfolios, NAV 310.4L, Total Return +11.04L (+3.68%), all P&L invariants hold."
+}

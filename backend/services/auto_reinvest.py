@@ -1,11 +1,15 @@
 """
-PMS-style auto-reinvestment: after any exit (stop-loss, take-profit, or
-rebalance), immediately deploy the cash proceeds into a replacement stock
-so that portfolio NAV = Holdings MV + Cash, with cash always ~0.
+Strategy-aware PMS-style auto-reinvestment.
 
-Uses a fast factor-based shortlist (momentum-weighted) from the strategy's
-own universe — no LLM call. Matches the existing hardened shortlist's
-universe rules.
+When any position exits (stop-loss / take-profit / rebalance), pick a
+replacement stock that fits the PORTFOLIO'S OWN INVESTMENT THESIS —
+not a generic momentum pick. Reuses the existing strategy config
+(PORTFOLIO_STRATEGIES) so each portfolio stays true to its mandate:
+
+  momentum / breakout → recent upside, volume, trend
+  blue_chip          → large cap, stable, low volatility, low DE
+  oversold           → recent drawdown + RSI low + mean reversion setup
+  contrarian / value → low PE, high ROE, margin of safety
 """
 import logging
 import time
@@ -15,13 +19,13 @@ import yfinance as yf
 
 logger = logging.getLogger(__name__)
 
-# Large-mid-cap universe (NIFTY 200 tickers) — liquid, reliable for any strategy
+# Broad NIFTY-200 universe (liquid, reliable) — strategy filters narrow it
 REPLENISH_UNIVERSE = [
     "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "ICICIBANK.NS", "INFY.NS",
     "HINDUNILVR.NS", "ITC.NS", "SBIN.NS", "BHARTIARTL.NS", "KOTAKBANK.NS",
     "LT.NS", "BAJFINANCE.NS", "HCLTECH.NS", "AXISBANK.NS", "MARUTI.NS",
     "ASIANPAINT.NS", "SUNPHARMA.NS", "WIPRO.NS", "ULTRACEMCO.NS", "TITAN.NS",
-    "TATAMOTORS.NS", "ADANIENT.NS", "M&M.NS", "NESTLEIND.NS", "POWERGRID.NS",
+    "ADANIENT.NS", "M&M.NS", "NESTLEIND.NS", "POWERGRID.NS",
     "NTPC.NS", "TATASTEEL.NS", "ONGC.NS", "TECHM.NS", "JSWSTEEL.NS",
     "COALINDIA.NS", "HINDALCO.NS", "BAJAJFINSV.NS", "GRASIM.NS", "HDFCLIFE.NS",
     "ADANIPORTS.NS", "CIPLA.NS", "DRREDDY.NS", "EICHERMOT.NS", "DIVISLAB.NS",
@@ -36,96 +40,263 @@ REPLENISH_UNIVERSE = [
 ]
 
 
-def _score_candidate(symbol: str) -> Optional[dict]:
-    """Momentum-biased score: 3M return weighted by 6M trend.
-    Returns {symbol, score, current_price, name, sector} or None.
-    """
+def _fetch_candidate_data(symbol: str) -> Optional[dict]:
+    """Fetch price history + fundamentals for scoring."""
     try:
         tk = yf.Ticker(symbol)
         hist = tk.history(period="6mo")
         if hist is None or len(hist) < 60:
             return None
         close = hist["Close"]
+        high = hist["High"]
+        low = hist["Low"]
+        volume = hist["Volume"]
+
         current = float(close.iloc[-1])
+        p_1m = float(close.iloc[-21]) if len(close) >= 21 else float(close.iloc[0])
         p_3m = float(close.iloc[-63]) if len(close) >= 63 else float(close.iloc[0])
         p_6m = float(close.iloc[0])
-        if p_3m <= 0 or p_6m <= 0:
-            return None
-        ret_3m = (current - p_3m) / p_3m * 100
-        ret_6m = (current - p_6m) / p_6m * 100
-        # Momentum score: weight recent 3M more
-        score = ret_3m * 0.7 + ret_6m * 0.3
-        # Penalize overbought (recent >30% moves are often reversals)
-        if ret_3m > 35:
-            score *= 0.5
+        high_6m = float(high.max())
+        low_6m = float(low.min())
+
+        # RSI-14 (simplified)
+        delta = close.diff().dropna()
+        gain = delta.clip(lower=0).rolling(14).mean()
+        loss = (-delta.clip(upper=0)).rolling(14).mean()
+        rs = gain.iloc[-1] / loss.iloc[-1] if loss.iloc[-1] > 0 else 100
+        rsi = 100 - (100 / (1 + rs)) if rs > 0 else 50
+
+        # Volatility (stdev of daily returns × sqrt(252))
+        daily_ret = close.pct_change().dropna()
+        vol = float(daily_ret.std() * (252 ** 0.5) * 100) if len(daily_ret) > 0 else 0
+
+        # Avg daily traded value
+        avg_tv = float((close * volume).mean())
 
         info = tk.info or {}
+
         return {
             "symbol": symbol,
             "name": info.get("longName") or info.get("shortName") or symbol.replace(".NS", ""),
             "sector": info.get("sector", "N/A"),
             "current_price": round(current, 2),
-            "score": round(score, 2),
-            "ret_3m_pct": round(ret_3m, 2),
-            "ret_6m_pct": round(ret_6m, 2),
+            "ret_1m_pct": round((current - p_1m) / p_1m * 100, 2) if p_1m > 0 else 0,
+            "ret_3m_pct": round((current - p_3m) / p_3m * 100, 2) if p_3m > 0 else 0,
+            "ret_6m_pct": round((current - p_6m) / p_6m * 100, 2) if p_6m > 0 else 0,
+            "dist_from_high_pct": round((high_6m - current) / high_6m * 100, 2) if high_6m > 0 else 0,
+            "dist_from_low_pct": round((current - low_6m) / low_6m * 100, 2) if low_6m > 0 else 0,
+            "rsi": round(float(rsi), 1),
+            "volatility_ann_pct": round(vol, 2),
+            "avg_traded_value": avg_tv,
+            # Fundamentals
+            "market_cap": info.get("marketCap"),
+            "pe_ratio": info.get("trailingPE") or info.get("forwardPE"),
+            "price_to_book": info.get("priceToBook"),
+            "roe": info.get("returnOnEquity"),
+            "debt_to_equity": info.get("debtToEquity"),
+            "profit_margin": info.get("profitMargins"),
+            "revenue_growth": info.get("revenueGrowth"),
+            "dividend_yield": info.get("dividendYield"),
+            "beta": info.get("beta"),
         }
     except Exception as e:
-        logger.debug(f"Score failed for {symbol}: {e}")
+        logger.debug(f"Candidate fetch failed for {symbol}: {e}")
         return None
 
 
-def pick_replacement_stock(held_symbols: set, cash_available: float, max_candidates: int = 40) -> Optional[dict]:
-    """Pick the best momentum-ranked replacement stock not currently held.
+def _passes_screener(c: dict, criteria: dict) -> bool:
+    """Apply a strategy's screener_criteria fundamental gates."""
+    mc = c.get("market_cap")
+    if criteria.get("market_cap_min") and (mc is None or mc < criteria["market_cap_min"]):
+        return False
+    if "pe_max" in criteria:
+        pe = c.get("pe_ratio")
+        if pe is not None and pe > criteria["pe_max"]:
+            return False
+    if "price_to_book_max" in criteria:
+        pb = c.get("price_to_book")
+        if pb is not None and pb > criteria["price_to_book_max"]:
+            return False
+    if "roe_min" in criteria:
+        roe = c.get("roe")
+        if roe is not None and roe < criteria["roe_min"] / 100:
+            return False
+    if "debt_to_equity_max" in criteria:
+        de = c.get("debt_to_equity")
+        if de is not None and de > criteria["debt_to_equity_max"] * 100:
+            return False
+    if "revenue_growth_min" in criteria:
+        rg = c.get("revenue_growth")
+        if rg is not None and rg < criteria["revenue_growth_min"] / 100:
+            return False
+    if "profit_margin_min" in criteria:
+        pm = c.get("profit_margin")
+        if pm is not None and pm < criteria["profit_margin_min"] / 100:
+            return False
+    return True
+
+
+def _score_by_strategy(c: dict, scoring: str) -> float:
+    """Strategy-specific composite score. Higher = better fit for thesis."""
+    score = 0.0
+    r1, r3, r6 = c["ret_1m_pct"], c["ret_3m_pct"], c["ret_6m_pct"]
+    rsi = c["rsi"]
+    dist_hi, dist_lo = c["dist_from_high_pct"], c["dist_from_low_pct"]
+    vol = c["volatility_ann_pct"]
+    mc = c.get("market_cap") or 0
+    pe = c.get("pe_ratio")
+    pb = c.get("price_to_book")
+    roe = c.get("roe") or 0
+    pm = c.get("profit_margin") or 0
+    dy = c.get("dividend_yield") or 0
+    rg = c.get("revenue_growth") or 0
+    de = c.get("debt_to_equity") or 0
+    beta = c.get("beta")
+
+    if scoring == "momentum":
+        # Bespoke Forward Looking — reward recent 3M momentum, penalize overbought
+        score += r3 * 0.6 + r6 * 0.2 + r1 * 0.2
+        if r3 > 40:  # probable blow-off top
+            score *= 0.4
+        if 40 <= rsi <= 70:
+            score += 5
+        if rg > 0.10:
+            score += 8
+
+    elif scoring == "breakout":
+        # Quick Entry — near-term breakout + strong recent move
+        score += r1 * 0.7 + r3 * 0.3
+        if r1 > 5 and rsi < 75:
+            score += 10  # breakout not yet exhausted
+        if dist_hi < 5:
+            score += 8  # near 6M high = breakout zone
+        if r1 > 15:  # too fast
+            score *= 0.5
+
+    elif scoring == "blue_chip":
+        # Long Term Compounder — stability, quality, size
+        if mc > 50000e7:
+            score += 15
+        elif mc > 20000e7:
+            score += 10
+        if vol < 25:
+            score += 10  # low vol preferred
+        if roe > 0.15:
+            score += 10
+        if pm > 0.10:
+            score += 5
+        if de < 100:
+            score += 5
+        # Reward positive but not crazy returns
+        if 0 < r6 < 30:
+            score += r6 * 0.3
+        if beta and 0.6 < beta < 1.2:
+            score += 3
+
+    elif scoring == "oversold":
+        # Swing Trader — mean reversion from recent lows
+        if rsi < 40:
+            score += (40 - rsi) * 0.8
+        if r1 < -3:
+            score += min(abs(r1) * 1.5, 12)  # recent drawdown
+        if dist_lo < 10:
+            score += 8  # near 6M low
+        if 0 < r6 < 25:  # longer-term uptrend intact
+            score += 5
+
+    elif scoring == "contrarian":
+        # Alpha Generator — undervalued + recent underperformance
+        if pe is not None and 0 < pe < 20:
+            score += (20 - pe) * 0.8
+        if r1 < 0 and r6 > 0:
+            score += 10  # recent dip in uptrend
+        if roe > 0.12:
+            score += 8
+        if dy > 0.015:
+            score += 5
+        if mc > 2000e7 and vol < 35:
+            score += 5
+
+    elif scoring == "value":
+        # Value Stocks — deep value (low PE, low PB, healthy ROE, high DY)
+        if pe is not None and 0 < pe < 15:
+            score += (15 - pe) * 1.2
+        if pb is not None and 0 < pb < 2.5:
+            score += (2.5 - pb) * 5
+        if roe > 0.12:
+            score += 10
+        if de < 50:
+            score += 5
+        # dividend_yield may arrive as fraction (0.023) or pct (2.3) from yfinance
+        dy_frac = dy / 100 if dy > 1 else dy
+        if dy_frac > 0.02:
+            score += min(dy_frac * 500, 15)  # cap DY contribution at 15 points
+
+    else:  # fallback: simple momentum
+        score += r3 * 0.7 + r6 * 0.3
+
+    return round(score, 2)
+
+
+def pick_replacement_stock(
+    held_symbols: set,
+    cash_available: float,
+    strategy_type: str = None,
+    max_candidates: int = 40,
+) -> Optional[dict]:
+    """Pick best replacement stock respecting the portfolio's own thesis.
 
     Args:
-      held_symbols: set of symbols already in portfolio (to exclude)
+      held_symbols: set of symbols already held (exclude)
       cash_available: cash budget for the buy
+      strategy_type: key into PORTFOLIO_STRATEGIES; if None, fallback to momentum
       max_candidates: universe size to score
 
     Returns:
-      Picked stock dict with {symbol, name, sector, current_price, quantity} or None.
+      {symbol, name, sector, current_price, quantity, score, ...} or None
     """
     if cash_available <= 0:
         return None
 
-    # Sample from universe (skip held)
+    # Lazy import to avoid circular deps
+    from services.portfolio_engine import PORTFOLIO_STRATEGIES
+    cfg = PORTFOLIO_STRATEGIES.get(strategy_type) if strategy_type else None
+    scoring = (cfg or {}).get("scoring", "momentum")
+    criteria = (cfg or {}).get("screener_criteria", {})
+
+    # Filter universe: skip held, sample up to max_candidates
     universe = [s for s in REPLENISH_UNIVERSE if s not in held_symbols][:max_candidates]
+
     scored = []
     for sym in universe:
-        sc = _score_candidate(sym)
-        if sc and sc["current_price"] > 0:
-            scored.append(sc)
+        c = _fetch_candidate_data(sym)
+        if not c or c["current_price"] <= 0:
+            continue
+        if not _passes_screener(c, criteria):
+            continue
+        c["score"] = _score_by_strategy(c, scoring)
+        c["strategy_fit"] = scoring
+        scored.append(c)
         time.sleep(0.15)
 
     if not scored:
+        logger.warning(f"REINVEST [{strategy_type}]: No candidates passed screener {criteria}")
         return None
 
-    # Sort by score descending
     scored.sort(key=lambda x: x["score"], reverse=True)
 
-    # Pick top — must fit within budget (at least 1 share)
+    # Pick top that fits budget
     for cand in scored[:10]:
         qty = int(cash_available / cand["current_price"])
         if qty >= 1:
             cand["quantity"] = qty
             cand["deployed"] = round(qty * cand["current_price"], 2)
             return cand
-
     return None
 
 
 def reinvest_proceeds(db, portfolio_type: str, proceeds: float, source_exit: dict) -> Optional[dict]:
-    """Deploy cash proceeds from an exit into a replacement stock.
-
-    Args:
-      db: sync Mongo db
-      portfolio_type: strategy name
-      proceeds: amount of cash to deploy
-      source_exit: dict describing the exit (for logging)
-
-    Returns:
-      dict with replacement stock info, or None if no replacement could be picked.
-    """
+    """Deploy cash proceeds from an exit into a strategy-appropriate stock."""
     if proceeds <= 0:
         return None
 
@@ -134,18 +305,25 @@ def reinvest_proceeds(db, portfolio_type: str, proceeds: float, source_exit: dic
         return None
 
     held = {h["symbol"] for h in p.get("holdings", [])}
-    replacement = pick_replacement_stock(held, proceeds)
+    replacement = pick_replacement_stock(held, proceeds, strategy_type=portfolio_type)
     if not replacement:
-        logger.warning(f"REINVEST [{portfolio_type}]: No viable replacement found for ₹{proceeds:,.0f}")
+        logger.warning(f"REINVEST [{portfolio_type}]: No viable replacement for ₹{proceeds:,.0f}")
         return None
 
-    # Compute weight — freed weight from exit, or average of existing holdings
     freed_weight = source_exit.get("weight", 0) or (
         sum(h.get("weight", 0) for h in p.get("holdings", [])) / max(len(p.get("holdings", [])), 1)
     )
 
     from datetime import datetime
-    now = datetime.now().isoformat()
+    thesis_tag = replacement.get("strategy_fit", "momentum").upper()
+    rationale = (
+        f"Auto-redeployed from {source_exit.get('symbol','exit')} proceeds using "
+        f"{thesis_tag} strategy filter. "
+        f"Score {replacement['score']} | 1M {replacement['ret_1m_pct']}% | "
+        f"3M {replacement['ret_3m_pct']}% | RSI {replacement['rsi']} | "
+        f"MC ₹{(replacement.get('market_cap') or 0)/1e7:.0f}Cr"
+    )
+
     new_holding = {
         "symbol": replacement["symbol"],
         "name": replacement["name"],
@@ -158,14 +336,12 @@ def reinvest_proceeds(db, portfolio_type: str, proceeds: float, source_exit: dic
         "pnl": 0,
         "pnl_pct": 0,
         "conviction": "AUTO_REINVEST",
-        "rationale": f"Auto-redeployed from {source_exit.get('symbol','exit')} proceeds. "
-                     f"Momentum score {replacement['score']} (3M {replacement['ret_3m_pct']}%, 6M {replacement['ret_6m_pct']}%).",
-        "key_catalyst": "Automated replenishment",
+        "rationale": rationale,
+        "key_catalyst": f"Strategy-aware replenishment ({thesis_tag})",
         "risk_flag": "",
-        "entry_date": now,
+        "entry_date": datetime.now().isoformat(),
     }
 
-    # Add to holdings, reduce cash_balance by the deployed amount
     holdings = p.get("holdings", []) + [new_holding]
     cash_balance = float(p.get("cash_balance", 0) or 0) + proceeds - replacement["deployed"]
 
@@ -178,12 +354,10 @@ def reinvest_proceeds(db, portfolio_type: str, proceeds: float, source_exit: dic
     )
 
     logger.info(
-        f"REINVEST [{portfolio_type}]: {source_exit.get('symbol','?')} → {replacement['symbol']} "
-        f"qty={replacement['quantity']} @ ₹{replacement['current_price']} = ₹{replacement['deployed']:,.0f}"
+        f"REINVEST [{portfolio_type}/{thesis_tag}]: "
+        f"{source_exit.get('symbol','?')} → {replacement['symbol']} "
+        f"qty={replacement['quantity']} @ ₹{replacement['current_price']} "
+        f"= ₹{replacement['deployed']:,.0f} (score={replacement['score']})"
     )
 
-    return {
-        **replacement,
-        "freed_weight": round(freed_weight, 2),
-        "new_holding": new_holding,
-    }
+    return {**replacement, "freed_weight": round(freed_weight, 2), "new_holding": new_holding}

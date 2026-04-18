@@ -49,7 +49,7 @@ def reconcile(db, dry_run=True):
         print(f"\n{ptype}: weight_sum={weight_sum:.1f}% lost={lost_weight:.1f}% → deploying ₹{phantom_cash:,.0f}")
 
         held = {h["symbol"] for h in holdings}
-        replacement = pick_replacement_stock(held, phantom_cash)
+        replacement = pick_replacement_stock(held, phantom_cash, strategy_type=ptype)
         if not replacement:
             print(f"  FAIL: No viable replacement found for {ptype}")
             continue
