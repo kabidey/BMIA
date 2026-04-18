@@ -1,7 +1,7 @@
 """Autonomous portfolio routes."""
 import math
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from collections import defaultdict
 from fastapi import APIRouter, HTTPException, Request
 
@@ -349,6 +349,155 @@ async def portfolio_rebalance_log(strategy_type: str, request: Request, limit: i
     db = request.app.db
     logs = await get_rebalance_log(db, strategy_type, limit)
     return {"logs": logs}
+
+
+@router.get("/portfolios/exit-history/{strategy_type}")
+async def portfolio_exit_history(strategy_type: str, request: Request):
+    """Transparency view: every stock that was exited from this portfolio,
+    with approximate entry/exit prices, qty, and the realized P&L that was
+    removed from portfolio value.
+
+    Reconstructs data for historical STOP_ENFORCED events (old logs lack
+    entry_price/qty — we derive from yfinance close at portfolio.created_at
+    and the weight gap in current holdings).
+    """
+    import yfinance as yf
+    db = request.app.db
+    portfolio = await get_portfolio(db, strategy_type)
+    if not portfolio:
+        raise HTTPException(status_code=404, detail="Portfolio not found")
+
+    capital = float(portfolio.get("initial_capital", INITIAL_CAPITAL) or INITIAL_CAPITAL)
+    created_at = portfolio.get("created_at")
+    try:
+        start_date = datetime.fromisoformat(str(created_at).replace("Z", "+00:00")) if created_at else datetime.now(timezone.utc)
+    except Exception:
+        start_date = datetime.now(timezone.utc)
+
+    # Current weight gap (proxy for how much "weight" was exited)
+    current_weights = sum(float(h.get("weight", 0) or 0) for h in portfolio.get("holdings", []))
+    lost_weight = max(0.0, 100.0 - current_weights)
+
+    # Fetch all logs (STOP_ENFORCED + REBALANCE) for this portfolio
+    logs = await db.portfolio_rebalance_log.find(
+        {"portfolio_type": strategy_type}, {"_id": 0}
+    ).sort("timestamp", 1).to_list(length=100)
+
+    exits = []
+    total_proceeds_removed = 0.0
+    total_realized_pnl = 0.0
+    total_cost_basis_lost = 0.0
+
+    # Flatten all OUT changes
+    out_events = []
+    for log in logs:
+        ts = log.get("timestamp", "")
+        for ch in (log.get("changes") or []):
+            if ch.get("type") == "OUT":
+                out_events.append({"timestamp": ts, "change": ch, "action": log.get("action")})
+
+    if not out_events:
+        return {
+            "strategy_type": strategy_type,
+            "capital": round(capital, 2),
+            "current_value": round(float(portfolio.get("current_value", capital) or capital), 2),
+            "total_capital_removed": 0.0,
+            "total_realized_pnl": 0.0,
+            "exits": [],
+            "explanation": "No exits yet — portfolio has not had any stop-outs or rebalances.",
+        }
+
+    # Derive per-event weight (split lost_weight evenly across logged exits
+    # OR use authoritative data from the change if present)
+    per_event_weight = (lost_weight / len(out_events)) if out_events else 0
+
+    for evt in out_events:
+        ch = evt["change"]
+        sym = ch.get("symbol", "")
+        symbol_clean = sym.replace(".NS", "")
+        pnl_pct = float(ch.get("pnl_pct", 0) or ch.get("realized_pnl_pct", 0) or 0)
+
+        # Use authoritative data if present (new code path)
+        entry_price = float(ch.get("entry_price", 0) or 0)
+        exit_price = float(ch.get("exit_price", 0) or 0)
+        qty = int(ch.get("quantity", 0) or 0)
+        realized_pnl = float(ch.get("realized_pnl", 0) or 0)
+        proceeds = float(ch.get("proceeds", 0) or 0)
+
+        # Reconstruct if missing (old STOP_ENFORCED logs)
+        estimated = False
+        if not entry_price or not qty:
+            estimated = True
+            # Fetch historical price at portfolio creation date
+            try:
+                tk = yf.Ticker(sym)
+                # Get 5-day window around created_at to find nearest trading day
+                from_dt = start_date - timedelta(days=5)
+                to_dt = start_date + timedelta(days=5)
+                hist = tk.history(start=from_dt.date(), end=to_dt.date())
+                if hist is not None and len(hist) > 0:
+                    entry_price = float(hist["Close"].iloc[0])
+            except Exception:
+                entry_price = 0.0
+
+            # Estimate qty from weight gap
+            cost_basis_estimate = capital * (per_event_weight / 100.0)
+            if entry_price > 0:
+                qty = int(cost_basis_estimate / entry_price)
+            if qty < 1:
+                qty = 1
+            exit_price = round(entry_price * (1 + pnl_pct / 100.0), 2)
+            realized_pnl = (exit_price - entry_price) * qty
+            proceeds = exit_price * qty
+
+        cost_basis = entry_price * qty if entry_price and qty else 0
+
+        exits.append({
+            "symbol": symbol_clean,
+            "name": ch.get("name", symbol_clean),
+            "buy_date": str(start_date.date()) if estimated else None,
+            "exit_date": evt["timestamp"][:10] if evt["timestamp"] else None,
+            "buy_price": round(entry_price, 2),
+            "exit_price": round(exit_price, 2),
+            "quantity": qty,
+            "cost_basis": round(cost_basis, 2),
+            "proceeds": round(proceeds, 2),
+            "realized_pnl": round(realized_pnl, 2),
+            "realized_pnl_pct": round(pnl_pct, 2),
+            "trigger": ch.get("trigger_type") or ("STOP_ENFORCED" if evt["action"] == "STOP_ENFORCED" else "REBALANCE"),
+            "rationale": ch.get("rationale", ""),
+            "capital_removed_from_portfolio": round(proceeds, 2),
+            "estimated": estimated,
+        })
+
+        total_proceeds_removed += proceeds
+        total_realized_pnl += realized_pnl
+        total_cost_basis_lost += cost_basis
+
+    current_value = float(portfolio.get("current_value", capital) or capital)
+    # How much of the "missing" capital is explained by exits
+    capital_drop = capital - current_value  # positive if portfolio is below capital
+
+    return {
+        "strategy_type": strategy_type,
+        "name": portfolio.get("name", strategy_type),
+        "capital": round(capital, 2),
+        "current_value": round(current_value, 2),
+        "capital_drop": round(capital_drop, 2),  # how much below ₹50L (positive = loss)
+        "total_capital_removed": round(total_proceeds_removed, 2),
+        "total_cost_basis_lost": round(total_cost_basis_lost, 2),
+        "total_realized_pnl": round(total_realized_pnl, 2),
+        "unrealized_pnl_on_remaining": round(current_value - (capital - total_proceeds_removed), 2) if total_proceeds_removed else round(current_value - capital, 2),
+        "exits": exits,
+        "explanation": (
+            f"Each ₹50L portfolio lost capital when stocks were sold off. "
+            f"These {len(exits)} exit(s) removed ₹{total_proceeds_removed/1e5:.2f}L from the portfolio "
+            f"(cost basis ₹{total_cost_basis_lost/1e5:.2f}L + realized gain ₹{total_realized_pnl/1e5:.2f}L returned to the fund). "
+            f"Remaining holdings are performing the residual P&L you see."
+        ),
+    }
+
+
 
 
 @router.get("/portfolios/xirr/{strategy_type}")

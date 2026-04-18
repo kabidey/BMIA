@@ -620,6 +620,127 @@ function XirrSection({ strategyType }) {
 }
 
 // ═══════════════════════════════════════════
+// EXIT HISTORY — where did the capital go?
+// ═══════════════════════════════════════════
+function ExitHistorySection({ strategyType }) {
+  const [data, setData] = useState(null);
+  const [open, setOpen] = useState(true);
+
+  useEffect(() => {
+    fetch(`${BACKEND_URL}/api/portfolios/exit-history/${strategyType}`)
+      .then(r => r.json())
+      .then(d => setData(d))
+      .catch(() => {});
+  }, [strategyType]);
+
+  if (!data || !data.exits || data.exits.length === 0) return null;
+
+  const totalRemoved = data.total_capital_removed || 0;
+  const totalRealized = data.total_realized_pnl || 0;
+  const totalCostLost = data.total_cost_basis_lost || 0;
+
+  return (
+    <Card className="bg-[hsl(var(--card))] border-red-500/20 p-4" data-testid="exit-history-section">
+      <button onClick={() => setOpen(!open)} className="flex items-center justify-between w-full text-left mb-3">
+        <div className="flex items-center gap-2">
+          <ArrowDownRight className="w-4 h-4 text-red-400" />
+          <p className="text-sm font-semibold text-[hsl(var(--foreground))]" data-testid="exit-history-title">
+            Capital Trail — Where did the ₹{(data.capital / 1e5).toFixed(0)}L go?
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-red-500/15 text-red-400">
+            {data.exits.length} exit{data.exits.length > 1 ? 's' : ''} | −₹{(totalRemoved / 1e5).toFixed(2)}L removed
+          </span>
+          {open ? <ChevronDown className="w-3.5 h-3.5 text-[hsl(var(--muted-foreground))]" /> : <ChevronRight className="w-3.5 h-3.5 text-[hsl(var(--muted-foreground))]" />}
+        </div>
+      </button>
+
+      {open && (
+        <div className="space-y-3">
+          {/* Explanation banner */}
+          <div className="text-[11px] text-[hsl(var(--muted-foreground))] bg-[hsl(var(--surface-2))] rounded-lg p-2.5 border border-[hsl(var(--border))]/30 leading-relaxed">
+            {data.explanation}
+          </div>
+
+          {/* Summary metrics */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="bg-[hsl(var(--surface-2))] rounded-lg p-2.5 border border-[hsl(var(--border))]/30">
+              <p className="text-[9px] text-[hsl(var(--muted-foreground))] uppercase tracking-wider">Original Capital</p>
+              <p className="text-sm font-mono font-bold text-[hsl(var(--foreground))]">₹{(data.capital / 1e5).toFixed(0)}L</p>
+            </div>
+            <div className="bg-red-500/5 rounded-lg p-2.5 border border-red-500/10">
+              <p className="text-[9px] text-red-400 uppercase tracking-wider">Capital Removed</p>
+              <p className="text-sm font-mono font-bold text-red-400">−₹{(totalRemoved / 1e5).toFixed(2)}L</p>
+            </div>
+            <div className="bg-[hsl(var(--surface-2))] rounded-lg p-2.5 border border-[hsl(var(--border))]/30">
+              <p className="text-[9px] text-[hsl(var(--muted-foreground))] uppercase tracking-wider">Cost Basis Out</p>
+              <p className="text-sm font-mono font-bold text-[hsl(var(--foreground))]">₹{(totalCostLost / 1e5).toFixed(2)}L</p>
+            </div>
+            <div className={`bg-${totalRealized >= 0 ? 'emerald' : 'red'}-500/5 rounded-lg p-2.5 border border-${totalRealized >= 0 ? 'emerald' : 'red'}-500/10`}>
+              <p className={`text-[9px] text-${totalRealized >= 0 ? 'emerald' : 'red'}-400 uppercase tracking-wider`}>Realized Gain/Loss</p>
+              <p className={`text-sm font-mono font-bold text-${totalRealized >= 0 ? 'emerald' : 'red'}-400`}>
+                {totalRealized >= 0 ? '+' : ''}₹{(totalRealized / 1e5).toFixed(2)}L
+              </p>
+            </div>
+          </div>
+
+          {/* Per-exit detailed table */}
+          <div className="overflow-x-auto" data-testid="exit-history-table">
+            <table className="w-full text-xs">
+              <thead className="bg-[hsl(var(--surface-2))] text-[9px] uppercase tracking-wider text-[hsl(var(--muted-foreground))]">
+                <tr>
+                  <th className="text-left py-2 px-3">Stock</th>
+                  <th className="text-right py-2 px-2">Bought</th>
+                  <th className="text-right py-2 px-2">Exited</th>
+                  <th className="text-right py-2 px-2">Buy Px</th>
+                  <th className="text-right py-2 px-2">Exit Px</th>
+                  <th className="text-right py-2 px-2">Qty</th>
+                  <th className="text-right py-2 px-2">Cost Basis</th>
+                  <th className="text-right py-2 px-2">Proceeds</th>
+                  <th className="text-right py-2 px-3">P&L</th>
+                  <th className="text-center py-2 px-2">Reason</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.exits.map((e, i) => (
+                  <tr key={i} className="border-b border-[hsl(var(--border))]/20 hover:bg-[hsl(var(--surface-2))]/30" data-testid={`exit-row-${i}`}>
+                    <td className="py-2 px-3">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono font-bold text-[hsl(var(--foreground))]">{e.symbol}</span>
+                        {e.estimated && <span className="text-[8px] text-amber-400/70 bg-amber-500/10 px-1 py-0.5 rounded" title="Reconstructed from yfinance historical data">~est</span>}
+                      </div>
+                    </td>
+                    <td className="py-2 px-2 text-right text-[10px] text-[hsl(var(--muted-foreground))]">{e.buy_date || '—'}</td>
+                    <td className="py-2 px-2 text-right text-[10px] text-[hsl(var(--muted-foreground))]">{e.exit_date || '—'}</td>
+                    <td className="py-2 px-2 text-right font-mono">₹{e.buy_price.toFixed(2)}</td>
+                    <td className="py-2 px-2 text-right font-mono">₹{e.exit_price.toFixed(2)}</td>
+                    <td className="py-2 px-2 text-right font-mono">{e.quantity.toLocaleString('en-IN')}</td>
+                    <td className="py-2 px-2 text-right font-mono text-[hsl(var(--muted-foreground))]">₹{(e.cost_basis / 1000).toFixed(1)}K</td>
+                    <td className="py-2 px-2 text-right font-mono text-[hsl(var(--foreground))]">₹{(e.proceeds / 1000).toFixed(1)}K</td>
+                    <td className={`py-2 px-3 text-right font-mono font-bold ${e.realized_pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {e.realized_pnl >= 0 ? '+' : ''}₹{(e.realized_pnl / 1000).toFixed(1)}K
+                      <span className="block text-[9px] font-normal opacity-70">{e.realized_pnl_pct >= 0 ? '+' : ''}{e.realized_pnl_pct.toFixed(2)}%</span>
+                    </td>
+                    <td className="py-2 px-2 text-center">
+                      <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded ${
+                        e.trigger === 'STOP_LOSS' ? 'bg-red-500/15 text-red-400' :
+                        e.trigger === 'TAKE_PROFIT' ? 'bg-emerald-500/15 text-emerald-400' :
+                        'bg-amber-500/15 text-amber-400'
+                      }`}>{e.trigger?.replace('_', ' ')}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// ═══════════════════════════════════════════
 // MAIN PAGE
 // ═══════════════════════════════════════════
 export default function PortfolioDetail() {
@@ -714,6 +835,9 @@ export default function PortfolioDetail() {
 
           {/* XIRR + P&L Breakdown */}
           <XirrSection strategyType={type} />
+
+          {/* Capital Trail — where did it go? (only renders if exits exist) */}
+          <ExitHistorySection strategyType={type} />
 
           {/* Summary Stats */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

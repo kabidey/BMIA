@@ -1,0 +1,49 @@
+{
+  "summary": "Iteration 26: Exit History Feature - All tests passed. Backend: 11/11 tests passed (100%). Frontend: Exit History section renders correctly on portfolios with exits (value_stocks, bespoke_forward_looking, quick_entry) and correctly hidden on portfolios without exits (long_term, swing, alpha_generator).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "GET /api/portfolios/exit-history/value_stocks returns exits with reconstructed data (buy_price, quantity, estimated=true)",
+    "GET /api/portfolios/exit-history/bespoke_forward_looking returns exits with KRN stock",
+    "GET /api/portfolios/exit-history/quick_entry returns exits with KRN stock",
+    "GET /api/portfolios/exit-history/long_term returns empty exits array with 'No exits yet' explanation",
+    "GET /api/portfolios/exit-history/swing returns empty exits array",
+    "GET /api/portfolios/exit-history/alpha_generator returns empty exits array",
+    "Exit history math consistency: cost_basis = buy_price * quantity, proceeds = exit_price * quantity, realized_pnl = proceeds - cost_basis",
+    "Invalid portfolio returns 404",
+    "Regression: /api/portfolios/overview returns honest P&L (total_pnl = total_value - total_capital)",
+    "Regression: /api/portfolios/xirr/value_stocks returns capital field and uses capital basis",
+    "Regression: /api/portfolios/xirr/* works for all 6 portfolios",
+    "Frontend: Value Stocks detail page shows 'Capital Trail — Where did the ₹50L go?' section with data-testid='exit-history-section'",
+    "Frontend: Exit History shows 4 summary metric cards (Original Capital ₹50L, Capital Removed -₹8.04L, Cost Basis Out ₹6.70L, Realized Gain/Loss +₹1.34L)",
+    "Frontend: Detailed table shows GMDCLTD exit with Buy ₹604.35, Exit ₹725.40, Qty 1,108, P&L +₹134.1K (+20.03%), STOP_ENFORCED",
+    "Frontend: ~est amber badge appears next to stock symbol for reconstructed data",
+    "Frontend: Bespoke Forward Looking shows Exit History with KRN exit (₹964.20 → ₹1166.10, +20.94%)",
+    "Frontend: Long Term Compounder does NOT show Exit History section (correct - no exits)"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration26_exit_history.py",
+    "/app/test_reports/pytest/iteration26_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/backend/tests/test_iteration26_exit_history.py"
+  ],
+  "success_rate": {
+    "backend": "100% (11/11 tests passed)",
+    "frontend": "100% (All Exit History UI verified)"
+  },
+  "test_credentials": "somnath.dey@smifs.com / admin123 (OrgLens auth flow)",
+  "seed_data_creation": "None - used existing 6 AI portfolios with historical STOP_ENFORCED logs",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 26 verified the new Exit History feature. The user requested transparency on per-portfolio losses: 'for each portfolio make a section as where the loss is made, which stock was bought and where it was exited and show the loss, because each portfolio started with 50 lakhs'. Backend endpoint GET /api/portfolios/exit-history/{strategy_type} returns: capital, current_value, capital_drop, total_capital_removed, total_realized_pnl, exits array with {symbol, buy_date, exit_date, buy_price, exit_price, quantity, cost_basis, proceeds, realized_pnl, realized_pnl_pct, trigger, estimated} fields. For old STOP_ENFORCED logs (missing entry_price/qty), the endpoint reconstructs entry price from yfinance historical data at portfolio.created_at date. The 'estimated' flag is set to true for reconstructed data. Frontend ExitHistorySection component (line ~622 in PortfolioDetail.js) renders between XirrSection and Summary Stats. It shows 4 summary metric cards and a detailed table with all exit data. The ~est amber badge appears next to stock symbols for reconstructed data. For portfolios without exits (long_term, swing, alpha_generator), the section returns null and does not render. Regression tests confirm /api/portfolios/overview and /api/portfolios/xirr/* still return honest P&L data."
+}
