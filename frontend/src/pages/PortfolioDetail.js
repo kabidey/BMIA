@@ -620,7 +620,7 @@ function XirrSection({ strategyType }) {
 }
 
 // ═══════════════════════════════════════════
-// EXIT HISTORY — where did the capital go?
+// REALIZED POSITIONS — PMS-style booking trail
 // ═══════════════════════════════════════════
 function ExitHistorySection({ strategyType }) {
   const [data, setData] = useState(null);
@@ -635,22 +635,23 @@ function ExitHistorySection({ strategyType }) {
 
   if (!data || !data.exits || data.exits.length === 0) return null;
 
-  const totalRemoved = data.total_capital_removed || 0;
+  const totalProceeds = data.total_capital_removed || 0;  // gross proceeds
   const totalRealized = data.total_realized_pnl || 0;
-  const totalCostLost = data.total_cost_basis_lost || 0;
+  const totalCostBasis = data.total_cost_basis_lost || 0;
+  const gainColor = totalRealized >= 0 ? 'emerald' : 'red';
 
   return (
-    <Card className="bg-[hsl(var(--card))] border-red-500/20 p-4" data-testid="exit-history-section">
+    <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))] p-4" data-testid="exit-history-section">
       <button onClick={() => setOpen(!open)} className="flex items-center justify-between w-full text-left mb-3">
         <div className="flex items-center gap-2">
-          <ArrowDownRight className="w-4 h-4 text-red-400" />
+          <ArrowUpRight className={`w-4 h-4 text-${gainColor}-400`} />
           <p className="text-sm font-semibold text-[hsl(var(--foreground))]" data-testid="exit-history-title">
-            Capital Trail — Where did the ₹{(data.capital / 1e5).toFixed(0)}L go?
+            Realized Positions
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-red-500/15 text-red-400">
-            {data.exits.length} exit{data.exits.length > 1 ? 's' : ''} | −₹{(totalRemoved / 1e5).toFixed(2)}L removed
+          <span className={`text-[10px] font-mono px-2 py-0.5 rounded bg-${gainColor}-500/15 text-${gainColor}-400`}>
+            {data.exits.length} booking{data.exits.length > 1 ? 's' : ''} | {totalRealized >= 0 ? '+' : ''}₹{(totalRealized / 1e5).toFixed(2)}L realized
           </span>
           {open ? <ChevronDown className="w-3.5 h-3.5 text-[hsl(var(--muted-foreground))]" /> : <ChevronRight className="w-3.5 h-3.5 text-[hsl(var(--muted-foreground))]" />}
         </div>
@@ -658,29 +659,33 @@ function ExitHistorySection({ strategyType }) {
 
       {open && (
         <div className="space-y-3">
-          {/* Explanation banner */}
+          {/* PMS framing */}
           <div className="text-[11px] text-[hsl(var(--muted-foreground))] bg-[hsl(var(--surface-2))] rounded-lg p-2.5 border border-[hsl(var(--border))]/30 leading-relaxed">
-            {data.explanation}
+            Booked profits and losses from positions that have been exited.
+            In PMS accounting, proceeds are immediately redeployed into new stocks —
+            these rows show the realized (locked-in) leg of your returns.
           </div>
 
-          {/* Summary metrics */}
+          {/* Summary metrics (PMS standard) */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <div className="bg-[hsl(var(--surface-2))] rounded-lg p-2.5 border border-[hsl(var(--border))]/30">
-              <p className="text-[9px] text-[hsl(var(--muted-foreground))] uppercase tracking-wider">Original Capital</p>
-              <p className="text-sm font-mono font-bold text-[hsl(var(--foreground))]">₹{(data.capital / 1e5).toFixed(0)}L</p>
-            </div>
-            <div className="bg-red-500/5 rounded-lg p-2.5 border border-red-500/10">
-              <p className="text-[9px] text-red-400 uppercase tracking-wider">Capital Removed</p>
-              <p className="text-sm font-mono font-bold text-red-400">−₹{(totalRemoved / 1e5).toFixed(2)}L</p>
+              <p className="text-[9px] text-[hsl(var(--muted-foreground))] uppercase tracking-wider">Cost Basis Sold</p>
+              <p className="text-sm font-mono font-bold text-[hsl(var(--foreground))]">₹{(totalCostBasis / 1e5).toFixed(2)}L</p>
             </div>
             <div className="bg-[hsl(var(--surface-2))] rounded-lg p-2.5 border border-[hsl(var(--border))]/30">
-              <p className="text-[9px] text-[hsl(var(--muted-foreground))] uppercase tracking-wider">Cost Basis Out</p>
-              <p className="text-sm font-mono font-bold text-[hsl(var(--foreground))]">₹{(totalCostLost / 1e5).toFixed(2)}L</p>
+              <p className="text-[9px] text-[hsl(var(--muted-foreground))] uppercase tracking-wider">Gross Proceeds</p>
+              <p className="text-sm font-mono font-bold text-[hsl(var(--foreground))]">₹{(totalProceeds / 1e5).toFixed(2)}L</p>
             </div>
-            <div className={`bg-${totalRealized >= 0 ? 'emerald' : 'red'}-500/5 rounded-lg p-2.5 border border-${totalRealized >= 0 ? 'emerald' : 'red'}-500/10`}>
-              <p className={`text-[9px] text-${totalRealized >= 0 ? 'emerald' : 'red'}-400 uppercase tracking-wider`}>Realized Gain/Loss</p>
-              <p className={`text-sm font-mono font-bold text-${totalRealized >= 0 ? 'emerald' : 'red'}-400`}>
+            <div className={`bg-${gainColor}-500/5 rounded-lg p-2.5 border border-${gainColor}-500/10`}>
+              <p className={`text-[9px] text-${gainColor}-400 uppercase tracking-wider`}>Realized P&L</p>
+              <p className={`text-sm font-mono font-bold text-${gainColor}-400`}>
                 {totalRealized >= 0 ? '+' : ''}₹{(totalRealized / 1e5).toFixed(2)}L
+              </p>
+            </div>
+            <div className="bg-[hsl(var(--surface-2))] rounded-lg p-2.5 border border-[hsl(var(--border))]/30">
+              <p className="text-[9px] text-[hsl(var(--muted-foreground))] uppercase tracking-wider">Book Return %</p>
+              <p className={`text-sm font-mono font-bold text-${gainColor}-400`}>
+                {totalCostBasis > 0 ? ((totalRealized / totalCostBasis) * 100).toFixed(2) : '0.00'}%
               </p>
             </div>
           </div>
@@ -691,15 +696,15 @@ function ExitHistorySection({ strategyType }) {
               <thead className="bg-[hsl(var(--surface-2))] text-[9px] uppercase tracking-wider text-[hsl(var(--muted-foreground))]">
                 <tr>
                   <th className="text-left py-2 px-3">Stock</th>
-                  <th className="text-right py-2 px-2">Bought</th>
-                  <th className="text-right py-2 px-2">Exited</th>
+                  <th className="text-right py-2 px-2">Entry</th>
+                  <th className="text-right py-2 px-2">Exit</th>
                   <th className="text-right py-2 px-2">Buy Px</th>
                   <th className="text-right py-2 px-2">Exit Px</th>
                   <th className="text-right py-2 px-2">Qty</th>
-                  <th className="text-right py-2 px-2">Cost Basis</th>
+                  <th className="text-right py-2 px-2">Cost</th>
                   <th className="text-right py-2 px-2">Proceeds</th>
-                  <th className="text-right py-2 px-3">P&L</th>
-                  <th className="text-center py-2 px-2">Reason</th>
+                  <th className="text-right py-2 px-3">Realized P&L</th>
+                  <th className="text-center py-2 px-2">Booking</th>
                 </tr>
               </thead>
               <tbody>
@@ -708,7 +713,7 @@ function ExitHistorySection({ strategyType }) {
                     <td className="py-2 px-3">
                       <div className="flex items-center gap-1.5">
                         <span className="font-mono font-bold text-[hsl(var(--foreground))]">{e.symbol}</span>
-                        {e.estimated && <span className="text-[8px] text-amber-400/70 bg-amber-500/10 px-1 py-0.5 rounded" title="Reconstructed from yfinance historical data">~est</span>}
+                        {e.estimated && <span className="text-[8px] text-amber-400/70 bg-amber-500/10 px-1 py-0.5 rounded" title="Reconstructed from historical yfinance data">~est</span>}
                       </div>
                     </td>
                     <td className="py-2 px-2 text-right text-[10px] text-[hsl(var(--muted-foreground))]">{e.buy_date || '—'}</td>

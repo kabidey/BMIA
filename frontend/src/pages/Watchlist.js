@@ -359,7 +359,7 @@ export default function Watchlist() {
         </button>
       </div>
 
-      {/* Global Summary */}
+      {/* Global Summary — PMS framing */}
       {overview && (overview.active_portfolios > 0 || overview.pending_construction > 0) && (
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3" data-testid="global-summary">
           <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
@@ -370,36 +370,44 @@ export default function Watchlist() {
           </Card>
           <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
             <CardContent className="p-3">
-              <p className="text-[10px] text-[hsl(var(--muted-foreground))]">Current Value</p>
+              <p className="text-[10px] text-[hsl(var(--muted-foreground))]">NAV (Current Value)</p>
               <p className="text-base font-mono font-bold text-[hsl(var(--foreground))]">{overview.total_value > 0 ? `${(overview.total_value / 100000).toFixed(1)}L` : '--'}</p>
             </CardContent>
           </Card>
-          <Card className={`border ${totalPnl >= 0 ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-red-500/30 bg-red-500/5'}`}>
-            <CardContent className="p-3">
-              <p className="text-[10px] text-[hsl(var(--muted-foreground))]">Total P&L</p>
+          <Card className={`border ${(overview.total_realized_pnl || 0) >= 0 ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-red-500/20 bg-red-500/5'}`}>
+            <CardContent className="p-3" data-testid="global-realized-pnl">
+              <p className="text-[10px] text-[hsl(var(--muted-foreground))]">Realized P&L</p>
+              <p className={`text-base font-mono font-bold ${(overview.total_realized_pnl || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                {(overview.total_realized_pnl || 0) >= 0 ? '+' : ''}{((overview.total_realized_pnl || 0) / 100000).toFixed(2)}L
+              </p>
+              <p className="text-[9px] text-[hsl(var(--muted-foreground))] mt-0.5">booked</p>
+            </CardContent>
+          </Card>
+          <Card className={`border ${(overview.total_unrealized_pnl || 0) >= 0 ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-red-500/20 bg-red-500/5'}`}>
+            <CardContent className="p-3" data-testid="global-unrealized-pnl">
+              <p className="text-[10px] text-[hsl(var(--muted-foreground))]">Unrealized P&L</p>
+              <p className={`text-base font-mono font-bold ${(overview.total_unrealized_pnl || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                {(overview.total_unrealized_pnl || 0) >= 0 ? '+' : ''}{((overview.total_unrealized_pnl || 0) / 100000).toFixed(2)}L
+              </p>
+              <p className="text-[9px] text-[hsl(var(--muted-foreground))] mt-0.5">notional</p>
+            </CardContent>
+          </Card>
+          <Card className={`border ${totalPnl >= 0 ? 'border-emerald-500/30 bg-emerald-500/10' : 'border-red-500/30 bg-red-500/10'}`}>
+            <CardContent className="p-3" data-testid="global-total-return">
+              <p className="text-[10px] text-[hsl(var(--muted-foreground))]">Total Return</p>
               <p className={`text-base font-mono font-bold ${totalPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                 {overview.total_value > 0 ? `${totalPnl >= 0 ? '+' : ''}${(totalPnl / 100000).toFixed(2)}L` : '--'}
               </p>
-            </CardContent>
-          </Card>
-          <Card className={`border ${totalPnlPct >= 0 ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-red-500/30 bg-red-500/5'}`}>
-            <CardContent className="p-3">
-              <p className="text-[10px] text-[hsl(var(--muted-foreground))]">Return %</p>
-              <p className={`text-base font-mono font-bold ${totalPnlPct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                {overview.total_value > 0 ? `${totalPnlPct >= 0 ? '+' : ''}${totalPnlPct.toFixed(2)}%` : '--'}
+              <p className={`text-[9px] font-mono mt-0.5 ${totalPnlPct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                {totalPnlPct >= 0 ? '+' : ''}{totalPnlPct.toFixed(2)}%
               </p>
             </CardContent>
           </Card>
           <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
             <CardContent className="p-3">
-              <p className="text-[10px] text-[hsl(var(--muted-foreground))]">Active</p>
+              <p className="text-[10px] text-[hsl(var(--muted-foreground))]">Active / Exits</p>
               <p className="text-base font-mono font-bold text-emerald-400">{overview.active_portfolios}/6</p>
-            </CardContent>
-          </Card>
-          <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))]">
-            <CardContent className="p-3">
-              <p className="text-[10px] text-[hsl(var(--muted-foreground))]">Rebalance Logs</p>
-              <p className="text-base font-mono font-bold text-amber-400">{rebalanceLogs.length}</p>
+              <p className="text-[9px] text-amber-400 mt-0.5">{rebalanceLogs.length} bookings</p>
             </CardContent>
           </Card>
         </div>

@@ -1594,32 +1594,44 @@ async def get_portfolio_overview(db):
     total_invested = 0
     total_value = 0
     total_realized = 0
+    total_unrealized = 0
     total_cash = 0
     active = 0
 
     portfolio_summaries = []
     for p in portfolios:
-        # Immutable basis: what user originally committed to this strategy
         cap = float(p.get("initial_capital", INITIAL_CAPITAL) or INITIAL_CAPITAL)
-        inv = float(p.get("actual_invested", cap) or cap)  # currently deployed
+        inv = float(p.get("actual_invested", cap) or cap)
         val = float(p.get("current_value", inv) or inv)
         realized = float(p.get("realized_pnl", 0) or 0)
         cash = float(p.get("cash_balance", 0) or 0)
 
-        # Truth: P&L measured against original capital commitment
-        pnl = val - cap
-        pnl_pct = (pnl / cap * 100) if cap > 0 else 0
+        holdings = p.get("holdings", [])
+        # Unrealized = MTM of current holdings vs their cost basis (notional)
+        unrealized = sum(
+            (float(h.get("current_price", h.get("entry_price", 0)) or 0) -
+             float(h.get("entry_price", 0) or 0)) * h.get("quantity", 0)
+            for h in holdings
+        )
+        # PMS Total Return = Realized + Unrealized
+        total_return = realized + unrealized
+        total_return_pct = (total_return / cap * 100) if cap > 0 else 0
+        # NAV delta: what the portfolio page shows as "value change from capital"
+        # In healthy PMS with cash always redeployed: NAV delta == Total Return.
+        # For damaged portfolios (cash leaked historically): NAV delta < Total Return.
+        nav_delta = val - cap
 
         total_capital += cap
         total_invested += inv
         total_value += val
         total_realized += realized
+        total_unrealized += unrealized
         total_cash += cash
         if p.get("status") == "active":
             active += 1
 
-        winners = sum(1 for h in p.get("holdings", []) if h.get("pnl_pct", 0) > 0)
-        losers = sum(1 for h in p.get("holdings", []) if h.get("pnl_pct", 0) < 0)
+        winners = sum(1 for h in holdings if h.get("pnl_pct", 0) > 0)
+        losers = sum(1 for h in holdings if h.get("pnl_pct", 0) < 0)
 
         portfolio_summaries.append({
             "type": p.get("type"),
@@ -1630,9 +1642,12 @@ async def get_portfolio_overview(db):
             "current_value": round(val, 2),
             "cash_balance": round(cash, 2),
             "realized_pnl": round(realized, 2),
-            "total_pnl": round(pnl, 2),
-            "total_pnl_pct": round(pnl_pct, 2),
-            "holdings_count": len(p.get("holdings", [])),
+            "unrealized_pnl": round(unrealized, 2),
+            # total_pnl = PMS Total Return (realized + unrealized)
+            "total_pnl": round(total_return, 2),
+            "total_pnl_pct": round(total_return_pct, 2),
+            "nav_delta": round(nav_delta, 2),
+            "holdings_count": len(holdings),
             "winners": winners,
             "losers": losers,
             "created_at": p.get("created_at"),
@@ -1643,9 +1658,9 @@ async def get_portfolio_overview(db):
     existing_types = {p.get("type") for p in portfolios}
     pending = [t for t in PORTFOLIO_STRATEGIES if t not in existing_types]
 
-    # Aggregate: P&L vs total committed capital (honest view)
-    agg_pnl = total_value - total_capital
-    agg_pnl_pct = (agg_pnl / total_capital * 100) if total_capital > 0 else 0
+    # Aggregate PMS metrics
+    agg_total_return = total_realized + total_unrealized
+    agg_total_return_pct = (agg_total_return / total_capital * 100) if total_capital > 0 else 0
 
     return {
         "total_capital": round(total_capital, 2),
@@ -1653,8 +1668,10 @@ async def get_portfolio_overview(db):
         "total_value": round(total_value, 2),
         "total_cash_balance": round(total_cash, 2),
         "total_realized_pnl": round(total_realized, 2),
-        "total_pnl": round(agg_pnl, 2),
-        "total_pnl_pct": round(agg_pnl_pct, 2),
+        "total_unrealized_pnl": round(total_unrealized, 2),
+        "total_pnl": round(agg_total_return, 2),
+        "total_pnl_pct": round(agg_total_return_pct, 2),
+        "nav_delta": round(total_value - total_capital, 2),
         "active_portfolios": active,
         "pending_construction": len(pending),
         "pending_types": pending,

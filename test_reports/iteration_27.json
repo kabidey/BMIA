@@ -1,0 +1,50 @@
+{
+  "summary": "Iteration 27: PMS Accounting Model - All tests passed. Backend: 13/13 tests (100%). Frontend: All 6 summary cards render correctly with proper data-testids, 'Realized Positions' section displays with correct PMS framing, no 'Capital Removed' text found.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "GET /api/portfolios/overview returns total_realized_pnl, total_unrealized_pnl, nav_delta, total_pnl",
+    "Per-portfolio: realized_pnl + unrealized_pnl fields present",
+    "Math invariant: aggregate total_pnl == total_realized_pnl + total_unrealized_pnl (diff=₹0.00)",
+    "Math invariant: per-portfolio total_pnl == realized_pnl + unrealized_pnl (within ₹1)",
+    "Math invariant: sum of portfolio totals == aggregate total_pnl",
+    "All 6 portfolios have healthy holdings (Bespoke=10, Quick=9, Value=7, Long=10, Swing=10, Alpha=10)",
+    "Portfolio weights sum close to 100% for all portfolios",
+    "POWERGRID.NS found in bespoke_forward_looking, quick_entry, value_stocks with RECONCILE conviction",
+    "XIRR endpoint works for all 6 portfolios",
+    "Custom portfolios endpoint returns 200",
+    "Big market overview returns 200 (SafeJSONResponse handles NaN/Inf)",
+    "Exit history returns data for value_stocks, bespoke_forward_looking, quick_entry",
+    "Frontend: 6 summary cards render (Total Capital 300L, NAV 310.4L, Realized P&L +0.00L, Unrealized P&L +11.04L, Total Return +11.04L +3.68%, Active 6/6)",
+    "Frontend: data-testids present: global-summary, global-realized-pnl, global-unrealized-pnl, global-total-return",
+    "Frontend: 'Realized Positions' section title (not 'Capital Trail')",
+    "Frontend: Table columns: STOCK, ENTRY, EXIT, BUY PX, EXIT PX, QTY, COST, PROCEEDS, REALIZED P&L, BOOKING",
+    "Frontend: No 'Capital Removed' text found (correct PMS framing)",
+    "Frontend: POWERGRID found in holdings table for Bespoke Forward Looking"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration27_pms_accounting.py",
+    "/app/test_reports/pytest/iteration27_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/backend/tests/test_iteration27_pms_accounting.py"
+  ],
+  "success_rate": {
+    "backend": "100% (13/13 tests passed)",
+    "frontend": "100% (All PMS UI elements verified)"
+  },
+  "test_credentials": "somnath.dey@smifs.com / admin123 (OrgLens auth flow)",
+  "seed_data_creation": "None - used existing 6 AI portfolios with reconciled POWERGRID holdings",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 27 verified the PMS accounting model implementation. Key findings: (1) GET /api/portfolios/overview returns proper PMS metrics: total_realized_pnl=0, total_unrealized_pnl=+₹11.04L, total_pnl=+₹11.04L (+3.68%), nav_delta=+₹10.4L. (2) Math invariants hold: total_pnl == realized + unrealized for both aggregate and per-portfolio. (3) All 6 portfolios have healthy holdings with weights summing ~100%. (4) POWERGRID.NS is in bespoke_forward_looking, quick_entry, value_stocks with conviction='RECONCILE' and rationale mentioning 'phantom capital' or 'auto-redeployment'. (5) Frontend /watchlist shows 6 summary cards with correct data-testids. (6) Portfolio detail pages show 'Realized Positions' section (not 'Capital Trail') with PMS-style metrics: Cost Basis Sold, Gross Proceeds, Realized P&L, Book Return %. (7) Table columns are: Entry, Exit, Buy Px, Exit Px, Qty, Cost, Proceeds, Realized P&L, Booking. (8) No 'Capital Removed' red text anywhere. (9) Regression: XIRR, custom_portfolios, big-market/overview all functional."
+}

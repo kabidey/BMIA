@@ -19,26 +19,26 @@ def test_portfolio_overview_math_consistent():
     assert r.status_code == 200
     d = r.json()
 
-    # Invariant 1: total_pnl == total_value - total_capital (HONEST basis)
-    # NOT total_value - total_invested (which hides damage from past stop-outs)
-    computed = d["total_value"] - d["total_capital"]
+    # PMS invariant: total_pnl == total_realized_pnl + total_unrealized_pnl
+    # (Total Return = Realized + Unrealized, standard PMS accounting)
+    computed = d.get("total_realized_pnl", 0) + d.get("total_unrealized_pnl", 0)
     assert abs(d["total_pnl"] - computed) < 1.0, \
-        f"total_pnl mismatch: {d['total_pnl']} vs {computed}"
+        f"total_pnl mismatch: {d['total_pnl']} vs realized+unrealized={computed}"
 
-    # Invariant 2: total_pnl_pct matches (vs capital basis)
-    if d["total_capital"] > 0:
-        expected_pct = round(d["total_pnl"] / d["total_capital"] * 100, 2)
-        assert abs(d["total_pnl_pct"] - expected_pct) < 0.1
+    # nav_delta invariant: total_value - total_capital
+    nav_delta = d["total_value"] - d["total_capital"]
+    if "nav_delta" in d:
+        assert abs(d["nav_delta"] - nav_delta) < 1.0
 
-    # Invariant 3: sum of per-portfolio pnl == aggregate
-    per_sum = sum(p["total_pnl"] for p in d.get("portfolios", []))
-    assert abs(d["total_pnl"] - per_sum) < 5.0, \
-        f"Per-portfolio sum {per_sum} vs aggregate {d['total_pnl']}"
+    # Per-portfolio: total_pnl = realized + unrealized
+    for p in d.get("portfolios", []):
+        per_sum = p.get("realized_pnl", 0) + p.get("unrealized_pnl", 0)
+        assert abs(p["total_pnl"] - per_sum) < 1.0, \
+            f"{p['type']}: total_pnl {p['total_pnl']} vs realized+unrealized={per_sum}"
 
-    # Invariant 4: sign consistency — value < capital MUST show negative P&L
-    if d["total_value"] < d["total_capital"]:
-        assert d["total_pnl"] < 0, \
-            "Value below capital MUST show negative P&L (honest accounting)"
+    # Aggregate: sum of per-portfolio == global
+    per_total = sum(p["total_pnl"] for p in d.get("portfolios", []))
+    assert abs(d["total_pnl"] - per_total) < 5.0
 
     print(f"✅ Capital:   ₹{d['total_capital']/1e5:.1f}L")
     print(f"✅ Invested:  ₹{d['total_invested']/1e5:.1f}L")

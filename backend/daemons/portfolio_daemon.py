@@ -180,6 +180,38 @@ def _enforce_stops(db, portfolio):
             "realized_pnl_delta": round(sum(c["realized_pnl"] for c in changes), 2),
         })
 
+        # PMS accounting: immediately reinvest proceeds — no idle cash
+        try:
+            from services.auto_reinvest import reinvest_proceeds
+            reinvestments = []
+            for c in changes:
+                if c.get("proceeds", 0) > 0:
+                    result = reinvest_proceeds(
+                        db, portfolio["type"], c["proceeds"],
+                        source_exit={"symbol": c["symbol"], "weight": 10}
+                    )
+                    if result:
+                        reinvestments.append(result)
+            if reinvestments:
+                # Log the reinvestment as a companion audit trail
+                db.portfolio_rebalance_log.insert_one({
+                    "portfolio_type": portfolio["type"],
+                    "action": "AUTO_REINVEST",
+                    "timestamp": datetime.now(IST).isoformat(),
+                    "changes": [{
+                        "type": "IN",
+                        "symbol": r["symbol"],
+                        "name": r["name"],
+                        "sector": r["sector"],
+                        "entry_price": r["current_price"],
+                        "quantity": r["quantity"],
+                        "rationale": r["new_holding"]["rationale"],
+                    } for r in reinvestments],
+                    "triggered_by": "STOP_ENFORCED",
+                })
+        except Exception as e:
+            logger.error(f"DAEMON: Auto-reinvest failed for {portfolio['type']}: {e}")
+
         logger.info(
             f"DAEMON: {portfolio['type']} — {len(triggered)} stops triggered: {list(remove_syms)} "
             f"| realized ₹{sum(c['realized_pnl'] for c in changes):,.0f}"
