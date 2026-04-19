@@ -114,8 +114,19 @@ app.add_middleware(
 
 
 @app.get("/api/health")
+@app.get("/health")
+@app.get("/healthz")
+@app.get("/readyz")
+@app.get("/livez")
 async def health():
     return {"status": "ok", "service": "BMIA", "timestamp": datetime.now().isoformat()}
+
+
+# Root — many deploy platforms probe "/" expecting a 200 response to mark the
+# container as healthy. Return a tiny payload so probes pass immediately.
+@app.get("/")
+async def root():
+    return {"service": "BMIA", "status": "ok"}
 
 
 # Register route modules
