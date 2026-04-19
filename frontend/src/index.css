@@ -82,3 +82,72 @@
 .tabular-nums {
   font-variant-numeric: tabular-nums;
 }
+
+/* ============================================================
+   MOBILE RESPONSIVENESS — global safety net
+   These rules apply automatically when viewport < 640px (sm).
+   Individual components can still override with their own classes.
+   ============================================================ */
+@media (max-width: 639px) {
+  /* 1. Prevent horizontal overflow on the whole document */
+  html, body, #root {
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
+
+  /* 2. Wide tables get horizontal scroll inside their own box instead of
+        pushing the page wider. We wrap via display:block on the <table>
+        itself, then let nowrap preserve column alignment. */
+  table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+  }
+  table thead, table tbody { white-space: nowrap; }
+
+  /* 3. Minimum tap-target size for primary buttons (WCAG 2.5.5 — 44x44).
+        Scoped to data-testid so we don't bloat every inline icon. */
+  button[data-testid$="-btn"],
+  button[data-testid$="-button"],
+  a[data-testid$="-btn"] {
+    min-height: 40px;
+  }
+
+  /* 4. Flex rows wrap instead of overflowing */
+  .mobile-wrap { flex-wrap: wrap !important; }
+
+  /* 5. Keep chart containers inside the viewport */
+  .recharts-responsive-container,
+  .recharts-wrapper,
+  svg.recharts-surface {
+    max-width: 100% !important;
+  }
+
+  /* 6. Readability: never shrink body text below 11px on mobile */
+  .text-\[10px\] { font-size: 11px !important; }
+
+  /* 7. Hide elements explicitly marked desktop-only */
+  .desktop-only { display: none !important; }
+
+  /* 8. Smaller page padding on phones */
+  [data-testid$="-page"],
+  [data-testid="market-cockpit"],
+  [data-testid="compliance-panel"] {
+    padding-left: 0.75rem !important;
+    padding-right: 0.75rem !important;
+  }
+
+  /* 9. Dialogs — fill the screen for readability */
+  [role="dialog"] .fixed.inset-0 > div:not([role="dialog"]),
+  [data-testid*="modal"] > div {
+    max-width: 100vw !important;
+    margin: 0 !important;
+  }
+}
+
+/* Utility: show only on mobile */
+.mobile-only { display: none; }
+@media (max-width: 639px) {
+  .mobile-only { display: initial; }
+}

@@ -246,10 +246,31 @@ export default function ComplianceResearchPanel({ compact = false }) {
     } catch {}
   };
 
+  // Mobile: hide the filters pane by default and show a toggle button
+  const [filtersOpen, setFiltersOpen] = useState(false);
+
   return (
-    <div className={`flex ${compact ? 'h-full' : 'h-[calc(100vh-3.5rem)]'} bg-[hsl(var(--background))]`} data-testid="compliance-panel">
+    <div className={`flex flex-col sm:flex-row ${compact ? 'h-full' : 'h-[calc(100vh-3.5rem)] sm:h-[calc(100vh-3.5rem)]'} bg-[hsl(var(--background))]`} data-testid="compliance-panel">
+      {/* Mobile: filters toggle bar */}
+      <div className="sm:hidden flex items-center justify-between px-3 py-2 border-b border-[hsl(var(--border))] bg-[hsl(var(--surface-1))]">
+        <button
+          onClick={() => setFiltersOpen(v => !v)}
+          className="flex items-center gap-1.5 text-xs font-medium text-[hsl(var(--foreground))] px-3 py-1.5 rounded-md bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))]"
+          data-testid="compliance-filters-toggle"
+        >
+          <Filter className="w-3.5 h-3.5" />
+          {filtersOpen ? 'Hide' : 'Sources & status'}
+        </button>
+        {stats?.overall_phase && (
+          <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded uppercase tracking-wider ${
+            stats.overall_phase === 'live'
+              ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+              : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+          }`}>{stats.overall_phase}</span>
+        )}
+      </div>
       {/* LEFT: Filters + Stats */}
-      <div className={`${compact ? 'w-60' : 'w-72'} border-r border-[hsl(var(--border))] bg-[hsl(var(--surface-1))] flex flex-col flex-shrink-0`}>
+      <div className={`${filtersOpen ? 'flex' : 'hidden'} sm:flex ${compact ? 'w-full sm:w-60' : 'w-full sm:w-72'} border-b sm:border-b-0 sm:border-r border-[hsl(var(--border))] bg-[hsl(var(--surface-1))] flex-col flex-shrink-0 max-h-[60vh] sm:max-h-none overflow-y-auto`}>
         <div className="p-4 border-b border-[hsl(var(--border))]">
           <div className="flex items-center gap-2 mb-1">
             <Scale className="w-4 h-4 text-[hsl(var(--primary))]" />
