@@ -92,9 +92,6 @@ frontend/node_modules/.cache/default-development/11.pack
 frontend/node_modules/.cache/default-development/1.pack
 frontend/node_modules/.cache/default-development/2.pack
 # Environment and credential files
-.env
-.env.*
-*.env
 credentials.json
 *.pem
 *.key
@@ -112,9 +109,6 @@ frontend/node_modules/.cache/default-development/22.pack
 frontend/node_modules/.cache/default-development/24.pack
 -e 
 # Environment and credential files
-.env
-.env.*
-*.env
 credentials.json
 *.pem
 *.key
