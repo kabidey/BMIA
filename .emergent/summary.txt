@@ -1,124 +1,144 @@
-<analysis>**original_problem_statement**: 
-Build the Bharat Market Intel Agent (BMIA), a Tier-1 Quant Analyst specializing in Indian Equity and Commodity markets. Features include an autonomous God Mode AI portfolio engine managing 6 distinct 10-stock portfolios (₹50L capital each) with background rebalancing, inline PDF text extraction from BSE filings, and real-time market data.
-*Recent Requirements*: Refactor  into a modular structure. Harden the God Mode pipeline by integrating an advanced fundamental screener (like screener.in) and validating data to eliminate LLM bias/hallucinations. Fix Kubernetes deployment bugs ( error, BSE gainers error, JSON float error). Build a Portfolio Analytics Dashboard with sector allocation and risk metrics. Implement Deep Portfolio Hardening by enforcing quantitative guardrails in code (not via LLM) and generating a 5-year historical backtest against the Nifty 50 for all 6 portfolios.
+<analysis>Here is the handover summary based on the provided LLM message history:
 
-**User's preferred language**: English
-(INSTRUCT: Next agent must respond in the user's preferred language only)
+**original_problem_statement**: 
+Build the Bharat Market Intel Agent (BMIA), a Tier-1 Quant Analyst specializing in Indian Equity and Commodity markets. 
+*PRODUCT REQUIREMENTS*: 
+- Build a professional-grade simulation tool (4-Model ML Ensemble + Monte Carlo) for portfolio forecasting.
+- Create a Make Your Own custom portfolio feature with manual rebalancing and persistence.
+- Implement OrgLens API for employee verification and JWT-based authentication.
+- Create a comprehensive Big Market terminal dashboard.
+- *NEW*: Create a Compliance Menu with a NotebookLM-style RAG AI Agent using Claude Sonnet 4.5. It must consume and vectorize all NSE, BSE, and SEBI circulars from 2010 to date, allowing users to research massive data accurately without persistent PDF storage.
+
+**User's preferred language**: English (INSTRUCT next agent to respond in English only)
 
 **what currently exists?** 
-A highly mature, modular God Mode AI Market Scanner and fully autonomous Portfolio Manager. The backend is cleanly separated into  and . It constructs and manages 6 portfolios using a heavily hardened v3 pipeline: the system uses code-enforced quantitative guardrails (data sanitization, max 3 stocks per sector, ATR volatility-based position sizing, and an 8% hard stop-loss) while utilizing 3-LLM consensus strictly for qualitative synthesis and thesis generation. It features a Portfolio Analytics dashboard displaying real-time holdings, risk metrics, sector pie charts, and comprehensive 5-year backtests (CAGR, Alpha, Sharpe, Max Drawdown).
+A mature, modular AI Market Scanner and fully autonomous Portfolio Manager. It features AI-managed portfolios backed by an optimized 4-Model ML Ensemble. The system enforces strict PMS accounting (immediate auto-reinvestment on stop-loss, honest P&L vs initial capital). It includes comprehensive audit logging, Guidance AI, Screener.in-style stock views, and a Koyfin-style Big Market terminal. Write operations are guarded strictly by IST Market Hours logic.
 
 **Last working item**: 
-    - Last item agent was working: Implementing Deep Portfolio Hardening by shifting mathematical constraints and risk management (sector limits, ATR sizing, 5-year backtesting) from the LLM prompt to hard-coded backend Python logic (), then updating the UI to display the 5-year backtest charts.
-    - Status: COMPLETED
-    - Agent Testing Done: Y
-    - Which testing method agent to use? NA (Testing already done via  returning 100% pass on iteration 13).
-    - User Testing Done: Y (Implicit, agent completed all instructions perfectly and finished the task).
+    - Last item agent was working: Building the Compliance Menu feature (NotebookLM-style RAG Agent for NSE/BSE/SEBI circulars). The agent initialized the required blank files (, , ) and fetched the Emergent LLM key integration playbook for Claude Sonnet 4.5.
+    - Status: IN PROGRESS
+    - Agent Testing Done: N
+    - Which testing method agent to use? backend testing agent
+    - User Testing Done: N
 
 **All Pending/In progress Issue list**: 
-None. (Deployment blockers related to  signals,  argument changes, and FastAPI / JSON serialization were successfully resolved).
+  None explicitly pending. All reported bugs regarding P&L math, UI deployment errors (NaN/Inf JSON issues), and missing reinvestments were resolved and tested comprehensively.
 
 **In progress Task List**: 
-None. The current phase is completely finished and tested.
+  Task 1: Compliance Menu & Circulars RAG Agent
+     - Where to resume: Implement background ingestion of circulars in , build the vectorization/chunking logic in , and set up the Claude Sonnet 4.5 chat agent in . Finally, build the frontend UI (similar to Guidance modal) and wire up backend routes.
+     - What will be achieved with this? A bulletproof NotebookLM-style RAG interface for regulatory research across decades of market circulars.
+     - Status: IN PROGRESS
+     - Should Test frontend/backend/both after fix? Both
+     - Blocked on something: No. Base files and integration playbook are ready.
 
 **Upcoming and Future Tasks**
     Upcoming Tasks:
-    - Monitor continuous rebalancing with hardened prompts: Ensure the daemon executes rebalancing swaps accurately during the 4-6 PM IST window using the new hardened v3 guardrails, and logs the precise rationale for incoming/outgoing stocks. (P1)
-    - Implement CSV/PDF export functionality for signal analysis and track record reports. (P2)
-    - Add WebSocket/SSE for true real-time streaming of the Market Cockpit instead of polling/auto-refresh. (P2)
+    - P1: Enhance Big Market Dashboard: Add Market Movers scatter, FII/DII flows, Earnings Calendar, Put-Call Ratio, Analyst Estimates, News.
+    - P2: Implement CSV/PDF export functionality for portfolio reports.
+    - P2: Add WebSocket/SSE for true real-time streaming of the Market Cockpit instead of polling.
     
     Future Tasks:
-    - Add portfolio alerts: Push notifications when the daemon executes a rebalance swap or when a portfolio crosses a P&L threshold (e.g., +5% or -3%).
-    - Walk-forward simulation tracking: Monitor forward performance over the coming months to validate the current lookback backtest edge.
+    - Add portfolio alerts: Push notifications when the daemon executes a rebalance swap or crosses a P&L threshold.
+    - Benchmark comparison dashboard.
 
 **Completed work in this session**
-- Refactored  (>1200 lines to ~90 lines) by extracting logic into  and  directories. (DONE)
-- Fixed Kubernetes deployment blockers ( NoneType crashes,  library API changes, and yfinance NaN JSON serialization). (DONE)
-- Built Hardened God Mode Pipeline v2: Added advanced fundamental screener logic (P/E, P/B, ROE, PEG) and deep BSE guidance enrichment. (DONE)
-- Created Portfolio Analytics Dashboard UI () with Recharts (Sector Pie Chart, P&L Bar Chart, Risk Metrics). (DONE)
-- Deep Portfolio Hardening (v3): Shifted mathematical constraints from LLM to code. Built  to enforce data sanitization, strict sector diversification (max 3), ATR-based position sizing, and an 8% hard stop-loss. (DONE)
-- Implemented 5-Year Backtesting Engine: Calculates CAGR, Alpha vs Nifty 50, Sharpe Ratio, and Max Drawdown, with results cached in MongoDB and charted in the UI. (DONE)
-- Autonomously rebuilt all 6 portfolios using the hardened pipeline. (DONE)
+- PMS Accounting Overhaul: P&L calculated against immutable initial capital instead of shrunken invested amounts (DONE).
+- Strategy-Aware Auto Reinvest: Replaced idle cash holding with immediate, strategy-specific NIFTY-500 stock reinvestment on stop-out (DONE).
+- Reconciled Damaged Portfolios: Fixed 3 broken portfolios by redeploying phantom cash into thesis-appropriate picks (POWERGRID, ONGC, WIPRO) (DONE).
+- Deployment Blocker Fix (): Implemented global  to catch NaN/Inf pandas returns (DONE).
+- Capital Trail / Exit History UI: Frontend component to show exact entry/exit data and realized P&L per trade (DONE).
+- Market Hours Guard: Enforced strictly Mon-Fri 09:30-15:15 IST (excluding NSE holidays) for all construct/rebalance/trade endpoints (DONE).
 
 **Earlier issues found/mentioned but not fixed**
 None.
 
 **Known issue recurrence from previous fork**
-  - Issue recurrence:  /  float values from  breaking FastAPI JSON serialization.
-  - Recurrence count: 1 (Appeared as ).
-  - Status: RESOLVED (Implemented a global float sanitizer  in the backend routes and ).
+  - Issue recurrence in previous fork: Deployment failing due to NaN/Inf values slipping into JSON outputs.
+  - Recurrence count: 1
+  - Status: RESOLVED (Fixed via custom  middleware).
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
-- Frontend: React, Tailwind, Shadcn UI, Recharts (for Analytics/Backtesting)
-- Backend: FastAPI, intense asyncio/threading (Modular daemons), , 
-- Database: MongoDB 
-- AI: God Mode (3-LLM consensus using Emergent LLM key), JSON-mode prompt engineering
-- Architecture: Code-enforced quantitative guardrails (sizing, stops, filtering) + LLM qualitative narrative synthesis.
+- Frontend: React, Tailwind, Recharts
+- Backend: FastAPI, PyTorch, Scikit-learn (TF-IDF Vector Store), MongoDB
+- Agent/Integration: Claude Sonnet 4.5 via Emergent LLM Key (used for Compliance RAG)
+- strict PMS Accounting: Rebalance proceeds must never sit idle; they must be auto-reinvested to maintain NAV.
+- Market Hours Guard: Trading actions gated to active NSE market hours.
 
 **key DB schema**
-  - : {, , , , , }
-  - : Tracks 6 strategy types, holdings, AI rationale, sector allocation, and pipeline version (hardened_v3).
-  -  (NEW): Caches intensive 5Y backtest calculations (, , , , ).
+  - : 
+  - *Expected*: : 
 
 **changes in tech stack**
-  - Installed  for charting the analytics dashboard and backtest comparisons.
+  - Added global  utility in FastAPI to sanitize float values.
+  - Added Claude Sonnet 4.5 via emergentintegrations for the Compliance Agent.
 
 **All files of reference** 
-  -  (Created: Enforces strict math/quant rules that the LLM was failing at).
-  -  (Updated: Integrates the hardening layer and 5Y backtests).
-  -  &  (Created: Modular extraction from server.py).
-  -  (Created: Renders sector allocations, risk metrics, and backtest area charts).
-  -  (Updated: Shows new hardened pipeline badges and insights).
+  -  (Created: Handles strategy-aware NIFTY-500 reinvestments)
+  -  (Created: Fast API response sanitization for NaN/Inf)
+  -  (Created: Time/holiday validation guard)
+  -  (Modified: PMS math fix)
+  -  (Created: Empty stub for new task)
+  -  (Created: Empty stub for new task)
+  -  (Created: Empty stub for new task)
 
 **Areas that need refactoring**: 
-None currently.  was successfully heavily refactored.
+- Rename  to .
 
 **key api endpoints**
-  -  (Returns sector, risk, and P&L metrics for all active portfolios)
-  -  (Returns 5-year historical simulation data vs Nifty 50)
+  -  (Aggregated PMS stats)
+  -  (Math updated to base initial capital)
+  - *Pending*:  (To be created)
 
 **Critical Info for New Agent** 
-  - **LLM vs Code Boundaries:** Do NOT rely on the LLM for mathematical logic, position sizing, or strict constraint enforcement (e.g., sector limits). The agent specifically built  because the LLM was hallucinating P/E ratios and violating diversification rules. The LLM's job is strictly qualitative synthesis (narrative, reading BSE filings).
-  - **Data Sanitization:**  frequently returns garbage data (e.g., 500% dividend yields,  values, ). A  sanitizer is now globally applied to prevent FastAPI from crashing during JSON serialization. Ensure any new data pipelines also sanitize  outputs.
-  - **Backtest Caching:** The 5-year backtests take significant computational time. They are cached in MongoDB under the  collection. If you alter the strategy logic, you may need to clear this cache for the UI to reflect new numbers.
+  - **PMS Accounting Truth**: Rebalance math was entirely rewritten to match proper PMS behavior. No cash stays idle; stop-loss exits trigger immediate  to maintain 100% allocation. .
+  - **Market Hours**: Portfolios and auto-reinvests will *fail with HTTP 400* outside IST 09:30-15:15 Mon-Fri. If building tests, ensure time mocking or bypass logic if needed.
+  - **Compliance Task Context**: The user explicitly requested an architecture similar to Google NotebookLM. The background data ingestion of BSE/NSE/SEBI data can run slowly, but the RAG retrieval must be bulletproof and fast.
+  - **Claude Sonnet 4.5**: You MUST use the  library as per the playbook fetched in the last step to interact with the LLM. 
 
-**documents and test reports created in this job** 
-  -  (Server refactor pass)
-  -  (Hardened pipeline pass)
-  -  (Analytics UI pass)
-  -  (Deep hardening & Backtesting pass)
+**documents and test reports created in this job**
+  -  to  (Passing backend/frontend tests for accounting, auto-reinvest, market hours)
   -  (Updated)
 
 **Last 10 User Messages and any pending HUMAN messages** 
- - *User*: Please use ask_human tool and confirm your plan now. (Agent planned).
- - *User*: Proceed and also refactor server.py (Agent refactored into routes/daemons).
- - *User*: Lets harden the god mode... advance screener data... feed the result to llm... free from bias (Agent built v2 pipeline).
- - *User*: Use deployment agent to identify the issues... deployment is failing... Error fetching None... bse gainers error (Agent fixed deployment bugs).
- - *User*: trigger a full rebuild of all 6 portfolios... Monitor continuous rebalancing... Portfolio analytics dashboard (Agent rebuilt portfolios and added Analytics UI).
- - *User*: The way of portfolio contructuon done here does it make a profitable portfolio? Deeply think... fix it deeply... include 5 years backtest result (Agent acknowledged LLM math flaws, built hard-coded quantitative guardrails, sizing, 8% stop-loss, and integrated 5-Year backtests vs Nifty 50).
- - *Pending messages*: None.
+ 1. *User*: portfolio is making wrong calculations, after rebalancing its not recovering capital (Agent fixed base math)
+ 2. *User*: Na, check bmia... and see the mess you have created (Agent investigated prod, found NaN issue and initial_capital discrepancy)
+ 3. *User*: Use deployment agent to identify the issues... ValueError: Out of range float values (Agent created SafeJSONResponse)
+ 4. *User*: Log into bmia... no lazy coding, deep dive and solve (Agent fixed P&L math using initial_capital standard)
+ 5. *User*: make a section as where the loss is made... (Agent added Capital Trail/Exit History to UI)
+ 6. *User*: Capital removed is cash in hand, is it loss in portfolio? ... No money is to be removed or kept idle (Agent implemented  logic)
+ 7. *User*: Agrees to Strategy-Aware auto reinvestment and fixing damaged portfolios.
+ 8. *User*: Agrees to expanding to NIFTY-500 universe for replenishment.
+ 9. *User*: A hardcoded truth, all profolio creation, rebalancing must be done during market hours (Agent enforced IST market guards)
+ 10. *User*: Create a menu Compliance same modal as guidance but here all NSE, BSE and SEBI circulars... stored in multiple RAG... Like notebookLM. (Agent started implementation).
 
 **Project Health Check:**
 - Broken: None
 - Mocked: None
 
 **3rd Party Integrations** 
-  - OpenAI GPT-4.1, Anthropic Claude Sonnet, Gemini Flash — uses Emergent LLM Key (Multi-model consensus)
-  - Yahoo Finance () — Free
-  - NSE India () — Free
-  - BSE India () — Free
+  - Emergent LLM Key — Uses Emergent LLM Key (GPT-4.1 / Gemini 2.5 / Claude Sonnet 4.5 for Compliance)
+  - OrgLens API — Requires User API Key ()
 
 **Testing status**
-  - Testing agent used after significant changes: YES (Iterations 10, 11, 12, 13 all returned 100% pass rates)
-  - Troubleshoot agent used after agent stuck in loop: NO
-  - Test files created: None new
+  - Testing agent used after significant changes: YES
+  - Troubleshoot agent used after agent stuck in loop: NO (Used deployment agent once)
+  - Test files created: , , , 
   - Known regressions: None
 
 **Credentials to test flow:**
-None required.
+OrgLens user:  / Password:  (Verify with )
 
 **What agent forgot to execute**
-The agent successfully implemented all items but could not manually test the live Continuous Rebalancing phase because the daemon only executes background swaps during a strict daily time window (4-6 PM IST). Ensure this automated trading block correctly executes and renders rationale to the UI when the time window hits.</analysis>
+None; the agent was in the middle of executing the Compliance RAG feature when the session ended.
+
+**Debugging checklist for current issue**
+N/A - the current task is a new feature implementation (Compliance Menu). 
+Next steps:
+- Open  and write web-scraping/API logic for BSE/NSE/SEBI circulars.
+- Open  and write the TF-IDF or vectorization logic (similar to Guidance vector store).
+- Open  and finalize the  Sonnet 4.5 chat wrapper.
+- Expose via FastAPI routes and build the Frontend Modal.</analysis>

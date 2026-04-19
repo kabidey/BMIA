@@ -15,7 +15,7 @@ import requests
 
 BACKEND_URL = os.environ.get(
     "REACT_APP_BACKEND_URL",
-    "https://bmia-quant.preview.emergentagent.com"
+    "https://quant-analyst-hub.preview.emergentagent.com"
 )
 API = f"{BACKEND_URL}/api"
 

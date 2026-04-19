@@ -10,7 +10,7 @@ import requests
 
 BACKEND_URL = os.environ.get(
     "REACT_APP_BACKEND_URL",
-    "https://india-equity-scanner.preview.emergentagent.com"
+    "https://quant-analyst-hub.preview.emergentagent.com"
 )
 
 

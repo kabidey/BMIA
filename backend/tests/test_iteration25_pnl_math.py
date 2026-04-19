@@ -16,7 +16,7 @@ import os
 import pytest
 import requests
 
-BACKEND_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://india-equity-scanner.preview.emergentagent.com")
+BACKEND_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://quant-analyst-hub.preview.emergentagent.com")
 API = f"{BACKEND_URL}/api"
 
 
