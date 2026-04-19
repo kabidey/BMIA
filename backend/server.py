@@ -14,16 +14,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 
-from services.dashboard_service import start_background_cache
-from services.guidance_service import start_guidance_scheduler
-from services.pdf_extractor_service import start_pdf_extraction_daemon
-from services.vector_store import guidance_vector_store
-from daemons.evaluation_scheduler import start_evaluation_scheduler
-from daemons.portfolio_daemon import start_portfolio_daemon
-from daemons.compliance_ingestion import start_compliance_daemon
-from services.compliance_rag import compliance_router
 from utils.safe_json import SafeJSONResponse
 
+# Route imports (needed at app-construction time to register endpoints)
 from routes.symbols import router as symbols_router
 from routes.market import router as market_router
 from routes.analysis import router as analysis_router
@@ -37,6 +30,9 @@ from routes.daemon_control import router as daemon_control_router
 from routes.audit_log import router as audit_log_router, audit_middleware
 from routes.big_market import router as big_market_router
 from routes.compliance import router as compliance_router_routes
+
+# Heavy daemon / service imports are deferred to lifespan so the Python module
+# import graph during cold-start is lighter (helps deploy-probe succeed faster).
 
 logging.basicConfig(
     level=logging.INFO,
@@ -90,6 +86,18 @@ async def lifespan(app: FastAPI):
     if minimal:
         logger.warning("BMIA_MINIMAL_STARTUP=1 → skipping ALL background daemons & deferred builds")
     else:
+        # Lazy-import the heavy daemon/service modules (sklearn, pdfminer,
+        # pandas chains) only when we actually need to start them. This keeps
+        # the server.py import graph lean so cold-disk pod starts are fast.
+        from services.dashboard_service import start_background_cache
+        from services.guidance_service import start_guidance_scheduler
+        from services.pdf_extractor_service import start_pdf_extraction_daemon
+        from services.vector_store import guidance_vector_store
+        from services.compliance_rag import compliance_router
+        from daemons.evaluation_scheduler import start_evaluation_scheduler
+        from daemons.portfolio_daemon import start_portfolio_daemon
+        from daemons.compliance_ingestion import start_compliance_daemon
+
         # Light-weight daemons — safe to start immediately
         for name, starter, args in [
             ("Background cache", start_background_cache, ()),
@@ -103,25 +111,27 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 logger.error(f"{name} start failed (non-fatal): {e}")
 
-        # Heavy background work — deferred well past probe window
+        # Heavy background work — deferred FAR past probe window so the pod
+        # settles into a stable memory/CPU state before heavy work kicks in.
+        # If Kubernetes still kills the pod on liveness failure or OOM during
+        # these, set BMIA_MINIMAL_STARTUP=1 to disable them entirely.
         async def _deferred_vector_store_build():
             try:
-                await asyncio.sleep(90)
+                await asyncio.sleep(300)  # 5 min — well past probe + settle time
                 logger.info("Starting deferred guidance vector store build")
                 await guidance_vector_store.build(app.db)
             except Exception as e:
                 logger.error(f"Vector store initial build failed (non-fatal): {e}")
 
-    async def _deferred_compliance_init():
-        try:
-            await asyncio.sleep(120)
-            logger.info("Starting deferred compliance RAG build + ingestion daemon")
-            await compliance_router.build_all(app.db)
-            start_compliance_daemon(MONGO_URL, DB_NAME)
-        except Exception as e:
-            logger.error(f"Compliance init failed (non-fatal): {e}")
+        async def _deferred_compliance_init():
+            try:
+                await asyncio.sleep(420)  # 7 min
+                logger.info("Starting deferred compliance RAG build + ingestion daemon")
+                await compliance_router.build_all(app.db)
+                start_compliance_daemon(MONGO_URL, DB_NAME)
+            except Exception as e:
+                logger.error(f"Compliance init failed (non-fatal): {e}")
 
-    if not minimal:
         asyncio.ensure_future(_deferred_vector_store_build())
         asyncio.ensure_future(_deferred_compliance_init())
 
