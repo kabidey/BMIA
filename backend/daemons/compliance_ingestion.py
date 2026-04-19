@@ -55,6 +55,26 @@ HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
 }
 
+# Rotating user-agents (modern desktop browsers) — helps dodge naive
+# cloud-IP bot filters that key off a single UA string.
+_UA_POOL = [
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0",
+]
+
+
+def _rot_headers(extra: Optional[dict] = None) -> dict:
+    """Return HEADERS with a randomly-picked User-Agent + optional overrides."""
+    import random
+    h = dict(HEADERS)
+    h["User-Agent"] = random.choice(_UA_POOL)
+    if extra:
+        h.update(extra)
+    return h
+
 
 # ─── PDF/HTML text extraction (in-memory) ────────────────────────────────────
 def _extract_pdf_text(pdf_bytes: bytes) -> str:
@@ -83,48 +103,156 @@ def _fetch_doc_text(url: str, timeout: int = PDF_READ_TIMEOUT) -> str:
 
 # ─── Source-specific fetchers (date-ranged) ──────────────────────────────────
 def _fetch_sebi(from_date: datetime, to_date: datetime, limit: int = BATCH_SIZE) -> List[dict]:
-    """SEBI circulars listing. Paginates until date window covered."""
-    url = "https://www.sebi.gov.in/sebiweb/home/HomeAction.do?doListing=yes&sid=1&ssid=5&smid=0"
+    """SEBI circulars — chain of strategies until one returns data."""
+    # ssid=7 is the actual "Circulars" section; ssid=5 is "Guidelines"
+    urls = [
+        "https://www.sebi.gov.in/sebiweb/home/HomeAction.do?doListing=yes&sid=1&ssid=7&smid=0",
+        "https://www.sebi.gov.in/sebiweb/home/HomeAction.do?doListing=yes&sid=1&ssid=5&smid=0",
+    ]
+    pattern = re.compile(
+        # SEBI listings use two date formats:
+        #   "15 Apr, 2026"  (old)
+        #   "Apr 15, 2026"  (new circulars page)
+        r'<tr[^>]*>.*?<td[^>]*>\s*'
+        r'((?:\d{1,2}\s+\w+,?\s+\d{4})|(?:\w+\s+\d{1,2},?\s+\d{4}))'
+        r'[^<]*</td>.*?'
+        r'<a[^>]+href="([^"]+)"[^>]*>([^<]+)</a>',
+        re.DOTALL | re.IGNORECASE,
+    )
+    for url in urls:
+        try:
+            r = requests.get(url, headers=_rot_headers(), timeout=(5, 15))
+            if r.status_code != 200:
+                continue
+            html = r.text
+            results: List[dict] = []
+            for m in pattern.finditer(html):
+                date_str, link, title = m.group(1), m.group(2), m.group(3).strip()
+                dt = _parse_date(date_str)
+                if not dt:
+                    continue
+                if dt < from_date or dt > to_date:
+                    continue
+                if not link.startswith("http"):
+                    link = f"https://www.sebi.gov.in{link}"
+                circ_no = link.split("/")[-1].split(".")[0][:120]
+                results.append({
+                    "source": "sebi",
+                    "circular_no": circ_no,
+                    "title": re.sub(r"\s+", " ", title)[:500],
+                    "url": link,
+                    "date_str": date_str,
+                    "category": "General",
+                })
+                if len(results) >= limit:
+                    break
+            if results:
+                return results
+        except Exception as e:
+            logger.debug(f"SEBI fetch strategy {url[:80]} failed: {e}")
+            continue
+    return []
+
+
+def _fetch_bse(from_date: datetime, to_date: datetime, limit: int = BATCH_SIZE) -> List[dict]:
+    """BSE circulars — chain of strategies.
+
+    1. Primary JSON API (often blocked from cloud IPs).
+    2. Fallback: public RSS feed at bseindia.com/data/xml/notices.xml
+       (reachable; recent notices in RSS 2.0 format).
+    """
+    # ─ Strategy A: JSON API (best when not blocked) ─
     try:
-        r = requests.get(url, headers=HEADERS, timeout=(5, 15))
+        api_url = (
+            "https://api.bseindia.com/BseIndiaAPI/api/NoticesAndCirculars/w?"
+            f"strCat=-1&strPrevDate={from_date:%Y%m%d}&strScrip=&strSearch=P"
+            f"&strToDate={to_date:%Y%m%d}&strType=C"
+        )
+        r = requests.get(
+            api_url,
+            headers=_rot_headers({"Referer": "https://www.bseindia.com/"}),
+            timeout=(5, 15),
+        )
+        if r.status_code == 200:
+            try:
+                data = r.json()
+                rows = data.get("Table", [])[:limit]
+                results = []
+                for row in rows:
+                    circ_no = row.get("CIRCULARNO") or row.get("NEWSID") or ""
+                    title = row.get("HEADLINE") or row.get("NEWSSUB") or ""
+                    date = row.get("CIRDATE") or row.get("NEWSDATE") or ""
+                    attach = row.get("ATTACHMENTNAME") or ""
+                    pdf_url = (
+                        f"https://www.bseindia.com/xml-data/corpfiling/CircAttachmentLive/{attach}"
+                        if attach else ""
+                    )
+                    results.append({
+                        "source": "bse", "circular_no": circ_no,
+                        "title": title[:500], "url": pdf_url,
+                        "date_str": date,
+                        "category": row.get("CATEGORYNAME") or "General",
+                    })
+                if results:
+                    return results
+            except ValueError:
+                # Non-JSON = bot-guard HTML page → fall through to RSS
+                logger.debug("BSE JSON API returned non-JSON (bot-guard); trying RSS fallback")
+    except Exception as e:
+        logger.debug(f"BSE primary JSON fetch failed: {e}")
+
+    # ─ Strategy B: Public RSS notices feed ─
+    try:
+        r = requests.get(
+            "https://www.bseindia.com/data/xml/notices.xml",
+            headers=_rot_headers(), timeout=(5, 12),
+        )
         if r.status_code != 200:
             return []
-        html = r.text
-        pattern = re.compile(
-            r'<tr[^>]*>.*?(\d{1,2}\s+\w+,?\s+\d{4})[^<]*</td>.*?'
-            r'<a[^>]+href="([^"]+)"[^>]*>([^<]+)</a>',
-            re.DOTALL | re.IGNORECASE,
-        )
-        results: List[dict] = []
-        for m in pattern.finditer(html):
-            date_str, link, title = m.group(1), m.group(2), m.group(3).strip()
-            dt = _parse_date(date_str)
-            if not dt:
+        xml = r.text
+        results = []
+        for m in re.finditer(
+            r"<item>\s*<title>\s*(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?\s*</title>\s*"
+            r"<link>\s*(.*?)\s*</link>\s*(?:<author>.*?</author>\s*)?"
+            r"<pubDate>\s*(.*?)\s*</pubDate>",
+            xml, re.DOTALL,
+        ):
+            title, link, pub = m.group(1).strip(), m.group(2).strip(), m.group(3).strip()
+            dt = _parse_date(pub.split(" 00:")[0]) or _parse_date(pub[:25]) or _parse_date_rfc822(pub)
+            if not dt or dt < from_date.replace(tzinfo=None) or dt > to_date.replace(tzinfo=None):
                 continue
-            if dt < from_date or dt > to_date:
-                continue
-            if not link.startswith("http"):
-                link = f"https://www.sebi.gov.in{link}"
-            circ_no = link.split("/")[-1].split(".")[0][:120]  # derive from URL
+            # Circular no — derive from URL filename stem
+            circ_no = link.rsplit("/", 1)[-1].split(".")[0][:120] or f"bse-{int(dt.timestamp())}"
             results.append({
-                "source": "sebi",
+                "source": "bse",
                 "circular_no": circ_no,
-                "title": re.sub(r"\s+", " ", title)[:500],
+                "title": title[:500],
                 "url": link,
-                "date_str": date_str,
-                "category": "General",
+                "date_str": pub,
+                "category": "Notice",
             })
             if len(results) >= limit:
                 break
         return results
     except Exception as e:
-        logger.error(f"SEBI fetch failed: {e}")
+        logger.debug(f"BSE RSS fallback failed: {e}")
         return []
+
+
+def _parse_date_rfc822(s: str) -> Optional[datetime]:
+    """Parse RFC822 dates like 'Sat, 18 Apr 2026 05:52:55 GMT'."""
+    if not s:
+        return None
+    from email.utils import parsedate_to_datetime
+    try:
+        return parsedate_to_datetime(s).replace(tzinfo=None)
+    except Exception:
+        return None
 
 
 def _fetch_nse(from_date: datetime, to_date: datetime, limit: int = BATCH_SIZE) -> List[dict]:
     session = requests.Session()
-    session.headers.update(HEADERS)
+    session.headers.update(_rot_headers())
     try:
         # (connect, read) timeout tuple — avoids indefinite hang on DNS/TCP
         session.get("https://www.nseindia.com", timeout=(5, 10))
@@ -174,52 +302,6 @@ def _fetch_nse(from_date: datetime, to_date: datetime, limit: int = BATCH_SIZE) 
             pass
 
 
-def _fetch_bse(from_date: datetime, to_date: datetime, limit: int = BATCH_SIZE) -> List[dict]:
-    try:
-        api_url = (
-            "https://api.bseindia.com/BseIndiaAPI/api/NoticesAndCirculars/w?"
-            f"strCat=-1&strPrevDate={from_date:%Y%m%d}&strScrip=&strSearch=P"
-            f"&strToDate={to_date:%Y%m%d}&strType=C"
-        )
-        r = requests.get(
-            api_url,
-            headers={**HEADERS, "Referer": "https://www.bseindia.com/"},
-            timeout=(5, 15),
-        )
-        if r.status_code != 200:
-            return []
-        try:
-            data = r.json()
-        except ValueError:
-            # BSE frequently serves HTML bot-guard pages instead of JSON from
-            # cloud IPs — log at debug, not error, so it doesn't flood prod logs.
-            logger.debug("BSE returned non-JSON (likely bot-guard page); skipping cycle")
-            return []
-        rows = data.get("Table", [])[:limit]
-        results = []
-        for row in rows:
-            circ_no = row.get("CIRCULARNO") or row.get("NEWSID") or ""
-            title = row.get("HEADLINE") or row.get("NEWSSUB") or ""
-            date = row.get("CIRDATE") or row.get("NEWSDATE") or ""
-            attach = row.get("ATTACHMENTNAME") or ""
-            pdf_url = (
-                f"https://www.bseindia.com/xml-data/corpfiling/CircAttachmentLive/{attach}"
-                if attach else ""
-            )
-            results.append({
-                "source": "bse",
-                "circular_no": circ_no,
-                "title": title[:500],
-                "url": pdf_url,
-                "date_str": date,
-                "category": row.get("CATEGORYNAME") or "General",
-            })
-        return results
-    except Exception as e:
-        logger.error(f"BSE fetch failed: {e}")
-        return []
-
-
 FETCHERS = {"sebi": _fetch_sebi, "nse": _fetch_nse, "bse": _fetch_bse}
 
 
@@ -229,7 +311,7 @@ def _parse_date(date_str: str) -> Optional[datetime]:
         return None
     for fmt in ("%d %b %Y", "%d %B %Y", "%d-%b-%Y", "%d-%m-%Y",
                 "%Y-%m-%d", "%d/%m/%Y", "%Y%m%d", "%d-%b-%y",
-                "%B %d, %Y", "%b %d, %Y", "%B %d %Y"):
+                "%B %d, %Y", "%b %d, %Y", "%B %d %Y", "%b %d %Y"):
         try:
             return datetime.strptime(date_str.strip().replace(",", ""), fmt)
         except Exception:

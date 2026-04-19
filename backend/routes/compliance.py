@@ -79,6 +79,7 @@ async def compliance_stats(request: Request):
             "last_new_ingest_at": state.get("last_new_ingest_at"),
             "started_at": state.get("started_at"),
             "errors_count": state.get("errors_count", 0),
+            "consecutive_no_data": state.get("consecutive_no_data", 0),
             "last_error": state.get("last_error"),
         }
 

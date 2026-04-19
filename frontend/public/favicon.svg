@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Background shield in BMIA teal with rounded dark overlay -->
+  <rect width="64" height="64" rx="14" fill="#0d9488"/>
+  <path d="M32 8 L52 14 V32 C52 44 44 52 32 56 C20 52 12 44 12 32 V14 Z"
+        fill="#0a0e14" stroke="#14b8a6" stroke-width="2"/>
+  <!-- Bold B monogram -->
+  <text x="32" y="42" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+        font-size="30" font-weight="800" fill="#14b8a6" text-anchor="middle"
+        letter-spacing="-1.5">B</text>
+  <!-- Market upward tick -->
+  <path d="M22 46 L28 40 L34 44 L42 36" stroke="#f59e0b" stroke-width="2.5"
+        stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</svg>
