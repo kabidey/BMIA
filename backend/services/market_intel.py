@@ -44,54 +44,56 @@ def _cached(key: str, fn, ttl: int = TTL_SEC):
 
 
 # ── 1. News (Moneycontrol + ET Markets, deduped) ─────────────────────────────
-def _scrape_moneycontrol_news() -> list:
-    url = "https://www.moneycontrol.com/rss/marketreports.xml"
-    r = requests.get(url, headers=HEADERS, timeout=(5, 10))
-    if r.status_code != 200:
-        return []
-    items = []
-    # Simple RSS-ish parse
-    for m in re.finditer(
-        r"<item>.*?<title><!\[CDATA\[(.*?)\]\]></title>.*?<link>(.*?)</link>.*?<pubDate>(.*?)</pubDate>",
-        r.text, re.DOTALL,
-    ):
-        title, link, pub = m.group(1), m.group(2), m.group(3)
+def _parse_rss_items(xml: str, max_items: int = 30) -> list:
+    """Generic RSS <item> parser tolerant of whitespace and non-CDATA fields."""
+    items: list = []
+    for raw in re.findall(r"<item[^>]*>(.*?)</item>", xml, re.DOTALL):
+        t = re.search(r"<title>\s*(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?\s*</title>", raw, re.DOTALL)
+        lnk = re.search(r"<link>\s*(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?\s*</link>", raw, re.DOTALL)
+        p = re.search(r"<pubDate>\s*(.*?)\s*</pubDate>", raw, re.DOTALL)
+        if not (t and lnk):
+            continue
+        title = re.sub(r"\s+", " ", t.group(1)).strip()
+        link = lnk.group(1).strip()
+        pub = (p.group(1).strip() if p else "")
+        if not title or not link:
+            continue
         items.append({
-            "title": title.strip()[:300],
-            "url": link.strip(),
-            "published_at": pub.strip(),
+            "title": title[:300],
+            "url": link,
+            "published_at": pub,
             "category": "Markets",
         })
-        if len(items) >= 30:
+        if len(items) >= max_items:
             break
     return items
 
 
-def _scrape_et_markets_news() -> list:
-    url = "https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms"
-    r = requests.get(url, headers=HEADERS, timeout=(5, 10))
-    if r.status_code != 200:
+def _scrape_rss(url: str) -> list:
+    try:
+        r = requests.get(url, headers=HEADERS, timeout=(5, 10))
+        if r.status_code != 200:
+            return []
+        return _parse_rss_items(r.text)
+    except Exception:
         return []
-    items = []
-    for m in re.finditer(
-        r"<item>.*?<title><!\[CDATA\[(.*?)\]\]></title>.*?<link>(.*?)</link>.*?<pubDate>(.*?)</pubDate>",
-        r.text, re.DOTALL,
-    ):
-        title, link, pub = m.group(1), m.group(2), m.group(3)
-        items.append({
-            "title": title.strip()[:300],
-            "url": link.strip(),
-            "published_at": pub.strip(),
-            "category": "Markets",
-        })
-        if len(items) >= 30:
-            break
-    return items
+
+
+# RSS feeds — multi-source for resilience (cloud IPs may be blocked on some).
+_NEWS_SOURCES = [
+    "https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms",
+    "https://www.livemint.com/rss/markets",
+    "https://www.moneycontrol.com/rss/marketreports.xml",
+    "https://www.business-standard.com/rss/markets-106.rss",
+    "https://www.thehindubusinessline.com/markets/feeder/default.rss",
+]
 
 
 def get_market_news(limit: int = 25) -> list:
     def _fetch():
-        items = _scrape_moneycontrol_news() + _scrape_et_markets_news()
+        items = []
+        for url in _NEWS_SOURCES:
+            items.extend(_scrape_rss(url))
         # Dedup by title prefix
         seen, out = set(), []
         for it in items:
@@ -122,29 +124,45 @@ def get_analyst_estimates(symbol: str) -> dict:
         url = f"https://www.screener.in/company/{symbol.upper()}/consolidated/"
         r = requests.get(url, headers=HEADERS, timeout=(5, 12))
         if r.status_code != 200:
-            return {}
+            # Fall back to non-consolidated
+            url = f"https://www.screener.in/company/{symbol.upper()}/"
+            r = requests.get(url, headers=HEADERS, timeout=(5, 12))
+            if r.status_code != 200:
+                return {}
         html = r.text
         out: dict = {"symbol": symbol.upper()}
 
-        # CMP
-        m = re.search(r"Current Price.*?₹([\d,]+\.?\d*)", html, re.DOTALL)
-        if m:
-            out["cmp"] = float(m.group(1).replace(",", ""))
-        # PE, ROE, Market Cap basic ratios
-        for label, key_out in [
-            ("Stock P/E", "pe"), ("ROE", "roe"), ("Market Cap", "market_cap_cr"),
-            ("Book Value", "book_value"), ("Dividend Yield", "div_yield"),
-            ("Face Value", "face_value"), ("EPS", "eps"),
-        ]:
-            m = re.search(
-                rf'<li[^>]*>\s*<span class="name">{re.escape(label)}.*?₹?\s*([\d,]+\.?\d*)',
-                html, re.DOTALL,
-            )
-            if m:
-                try:
-                    out[key_out] = float(m.group(1).replace(",", ""))
-                except Exception:
-                    pass
+        # Screener renders ratios as:
+        #   <li ...><span class="name">LABEL</span>... <span class="number">VALUE</span>...</li>
+        ratio_pattern = re.compile(
+            r'<li[^>]*>\s*<span class="name">\s*([^<]+?)\s*</span>'
+            r'.*?<span class="number">([\d,.]+)</span>',
+            re.DOTALL,
+        )
+        label_map = {
+            "market cap": "market_cap_cr",
+            "current price": "cmp",
+            "stock p/e": "pe",
+            "p/e": "pe",
+            "book value": "book_value",
+            "dividend yield": "div_yield",
+            "roce": "roce",
+            "roe": "roe",
+            "face value": "face_value",
+            "eps": "eps",
+            "high / low": "high_low",
+        }
+        for m in ratio_pattern.finditer(html):
+            label = m.group(1).strip().lower()
+            val_str = m.group(2).replace(",", "")
+            key_out = label_map.get(label)
+            if not key_out:
+                continue
+            try:
+                out[key_out] = float(val_str)
+            except Exception:
+                continue
+
         # Analyst recommendations block (if present)
         rec_match = re.search(
             r'Analyst Recommendations.*?Strong Buy.*?(\d+).*?Buy.*?(\d+).*?Hold.*?(\d+).*?Sell.*?(\d+).*?Strong Sell.*?(\d+)',
@@ -190,6 +208,18 @@ async def get_earnings_calendar(db, days: int = 14) -> list:
         })
 
     # Also add NSE event calendar (best-effort, non-blocking)
+    def _parse_event_date(s: str) -> str:
+        """Normalize NSE event date ('02-May-2026' / '02-May-2026 00:00') → 'YYYY-MM-DD'."""
+        if not s:
+            return ""
+        s = s.strip().split(" ")[0]
+        for fmt in ("%d-%b-%Y", "%d-%B-%Y", "%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"):
+            try:
+                return datetime.strptime(s, fmt).date().isoformat()
+            except Exception:
+                continue
+        return s  # fall back to raw
+
     def _nse_events():
         try:
             session = requests.Session()
@@ -204,19 +234,26 @@ async def get_earnings_calendar(db, days: int = 14) -> list:
             data = r.json()
             rows = data if isinstance(data, list) else data.get("data", [])
             out = []
-            for row in rows[:200]:
+            for row in rows[:300]:
+                date_out = _parse_event_date(row.get("date") or "")
                 out.append({
                     "symbol": row.get("symbol"),
                     "company": row.get("company", ""),
-                    "date": row.get("date", "")[:10],
+                    "date": date_out,
                     "event_type": row.get("purpose", "Event"),
                     "title": row.get("bm_desc") or row.get("purpose", ""),
                 })
             return out
-        except Exception:
+        except Exception as e:
+            logger.debug(f"NSE event-calendar fetch failed: {e}")
             return []
 
     nse_events = _cached("nse_events", _nse_events) or []
+
+    # Filter NSE events to the requested window (API returns a wider window).
+    from_iso = from_date.date().isoformat()
+    to_iso = to_date.date().isoformat()
+    nse_events = [e for e in nse_events if e.get("date") and from_iso <= e["date"] <= to_iso]
 
     # Dedup by (symbol, date, event_type)
     seen, merged = set(), []
@@ -252,23 +289,40 @@ def get_market_movers_scatter() -> dict:
         shocker_list = shockers.get("shockers") if isinstance(shockers, dict) else shockers
         shocker_list = shocker_list or []
 
-        def _row(r, kind):
-            chg = r.get("percentChange") or r.get("pct_change") or r.get("chgPct") or 0
-            vol = r.get("totalTradedVolume") or r.get("volume") or 0
-            cap = r.get("marketCap") or r.get("market_cap") or 0
+        def _row_bse(r, kind):
+            """BSE library fields: scripname, LONG_NAME, change_percent, trd_vol, ltradert, trd_val."""
+            chg = r.get("change_percent")
+            if chg is None:
+                chg = r.get("percentChange") or r.get("pct_change") or r.get("chgPct") or 0
+            vol = r.get("trd_vol") or r.get("totalTradedVolume") or r.get("volume") or 0
+            price = r.get("ltradert") or r.get("ltp") or r.get("price") or 0
+            # BSE doesn't return market cap in gainers feed; approximate "weight"
+            # via traded value (in Rs lakhs) so scatter point size is non-zero.
+            trd_val = r.get("trd_val") or 0
             return {
-                "symbol": r.get("symbol") or r.get("scripCode") or r.get("script"),
-                "company": r.get("companyName") or r.get("company") or "",
+                "symbol": r.get("scripname") or r.get("symbol") or str(r.get("scrip_cd") or ""),
+                "company": r.get("LONG_NAME") or r.get("companyName") or r.get("company") or "",
                 "pct_change": float(chg or 0),
                 "volume": int(vol or 0),
-                "market_cap_cr": float(cap or 0),
+                "market_cap_cr": float(trd_val or 0),
                 "kind": kind,
-                "price": float(r.get("ltp") or r.get("price") or 0),
+                "price": float(price or 0),
+            }
+
+        def _row_shocker(r, kind):
+            return {
+                "symbol": r.get("display_name") or r.get("symbol") or "",
+                "company": r.get("display_name") or "",
+                "pct_change": float(r.get("change_pct") or 0),
+                "volume": int(r.get("volume") or 0),
+                "market_cap_cr": float(r.get("volume") or 0) / 1e5,  # lakhs for size
+                "kind": kind,
+                "price": float(r.get("price") or 0),
             }
 
         return {
-            "gainers": [_row(r, "gainer") for r in gainers[:30]],
-            "losers": [_row(r, "loser") for r in losers[:30]],
-            "high_volume": [_row(r, "volume") for r in shocker_list[:20]],
+            "gainers": [_row_bse(r, "gainer") for r in gainers[:30] if r],
+            "losers": [_row_bse(r, "loser") for r in losers[:30] if r],
+            "high_volume": [_row_shocker(r, "volume") for r in shocker_list[:20] if r],
         }
     return _cached("movers_scatter", _fetch) or {"gainers": [], "losers": [], "high_volume": []}

@@ -125,10 +125,17 @@ async def lifespan(app: FastAPI):
 
         async def _deferred_compliance_init():
             try:
-                await asyncio.sleep(420)  # 7 min
-                logger.info("Starting deferred compliance RAG build + ingestion daemon")
-                await compliance_router.build_all(app.db)
+                # 1) Start daemon workers quickly so UI shows backfill activity within a minute.
+                #    Threads spawn instantly; per-cycle work is tiny.
+                await asyncio.sleep(60)
+                logger.info("Starting compliance ingestion daemon (backfill workers)")
                 start_compliance_daemon(MONGO_URL, DB_NAME)
+                # 2) Defer the heavy TF-IDF vector build further — this loads all
+                #    persisted chunks and fits the vectorizer. If the DB is empty
+                #    it's a no-op; if large, it can take several seconds.
+                await asyncio.sleep(240)  # additional 4 min → total 5 min post-boot
+                logger.info("Starting deferred compliance RAG vector build")
+                await compliance_router.build_all(app.db)
             except Exception as e:
                 logger.error(f"Compliance init failed (non-fatal): {e}")
 

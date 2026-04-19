@@ -85,19 +85,24 @@ function FiiDii() {
   const [d, setD] = useState(null);
   useEffect(() => { fetch(`${API}/api/big-market/fii-dii`).then(r => r.json()).then(setD).catch(() => setD({})); }, []);
   if (!d) return <Skel height={220} />;
+  // API shape: { flows: [{ date, fii_net, dii_net, fii_long_contracts, fii_short_contracts, ... }], updated_at }
+  // Take the most recent day; flows are ordered chronologically.
+  const flows = Array.isArray(d.flows) ? d.flows : [];
+  const latest = flows.length ? flows[flows.length - 1] : {};
+  const fiiFoNet = (latest.fii_long_contracts || 0) - (latest.fii_short_contracts || 0);
   const rows = [
-    { label: 'FII Cash', value: d.fii_cash_net ?? d.fii_net_equity ?? null, unit: '₹ Cr' },
-    { label: 'DII Cash', value: d.dii_cash_net ?? d.dii_net_equity ?? null, unit: '₹ Cr' },
-    { label: 'FII F&O Index', value: d.fii_index_net ?? null, unit: '₹ Cr' },
-    { label: 'FII F&O Stock', value: d.fii_stock_net ?? null, unit: '₹ Cr' },
-  ].filter(r => r.value !== null);
+    { label: 'FII Net', value: latest.fii_net ?? d.fii_cash_net ?? null, unit: '₹ Cr' },
+    { label: 'DII Net', value: latest.dii_net ?? d.dii_cash_net ?? null, unit: '₹ Cr' },
+    { label: 'FII Buy', value: latest.fii_buy ?? null, unit: '₹ Cr' },
+    { label: 'FII F&O Net', value: flows.length ? fiiFoNet : null, unit: 'Contracts' },
+  ].filter(r => r.value !== null && r.value !== undefined);
   return (
     <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))] p-4" data-testid="fii-dii-card">
-      <SectionTitle icon={Users} title="Institutional Flows" subtitle={d.date || 'Latest available'} />
+      <SectionTitle icon={Users} title="Institutional Flows" subtitle={latest.display_date || latest.date || 'Latest available'} />
       {rows.length === 0 ? <Empty /> : (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {rows.map((r, i) => (
-            <div key={i} className="bg-[hsl(var(--surface-2))] rounded-lg p-3" data-testid={`fii-dii-${r.label.toLowerCase().replace(/\s|\//g, '-')}`}>
+            <div key={i} className="bg-[hsl(var(--surface-2))] rounded-lg p-3" data-testid={`fii-dii-${r.label.toLowerCase().replace(/\s|\/|&/g, '-')}`}>
               <div className="text-[10px] text-[hsl(var(--muted-foreground))] uppercase tracking-wider">{r.label}</div>
               <div className={`text-lg font-mono font-bold ${pctColor(r.value)}`}>{r.value > 0 ? '+' : ''}{nf(r.value, 0)}</div>
               <div className="text-[9px] text-[hsl(var(--muted-foreground))]">{r.unit}</div>
@@ -151,8 +156,8 @@ function PCR() {
   if (!d) return <Skel height={180} />;
   const c = d.current || {};
   const items = [
-    { label: 'NIFTY', value: c.nifty_pcr ?? c.nifty, signal: c.nifty_signal },
-    { label: 'BANK NIFTY', value: c.banknifty_pcr ?? c.banknifty, signal: c.banknifty_signal },
+    { label: 'NIFTY', value: c.nifty?.pcr ?? c.nifty_pcr, signal: c.nifty?.sentiment, expiry: c.nifty?.expiry },
+    { label: 'BANK NIFTY', value: c.banknifty?.pcr ?? c.banknifty_pcr, signal: c.banknifty?.sentiment, expiry: c.banknifty?.expiry },
   ];
   const interpret = (v) => {
     if (v == null) return null;
@@ -172,6 +177,7 @@ function PCR() {
               <div className="text-[10px] text-[hsl(var(--muted-foreground))] uppercase tracking-wider">{r.label}</div>
               <div className="text-2xl font-mono font-bold text-[hsl(var(--foreground))]">{r.value != null ? nf(r.value, 2) : '-'}</div>
               {sig && <div className={`text-[10px] ${sig.color} font-semibold uppercase tracking-wider mt-1`}>{sig.txt}</div>}
+              {r.expiry && <div className="text-[9px] text-[hsl(var(--muted-foreground))] font-mono mt-0.5">Exp: {r.expiry}</div>}
             </div>
           );
         })}

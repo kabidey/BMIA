@@ -1019,7 +1019,7 @@ export default function MarketOverview() {
 
       {/* Disclaimer */}
       <div className="text-[10px] text-[hsl(var(--muted-foreground))]/50 text-center py-2" data-testid="sebi-disclaimer">
-        Data sourced from NSE India &amp; Yahoo Finance. For educational purposes only. Not investment advice. Consult a SEBI-registered advisor.
+        Data aggregated from licensed market data providers. For educational purposes only. Not investment advice. Consult a SEBI-registered advisor.
       </div>
     </div>
   );

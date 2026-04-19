@@ -139,19 +139,28 @@ def _fetch_nse(from_date: datetime, to_date: datetime, limit: int = BATCH_SIZE) 
         rows = data.get("data", data if isinstance(data, list) else [])[:limit]
         results = []
         for row in rows:
-            circ_no = row.get("circNumber") or row.get("cirNumber") or ""
-            title = row.get("cirSubject") or row.get("subject") or ""
-            date = row.get("cirDisplayDate") or row.get("circularDate") or ""
-            pdf_url = row.get("cirDetails") or row.get("attachmentFile") or ""
+            # NSE JSON schema observed: circNumber / sub / cirDisplayDate / circFilelink / circCategory
+            circ_no = (
+                row.get("circNumber") or row.get("cirNumber")
+                or row.get("circDisplayNo") or ""
+            )
+            title = (
+                row.get("sub") or row.get("cirSubject") or row.get("subject") or ""
+            )
+            date = row.get("cirDisplayDate") or row.get("circularDate") or row.get("cirDate") or ""
+            pdf_url = (
+                row.get("circFilelink") or row.get("cirDetails")
+                or row.get("attachmentFile") or ""
+            )
             if pdf_url and not pdf_url.startswith("http"):
-                pdf_url = f"https://archives.nseindia.com{pdf_url}"
+                pdf_url = f"https://nsearchives.nseindia.com{pdf_url}"
             results.append({
                 "source": "nse",
-                "circular_no": circ_no,
-                "title": title[:500],
+                "circular_no": str(circ_no),
+                "title": str(title)[:500],
                 "url": pdf_url,
-                "date_str": date,
-                "category": row.get("cirDepartment") or "General",
+                "date_str": str(date),
+                "category": row.get("circCategory") or row.get("cirDepartment") or "General",
             })
         return results
     except Exception as e:
@@ -218,7 +227,8 @@ def _parse_date(date_str: str) -> Optional[datetime]:
     if not date_str:
         return None
     for fmt in ("%d %b %Y", "%d %B %Y", "%d-%b-%Y", "%d-%m-%Y",
-                "%Y-%m-%d", "%d/%m/%Y", "%Y%m%d", "%d-%b-%y"):
+                "%Y-%m-%d", "%d/%m/%Y", "%Y%m%d", "%d-%b-%y",
+                "%B %d, %Y", "%b %d, %Y", "%B %d %Y"):
         try:
             return datetime.strptime(date_str.strip().replace(",", ""), fmt)
         except Exception:

@@ -1,0 +1,41 @@
+{
+  "summary": "Iteration 31 — Big Market Intel tab (6 aggregators) is fully green end-to-end. All 6 backend endpoints return rich, non-empty, correctly-shaped data after the field-mapping fixes; all 6 frontend cards render on /big-market → Intel tab with real values, no NaN, and zero data-source leakage in UI text. NSE compliance backfill is clearly progressing (circular_count=9, cycle_count=129 within minutes of boot, confirming the sub/circFilelink field-mapping fix + 60s daemon deferral landed). BSE/SEBI continue to be blocked from the preview pod (expected/documented). Regressions (cockpit, cockpit/slow, overview, guidance/stats, login JWT) all pass. 15/15 pytest cases green.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/compliance/stats", "issue": "BSE/SEBI workers are accumulating errors_count (BSE=169, SEBI=168) with last_error='no_data: fetcher returned 0 items ... likely blocked/rate-limited upstream'. This is the known upstream-block issue, not a regression. Worth adding exponential backoff on sources that repeatedly hit no_data so error counters don't grow unbounded and obscure real errors."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Analyst Estimates re-load", "issue": "Card does not display the currently-loaded ticker symbol as text — only numbers change (e.g., RELIANCE ₹1,365 → TCS ₹2,582). Functionality works, but a small 'TCS' label near the card header would make the active symbol obvious.", "affected_selectors": ["[data-testid='analyst-estimates-card']"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration31_intel_endpoints.py",
+    "/app/test_reports/pytest/iteration_31_results.xml"
+  ],
+  "action_items": [
+    "OPTIONAL UI polish: show the active ticker (e.g., 'TCS') in the Analyst Estimates card header so user knows which symbol the numbers belong to after pressing GO.",
+    "OPTIONAL: Add exponential backoff in compliance_ingestion._source_worker when a source returns 0 items N times in a row, so errors_count for BSE/SEBI does not balloon while they remain blocked upstream."
+  ],
+  "critical_code_review_comments": [
+    "market_intel.py field mappings (BSE gainer sym/pchg, NSE event-calendar '%B %d, %Y', Screener.in regex, RSS, PCR scalar extract) all verified working via live endpoints returning populated data — good fixes.",
+    "routes/big_market.py: /analyst-estimates/{symbol} response includes symbol field but MarketIntel.js card doesn't render it in UI — minor coverage gap between API contract and UI surface.",
+    "daemons/compliance_ingestion.py: NSE worker cycle_count=129 in ~9 min uptime (one cycle every ~4s) is very aggressive; with circular_count only at 9 this means 120+ cycles were effectively no-ops. Consider sleeping longer after a no_data cycle to reduce upstream pressure and avoid rate-limit bans.",
+    "MarketIntel.js: no loading/error state visible for individual cards — if one of the 6 endpoints fails, the card silently stays empty. Add skeleton + retry on each card.",
+    "Frontend does not leak any data-provider names in UI text (verified via body.innerText scan against screener.in/nseindia/bseindia/moneycontrol/trendlyne/yahoo/rss) — compliant with user's strict instruction."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration31_intel_endpoints.py"
+  ],
+  "success_rate": {"backend": "100% (15/15 pytest)", "frontend": "100% (6/6 Intel cards render with real data, 0 NaN, 0 source-leaks, analyst re-load works)"},
+  "test_credentials": "somnath.dey@smifs.com / admin123 (from /app/memory/test_credentials.md); token stored in localStorage keys bmia_session_token and bmia_token.",
+  "seed_data_creation": "None. Used live upstream data (NSE/BSE/MC/Screener/RSS) through the backend aggregators.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All 6 Intel endpoints and cards are green. Verified testids: movers-scatter-card, fii-dii-card, earnings-calendar-card, pcr-card, news-card, analyst-estimates-card + sub-testids pcr-nifty, pcr-bank-nifty, fii-dii-fii-net, fii-dii-dii-net, analyst-ticker-input, analyst-load-btn, news-item-{i}, intel-tab. Login: POST /api/auth/login with body {email,password} -> {token}. Store token in localStorage 'bmia_session_token' before visiting /big-market. /api/compliance/stats has shape {stores:{nse:{...},bse:{...},sebi:{...}}, sources:[...], overall_phase, totals} — NOT {by_source:{}} as stated in review request (worth noting for future tests). /api/compliance/search does NOT exist; the compliance router exposes POST /research instead. NSE upstream works from this pod; BSE/SEBI blocked upstream (expected).",
+  "rca of the issue": "N/A — all requested features verified working. Previous-iteration bugs (field mapping for BSE gainers, NSE event-calendar dates, Screener.in regex, RSS, PCR scalar, NSE circular fetcher sub/circFilelink, compliance daemon 7min→60s deferral) are all fixed and verified by populated response data and NSE circular_count=9 within 9 minutes of boot."
+}
