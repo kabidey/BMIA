@@ -21,7 +21,7 @@ import requests
 import pymongo
 from bson import ObjectId
 
-BACKEND_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://quant-analyst-hub.preview.emergentagent.com")
+BACKEND_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://portfolio-forecast-4.preview.emergentagent.com")
 API = f"{BACKEND_URL}/api"
 MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
 DB_NAME = os.environ.get("DB_NAME", "test_database")

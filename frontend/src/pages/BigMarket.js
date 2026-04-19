@@ -7,12 +7,14 @@ import { Skeleton } from '../components/ui/skeleton';
 import {
   Globe2, TrendingUp, TrendingDown, RefreshCw, BarChart3, Gem,
   DollarSign, Landmark, ArrowUpRight, ArrowDownRight, Minus, Search,
-  Activity, Layers, ArrowLeft, LineChart, ChevronRight
+  Activity, Layers, ArrowLeft, LineChart, ChevronRight, Newspaper,
+  Calendar, Users, Scale, Target, ExternalLink
 } from 'lucide-react';
 import {
   ResponsiveContainer, LineChart as RLineChart, Line, XAxis, YAxis,
-  Tooltip, BarChart, Bar, Cell, CartesianGrid
+  Tooltip, BarChart, Bar, Cell, CartesianGrid, ScatterChart, Scatter, ZAxis
 } from 'recharts';
+import MarketIntel from '../components/MarketIntel';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
 
@@ -439,6 +441,7 @@ export default function BigMarket() {
           <TabsTrigger value="currencies" className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md"><DollarSign className="w-3 h-3" />Currencies</TabsTrigger>
           <TabsTrigger value="yields" className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md"><Landmark className="w-3 h-3" />Yields</TabsTrigger>
           <TabsTrigger value="analysis" className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md"><LineChart className="w-3 h-3" />Analysis</TabsTrigger>
+          <TabsTrigger value="intel" className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md" data-testid="intel-tab"><Newspaper className="w-3 h-3" />Intel</TabsTrigger>
         </TabsList>
 
         {/* India Tab */}
@@ -494,6 +497,11 @@ export default function BigMarket() {
         {/* Analysis Tab */}
         <TabsContent value="analysis" className="mt-4 space-y-5">
           <PerfRankings rankings={data?.perf_rankings} />
+        </TabsContent>
+
+        {/* Intel Tab — Movers · FII/DII · Earnings · PCR · Estimates · News */}
+        <TabsContent value="intel" className="mt-4">
+          <MarketIntel />
         </TabsContent>
       </Tabs>
     </div>
