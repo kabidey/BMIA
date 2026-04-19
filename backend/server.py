@@ -69,6 +69,9 @@ async def lifespan(app: FastAPI):
     import asyncio
     async def _build_vector_store():
         try:
+            # Delay so the /api/health probe can succeed during deploy before
+            # the CPU-heavy build starts competing for the GIL.
+            await asyncio.sleep(20)
             await guidance_vector_store.build(app.db)
         except Exception as e:
             logger.error(f"Vector store initial build failed (non-fatal): {e}")
@@ -77,6 +80,7 @@ async def lifespan(app: FastAPI):
     # Build compliance RAG stores (non-blocking)
     async def _build_compliance_stores():
         try:
+            await asyncio.sleep(25)
             await compliance_router.build_all(app.db)
         except Exception as e:
             logger.error(f"Compliance RAG initial build failed (non-fatal): {e}")

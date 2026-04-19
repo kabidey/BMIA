@@ -156,7 +156,10 @@ class GuidanceVectorStore:
                     self._build_time = time.time()
                 return
 
-            # Build TF-IDF matrix
+            # Build TF-IDF matrix — fit_transform is CPU-bound and blocks the
+            # event loop for tens of seconds on large corpora. Run it in a
+            # worker thread so FastAPI can keep serving /api/health + other
+            # requests during deploy health-probe windows.
             vectorizer = TfidfVectorizer(
                 max_features=20000,
                 stop_words="english",
@@ -165,7 +168,8 @@ class GuidanceVectorStore:
                 max_df=0.95,
                 sublinear_tf=True,
             )
-            tfidf_matrix = vectorizer.fit_transform(texts)
+            import asyncio as _asyncio
+            tfidf_matrix = await _asyncio.to_thread(vectorizer.fit_transform, texts)
 
             with self._lock:
                 self._vectorizer = vectorizer

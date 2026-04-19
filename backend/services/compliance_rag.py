@@ -61,6 +61,7 @@ class ComplianceStore:
 
     async def build(self, db):
         """Load all chunks for this source from MongoDB and build the index."""
+        import asyncio
         cursor = db.compliance_chunks.find({"source": self.source}, {"_id": 0})
         chunks = await cursor.to_list(length=None)
         if not chunks:
@@ -76,7 +77,10 @@ class ComplianceStore:
             stop_words="english", lowercase=True,
             min_df=1, max_df=max_df,
         )
-        self.matrix = self.vectorizer.fit_transform(texts)
+        # fit_transform is CPU-bound — run in a worker thread so we don't block
+        # the FastAPI event loop (critical for deploy health-probes to succeed
+        # while the index is being built on startup).
+        self.matrix = await asyncio.to_thread(self.vectorizer.fit_transform, texts)
         self.chunks = chunks
         self.built_at = datetime.utcnow()
         logger.info(f"COMPLIANCE RAG [{self.source}]: built — {len(chunks)} chunks, vocab={len(self.vectorizer.vocabulary_)}")
