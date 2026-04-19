@@ -178,7 +178,13 @@ def _fetch_bse(from_date: datetime, to_date: datetime, limit: int = BATCH_SIZE) 
         )
         if r.status_code != 200:
             return []
-        data = r.json()
+        try:
+            data = r.json()
+        except ValueError:
+            # BSE frequently serves HTML bot-guard pages instead of JSON from
+            # cloud IPs — log at debug, not error, so it doesn't flood prod logs.
+            logger.debug("BSE returned non-JSON (likely bot-guard page); skipping cycle")
+            return []
         rows = data.get("Table", [])[:limit]
         results = []
         for row in rows:
