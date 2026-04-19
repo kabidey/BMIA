@@ -63,6 +63,9 @@ def get_cached_cockpit_slow():
 def _background_refresh_loop():
     """Daemon thread: refreshes cockpit data every 30s, slow modules every 120s."""
     logger.info("COCKPIT CACHE: Background refresh thread started")
+    # Initial quiet period — don't compete for CPU/GIL during app startup on
+    # resource-constrained deploy pods (helps the health probe pass fast).
+    time.sleep(30)
     cycle = 0
     while True:
         try:

@@ -51,40 +51,48 @@ async def lifespan(app: FastAPI):
     app.db = app.mongodb_client[DB_NAME]
     logger.info("Connected to MongoDB")
 
-    # Start background daemons (all non-blocking)
+    # ─── STARTUP POLICY ───────────────────────────────────────────────────
+    # On resource-constrained pods the deploy health-probe times out at 120s,
+    # so the lifespan hot-path must be as tiny as possible. We:
+    #   • spawn all background daemons (they launch threads, return instantly)
+    #   • DEFER every heavy build (vector store, compliance RAG, compliance
+    #     ingestion workers) by 90-120s so the initial probe + first user
+    #     requests can be served well before the GIL gets busy.
+    import asyncio
+
+    # Light-weight daemons — safe to start immediately
     for name, starter, args in [
         ("Background cache", start_background_cache, ()),
         ("Evaluation scheduler", start_evaluation_scheduler, (MONGO_URL, DB_NAME)),
         ("Guidance scheduler", start_guidance_scheduler, (MONGO_URL, DB_NAME)),
         ("PDF extraction daemon", start_pdf_extraction_daemon, (MONGO_URL, DB_NAME)),
         ("Portfolio daemon", start_portfolio_daemon, (MONGO_URL, DB_NAME)),
-        ("Compliance ingestion daemon", start_compliance_daemon, (MONGO_URL, DB_NAME)),
     ]:
         try:
             starter(*args)
         except Exception as e:
             logger.error(f"{name} start failed (non-fatal): {e}")
 
-    # Build vector store in background (non-blocking — server starts immediately)
-    import asyncio
-    async def _build_vector_store():
+    # Heavy background work — deferred
+    async def _deferred_vector_store_build():
         try:
-            # Delay so the /api/health probe can succeed during deploy before
-            # the CPU-heavy build starts competing for the GIL.
-            await asyncio.sleep(20)
+            await asyncio.sleep(90)
+            logger.info("Starting deferred guidance vector store build")
             await guidance_vector_store.build(app.db)
         except Exception as e:
             logger.error(f"Vector store initial build failed (non-fatal): {e}")
-    asyncio.ensure_future(_build_vector_store())
 
-    # Build compliance RAG stores (non-blocking)
-    async def _build_compliance_stores():
+    async def _deferred_compliance_init():
         try:
-            await asyncio.sleep(25)
+            await asyncio.sleep(120)
+            logger.info("Starting deferred compliance RAG build + ingestion daemon")
             await compliance_router.build_all(app.db)
+            start_compliance_daemon(MONGO_URL, DB_NAME)
         except Exception as e:
-            logger.error(f"Compliance RAG initial build failed (non-fatal): {e}")
-    asyncio.ensure_future(_build_compliance_stores())
+            logger.error(f"Compliance init failed (non-fatal): {e}")
+
+    asyncio.ensure_future(_deferred_vector_store_build())
+    asyncio.ensure_future(_deferred_compliance_init())
 
     yield
     app.mongodb_client.close()

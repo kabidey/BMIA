@@ -284,10 +284,14 @@ def start_guidance_scheduler(mongo_url: str, db_name: str):
     """Start background thread that scrapes daily at 5 AM IST.
     Also prunes data older than 3 months and rebuilds vector index."""
     import asyncio as _aio
+    import time as _time
     from motor.motor_asyncio import AsyncIOMotorClient
 
     def _scheduler_loop():
         logger.info("GUIDANCE SCHEDULER: Started (daily at 5:00 AM IST, 3-month retention)")
+        # Deploy-safety: quiet period so the /api/health probe + first requests
+        # can be served before this thread burns CPU on a ~40s TF-IDF rebuild.
+        _time.sleep(120)
 
         # Run initial scrape on first startup if DB is empty, then build vector store
         try:
