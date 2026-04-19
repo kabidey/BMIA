@@ -16,7 +16,7 @@ import {
   TrendingUp, TrendingDown, Minus, Activity, BarChart3, Zap,
   RefreshCw, Timer, ArrowUpRight, ArrowDownRight, Eye,
   Gauge, PieChart as PieChartIcon, Layers, FileText, Bell, Scale, Loader2,
-  AlertTriangle, Users, CalendarDays, Newspaper, Sparkles, ChevronRight
+  AlertTriangle, Users, CalendarDays, Newspaper, Sparkles, ChevronRight, Copy
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer,
@@ -26,7 +26,83 @@ import {
 } from 'recharts';
 import { useApi } from '../hooks/useApi';
 
+import { toast } from 'sonner';
+
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
+
+// ── Morning Brief builder ────────────────────────────────────────────
+// Bundles today's macro snapshot + FII flows + top news + earnings into a
+// single markdown block ready to paste into Slack / WhatsApp / email.
+async function buildMorningBrief(cockpitData) {
+  const now = new Date().toLocaleString('en-IN', {
+    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+  const indices = cockpitData?.indices?.indices || [];
+  const vix = cockpitData?.vix || {};
+  const breadth = cockpitData?.breadth || {};
+  const flows = (cockpitData?.flows?.flows || []).slice(-5);
+
+  const pick = (name) => indices.find(i => i.name === name);
+  const fmtIdx = (idx) => idx
+    ? `${idx.name}: ${idx.last?.toLocaleString('en-IN')} (${idx.change_pct > 0 ? '+' : ''}${idx.change_pct?.toFixed(2)}%)`
+    : null;
+
+  // Best-effort fetch of news + earnings (parallel)
+  const [newsRes, earnRes] = await Promise.allSettled([
+    fetch(`${BACKEND_URL}/api/big-market/news?limit=3`).then(r => r.json()),
+    fetch(`${BACKEND_URL}/api/big-market/earnings-calendar?days=2`).then(r => r.json()),
+  ]);
+  const news = newsRes.status === 'fulfilled' && Array.isArray(newsRes.value) ? newsRes.value.slice(0, 3) : [];
+  const earnings = earnRes.status === 'fulfilled' && Array.isArray(earnRes.value) ? earnRes.value.slice(0, 8) : [];
+
+  const lines = [`*BMIA Morning Brief — ${now} IST*`, ''];
+
+  // 1. Macro
+  lines.push('*📈 Indices*');
+  ['Nifty 50', 'Sensex', 'Bank Nifty', 'Midcap 100'].forEach(n => {
+    const s = fmtIdx(pick(n));
+    if (s) lines.push(`• ${s}`);
+  });
+  if (vix.current != null) {
+    lines.push(`• India VIX: ${vix.current} (${vix.regime_label || vix.regime || '—'}, ${vix.change_pct > 0 ? '+' : ''}${vix.change_pct?.toFixed(2)}%)`);
+  }
+  if (breadth.advances != null) {
+    lines.push(`• Breadth: ${breadth.advances}↑ / ${breadth.declines}↓ (A/D ${breadth.ad_ratio})`);
+  }
+  lines.push('');
+
+  // 2. FII/DII flows (last 5 days)
+  if (flows.length > 0) {
+    lines.push('*💰 FII/DII Flows (last 5 days, ₹ Cr)*');
+    flows.forEach(f => {
+      const fii = f.fii_net != null ? `FII ${f.fii_net > 0 ? '+' : ''}${Math.round(f.fii_net).toLocaleString('en-IN')}` : '';
+      const dii = f.dii_net != null ? `DII ${f.dii_net > 0 ? '+' : ''}${Math.round(f.dii_net).toLocaleString('en-IN')}` : '';
+      lines.push(`• ${f.display_date || f.date}: ${fii}  |  ${dii}`);
+    });
+    lines.push('');
+  }
+
+  // 3. Today's earnings (≤ 8)
+  if (earnings.length > 0) {
+    lines.push(`*📅 Today's Earnings / Events (${earnings.length})*`);
+    earnings.forEach(e => {
+      lines.push(`• ${e.symbol} — ${e.event_type || 'Event'}${e.company ? ' · ' + e.company.slice(0, 40) : ''}`);
+    });
+    lines.push('');
+  }
+
+  // 4. Top news
+  if (news.length > 0) {
+    lines.push('*📰 Top Headlines*');
+    news.forEach(n => {
+      lines.push(`• ${n.title}`);
+    });
+    lines.push('');
+  }
+
+  lines.push('_— BMIA · Not investment advice_');
+  return lines.join('\n');
+}
 
 // ── Market session from backend (holiday-aware, DB-driven) ──
 function MarketStatusBadge() {
@@ -607,6 +683,25 @@ export default function MarketOverview() {
           </div>
           <Button variant="outline" size="sm" onClick={() => { fetchCockpit(); fetchSlow(); }} data-testid="manual-refresh-btn">
             <RefreshCw className="w-3.5 h-3.5 mr-1" /> Refresh
+          </Button>
+          <Button
+            variant="default"
+            size="sm"
+            onClick={async () => {
+              try {
+                const brief = await buildMorningBrief(cockpitData);
+                await navigator.clipboard.writeText(brief);
+                toast.success('Morning Brief copied — paste into Slack / WhatsApp', {
+                  description: `${brief.split('\n').length} lines · ready to share`,
+                });
+              } catch (err) {
+                toast.error('Failed to copy brief', { description: String(err?.message || err) });
+              }
+            }}
+            data-testid="copy-morning-brief-btn"
+            className="bg-[hsl(var(--primary))] hover:bg-[hsl(var(--primary))]/90"
+          >
+            <Copy className="w-3.5 h-3.5 mr-1" /> Morning Brief
           </Button>
           {lastRefresh && (
             <span className="text-[10px] text-[hsl(var(--muted-foreground))] font-mono">

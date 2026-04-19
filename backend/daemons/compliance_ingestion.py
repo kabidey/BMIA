@@ -44,6 +44,7 @@ PER_CYCLE_MAX_PDFS = int(os.environ.get("COMPLIANCE_MAX_PDFS_PER_CYCLE", "10")) 
 PDF_READ_TIMEOUT = int(os.environ.get("COMPLIANCE_PDF_READ_TIMEOUT", "10"))          # seconds
 TARGET_START_YEAR = int(os.environ.get("COMPLIANCE_TARGET_START_YEAR", "2010"))
 REBUILD_AFTER_N_CHUNKS = int(os.environ.get("COMPLIANCE_REBUILD_AFTER_N_CHUNKS", "50"))
+MAX_BACKOFF_SEC = int(os.environ.get("COMPLIANCE_MAX_BACKOFF_SEC", "3600"))  # 1h cap
 
 HEADERS = {
     "User-Agent": (
@@ -253,6 +254,7 @@ def _get_state(db_sync, source: str) -> dict:
         "last_cycle_at": None,
         "last_error": None,
         "errors_count": 0,
+        "consecutive_no_data": 0,
         "started_at": now.isoformat(),
         "last_new_ingest_at": None,
     }
@@ -419,19 +421,24 @@ def _source_worker(mongo_url: str, db_name: str, source: str):
             if total_new > 0:
                 state["last_new_ingest_at"] = now.isoformat()
 
-            # ─ Observability: mark silent no-ops as errors so UI shows them ─
-            # A cycle with zero ingests AND zero fetched items is almost always
-            # the source blocking/rate-limiting us. Surface it in the UI.
+            # ─ Observability + exponential backoff on repeated no_data cycles ─
+            # When a source is upstream-blocked (e.g. BSE/SEBI bot-guards on
+            # cloud IPs), a tight 2-min retry just burns requests and balloons
+            # errors_count. Track consecutive no_data cycles and back off
+            # exponentially: 2m → 4m → 8m → … capped at 1h. Reset on any new
+            # ingest so the source recovers quickly when upstream unblocks.
             if total_new == 0 and live_batch_size == 0:
                 state["errors_count"] = state.get("errors_count", 0) + 1
+                state["consecutive_no_data"] = state.get("consecutive_no_data", 0) + 1
                 state["last_error"] = (
                     state.get("last_error")
                     or f"no_data: fetcher returned 0 items for {source} "
                        f"(likely blocked/rate-limited upstream)"
                 )
             elif total_new > 0:
-                # Clear stale error once we start getting data again
+                # Clear stale error + reset backoff once data starts flowing again
                 state["last_error"] = None
+                state["consecutive_no_data"] = 0
 
             _save_state(db, source, state)
 
@@ -439,13 +446,19 @@ def _source_worker(mongo_url: str, db_name: str, source: str):
             if new_since_rebuild >= REBUILD_AFTER_N_CHUNKS or (total_new > 0 and state["cycle_count"] <= 2):
                 _rebuild_store(db, source)
 
-            # ─ Sleep ─
-            sleep_for = BACKFILL_CYCLE_SLEEP_SEC if state["phase"] == "backfill" else LIVE_CYCLE_SLEEP_SEC
+            # ─ Sleep (with exponential backoff on repeated no_data) ─
+            base_sleep = BACKFILL_CYCLE_SLEEP_SEC if state["phase"] == "backfill" else LIVE_CYCLE_SLEEP_SEC
+            nd = state.get("consecutive_no_data", 0)
+            if nd > 0:
+                # 2^(nd-1) multiplier, capped at 3600s (1h)
+                sleep_for = min(base_sleep * (2 ** (nd - 1)), MAX_BACKOFF_SEC)
+            else:
+                sleep_for = base_sleep
             logger.info(
                 f"COMPLIANCE WORKER [{source}]: cycle done phase={state['phase']} "
                 f"new={total_new} total={state['total_circulars']} "
                 f"oldest={state.get('oldest_date_iso')} newest={state.get('newest_date_iso')} "
-                f"sleep={sleep_for}s"
+                f"no_data_streak={nd} sleep={sleep_for}s"
             )
             time.sleep(sleep_for)
         except Exception as e:
