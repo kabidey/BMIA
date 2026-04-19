@@ -39,7 +39,9 @@ logger = logging.getLogger(__name__)
 REQUEST_DELAY_SEC = float(os.environ.get("COMPLIANCE_REQUEST_DELAY_SEC", "3.0"))
 BACKFILL_CYCLE_SLEEP_SEC = int(os.environ.get("COMPLIANCE_BACKFILL_SLEEP", "120"))   # 2 min
 LIVE_CYCLE_SLEEP_SEC = int(os.environ.get("COMPLIANCE_LIVE_SLEEP", "900"))           # 15 min
-BATCH_SIZE = int(os.environ.get("COMPLIANCE_BATCH_SIZE", "50"))
+BATCH_SIZE = int(os.environ.get("COMPLIANCE_BATCH_SIZE", "15"))                      # items per batch call
+PER_CYCLE_MAX_PDFS = int(os.environ.get("COMPLIANCE_MAX_PDFS_PER_CYCLE", "10"))      # hard cap on PDF fetches per worker cycle
+PDF_READ_TIMEOUT = int(os.environ.get("COMPLIANCE_PDF_READ_TIMEOUT", "10"))          # seconds
 TARGET_START_YEAR = int(os.environ.get("COMPLIANCE_TARGET_START_YEAR", "2010"))
 REBUILD_AFTER_N_CHUNKS = int(os.environ.get("COMPLIANCE_REBUILD_AFTER_N_CHUNKS", "50"))
 
@@ -63,9 +65,9 @@ def _extract_pdf_text(pdf_bytes: bytes) -> str:
         return ""
 
 
-def _fetch_doc_text(url: str, timeout: int = 30) -> str:
+def _fetch_doc_text(url: str, timeout: int = PDF_READ_TIMEOUT) -> str:
     try:
-        r = requests.get(url, headers=HEADERS, timeout=timeout)
+        r = requests.get(url, headers=HEADERS, timeout=(5, timeout))
         r.raise_for_status()
         ct = r.headers.get("Content-Type", "").lower()
         if "pdf" in ct or url.lower().endswith(".pdf"):
@@ -83,7 +85,7 @@ def _fetch_sebi(from_date: datetime, to_date: datetime, limit: int = BATCH_SIZE)
     """SEBI circulars listing. Paginates until date window covered."""
     url = "https://www.sebi.gov.in/sebiweb/home/HomeAction.do?doListing=yes&sid=1&ssid=5&smid=0"
     try:
-        r = requests.get(url, headers=HEADERS, timeout=25)
+        r = requests.get(url, headers=HEADERS, timeout=(5, 15))
         if r.status_code != 200:
             return []
         html = r.text
@@ -123,13 +125,14 @@ def _fetch_nse(from_date: datetime, to_date: datetime, limit: int = BATCH_SIZE) 
     session = requests.Session()
     session.headers.update(HEADERS)
     try:
-        session.get("https://www.nseindia.com", timeout=15)
+        # (connect, read) timeout tuple — avoids indefinite hang on DNS/TCP
+        session.get("https://www.nseindia.com", timeout=(5, 10))
         time.sleep(1.0)
         api_url = (
             "https://www.nseindia.com/api/circulars"
             f"?from_date={from_date:%d-%m-%Y}&to_date={to_date:%d-%m-%Y}"
         )
-        r = session.get(api_url, timeout=25)
+        r = session.get(api_url, timeout=(5, 15))
         if r.status_code != 200:
             return []
         data = r.json()
@@ -154,6 +157,11 @@ def _fetch_nse(from_date: datetime, to_date: datetime, limit: int = BATCH_SIZE) 
     except Exception as e:
         logger.error(f"NSE fetch failed: {e}")
         return []
+    finally:
+        try:
+            session.close()
+        except Exception:
+            pass
 
 
 def _fetch_bse(from_date: datetime, to_date: datetime, limit: int = BATCH_SIZE) -> List[dict]:
@@ -166,7 +174,7 @@ def _fetch_bse(from_date: datetime, to_date: datetime, limit: int = BATCH_SIZE) 
         r = requests.get(
             api_url,
             headers={**HEADERS, "Referer": "https://www.bseindia.com/"},
-            timeout=25,
+            timeout=(5, 15),
         )
         if r.status_code != 200:
             return []
@@ -330,10 +338,16 @@ def _source_worker(mongo_url: str, db_name: str, source: str):
                 _parse_date(state["newest_date_iso"]) or (now - timedelta(days=30))
             )
             live_to = now.replace(tzinfo=None)
+            live_batch_size = 0
+            pdfs_fetched = 0
             try:
                 live_batch = fetcher(live_from, live_to)
+                live_batch_size = len(live_batch)
                 for meta in live_batch:
+                    if pdfs_fetched >= PER_CYCLE_MAX_PDFS:
+                        break
                     stored = _ingest_circular(db, meta)
+                    pdfs_fetched += 1
                     if stored:
                         total_new += 1
                         new_since_rebuild += 1
@@ -355,7 +369,10 @@ def _source_worker(mongo_url: str, db_name: str, source: str):
                 try:
                     back_batch = fetcher(back_from, back_to)
                     for meta in back_batch:
+                        if pdfs_fetched >= PER_CYCLE_MAX_PDFS:
+                            break
                         stored = _ingest_circular(db, meta)
+                        pdfs_fetched += 1
                         if stored:
                             total_new += 1
                             new_since_rebuild += 1
@@ -385,6 +402,20 @@ def _source_worker(mongo_url: str, db_name: str, source: str):
             state["last_cycle_at"] = now.isoformat()
             if total_new > 0:
                 state["last_new_ingest_at"] = now.isoformat()
+
+            # ─ Observability: mark silent no-ops as errors so UI shows them ─
+            # A cycle with zero ingests AND zero fetched items is almost always
+            # the source blocking/rate-limiting us. Surface it in the UI.
+            if total_new == 0 and live_batch_size == 0:
+                state["errors_count"] = state.get("errors_count", 0) + 1
+                state["last_error"] = (
+                    state.get("last_error")
+                    or f"no_data: fetcher returned 0 items for {source} "
+                       f"(likely blocked/rate-limited upstream)"
+                )
+            elif total_new > 0:
+                # Clear stale error once we start getting data again
+                state["last_error"] = None
 
             _save_state(db, source, state)
 

@@ -268,6 +268,11 @@ export default function ComplianceResearchPanel({ compact = false }) {
                       <span>{s.years_covered}/{s.total_years_span} yrs · {(s.circular_count || 0).toLocaleString()} docs</span>
                       {s.oldest_date && <span className="font-mono">→ {s.oldest_date.slice(0, 7)}</span>}
                     </div>
+                    {s.last_error && s.circular_count === 0 && (
+                      <div className="text-[9px] text-red-400/80 leading-tight" data-testid={`error-${src.id}`}>
+                        ⚠ {s.last_error.slice(0, 80)}
+                      </div>
+                    )}
                   </div>
                 );
               })}

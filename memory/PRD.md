@@ -8,12 +8,26 @@ Build a Tier-1 Quant Analyst for Indian Equity and Commodity markets.
 ### Compliance — NotebookLM-style RAG over NSE/BSE/SEBI circulars (NEW, Apr 2026)
 - Full page at `/compliance` + global quick-launch modal (sidebar button / `Ctrl+Shift+C`)
 - 3 independent TF-IDF stores (one per source: NSE, BSE, SEBI) with adaptive `max_df` for small/large corpora
-- Background ingestion daemon (`daemons/compliance_ingestion.py`) — polite crawling at ~1 req/2s, 15-minute cadence, idempotent on `(source, circular_no)`. In-memory PDF extraction via pdfminer.six — no PDFs persisted.
+- **Production-ready ingestion** (`daemons/compliance_ingestion.py`):
+  - 3 independent worker threads (one per source), each maintaining its own state in MongoDB `compliance_ingestion_state`
+  - **Phased crawl**: `backfill` (most-recent → 2010, gentle 5-day pace) → `live` (last-30-days incremental every 15 min)
+  - Date-ranged fetchers (NSE `from_date/to_date`, BSE `strFromDate/strToDate`, SEBI listing parse)
+  - Tight timeouts (connect=5s, read=10-15s) + per-cycle PDF cap (`COMPLIANCE_MAX_PDFS_PER_CYCLE=10`) keep each cycle <5 min
+  - Auto-rebuild TF-IDF after 50 new chunks or cycle 1-2
+  - Polite `COMPLIANCE_REQUEST_DELAY_SEC=3s` between HTTP calls; all tunables exposed via env vars
+  - Silent no-ops surfaced as `errors_count++` + `last_error` so UI accurately shows blocked sources
 - RAG chat answered by Claude Sonnet 4.5 via `emergentintegrations` (`services/compliance_agent.py`), strict [CIT-N] citation format + `## Sources` list
-- Frontend (`components/ComplianceResearchPanel.js`) — sources toggle, year filter, index stats card, suggested starter questions, inline citation chips, expandable source cards with URLs
+- **Progress UI** in Compliance page & modal:
+  - Overall phase badge (BACKFILL / LIVE) + per-source progress bars (BACKFILLING / LIVE)
+  - Honest `progress_pct` = distinct years ingested ÷ total years span (2010 → today)
+  - Per-source: years_covered, doc count, oldest-ingested date
+  - Total circulars, vector chunks, overall %
+  - Last-error banner appears when a source is blocked
+  - Auto-poll: every 10s in backfill, 60s in live
+  - Force-sync button for manual trigger
 - Endpoints under `/api/compliance`:
   - `POST /research` — RAG query (question + sources[] + year_filter + top_k)
-  - `GET /stats` — per-source ready/chunk_count/circular_count
+  - `GET /stats` — rich progress payload (overall_phase, totals, per-source phase/progress/errors)
   - `GET /circulars` — list ingested circulars with filters + pagination
   - `POST /rebuild` — manual TF-IDF rebuild
   - `POST /ingest-now` — manual ingestion trigger
