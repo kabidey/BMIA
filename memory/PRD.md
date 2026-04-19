@@ -5,43 +5,50 @@ Build a Tier-1 Quant Analyst for Indian Equity and Commodity markets.
 
 ## What's Implemented (Latest: Apr 2026)
 
-### Big Market — Koyfin-Style Global Dashboard (NEW)
-- **Indian Indices**: 13 NSE indices (Nifty 50, Sensex, Bank Nifty, IT, Pharma, FMCG, Auto, Metal, Realty, Energy, Infra, PSU Bank, India VIX) — Price, Chg, %, Z-Score, 1Y%, YTD%, 52W Range, Volume
-- **Global Indices**: 15 (S&P 500, Nasdaq, Dow, DAX, FTSE, Nikkei, Hang Seng, Shanghai, etc.)
-- **Commodities**: 7 (Gold, Silver, WTI, Brent, Natural Gas, Copper, Aluminum)
-- **Currencies**: 7 (USD/INR, EUR/INR, GBP/INR, JPY/INR, EUR/USD, GBP/USD, Bitcoin)
-- **Yields**: 4 (US 3M, 5Y, 10Y, 30Y)
-- **Factor Grid**: Value/Core/Growth × Large/Mid/Small (Indian sectoral)
-- **Market Pulse**: Nifty 50 + India VIX at a glance
-- **Performance Rankings**: 1Y return bar chart
-- **Stock Snapshot**: Koyfin-style per-stock view (Chart, Key Data, Valuation, Capital Structure, Performance Returns)
-- Endpoints: GET /api/big-market/overview, GET /api/big-market/snapshot/{symbol}
+### Compliance — NotebookLM-style RAG over NSE/BSE/SEBI circulars (NEW, Apr 2026)
+- Full page at `/compliance` + global quick-launch modal (sidebar button / `Ctrl+Shift+C`)
+- 3 independent TF-IDF stores (one per source: NSE, BSE, SEBI) with adaptive `max_df` for small/large corpora
+- Background ingestion daemon (`daemons/compliance_ingestion.py`) — polite crawling at ~1 req/2s, 15-minute cadence, idempotent on `(source, circular_no)`. In-memory PDF extraction via pdfminer.six — no PDFs persisted.
+- RAG chat answered by Claude Sonnet 4.5 via `emergentintegrations` (`services/compliance_agent.py`), strict [CIT-N] citation format + `## Sources` list
+- Frontend (`components/ComplianceResearchPanel.js`) — sources toggle, year filter, index stats card, suggested starter questions, inline citation chips, expandable source cards with URLs
+- Endpoints under `/api/compliance`:
+  - `POST /research` — RAG query (question + sources[] + year_filter + top_k)
+  - `GET /stats` — per-source ready/chunk_count/circular_count
+  - `GET /circulars` — list ingested circulars with filters + pagination
+  - `POST /rebuild` — manual TF-IDF rebuild
+  - `POST /ingest-now` — manual ingestion trigger
+
+### Big Market — Koyfin-Style Global Dashboard
+- 13 Indian indices, 15 global, 7 commodities, 7 currencies, 4 yields, Factor Grid, Stock Snapshot
+- Endpoints: `GET /api/big-market/overview`, `GET /api/big-market/snapshot/{symbol}`
 
 ### Core Platform
 - Market Cockpit, Symbol Analysis, God Mode Scanner (NSE+BSE 3400+ stocks), AI Signals, BSE Guidance RAG
 
 ### 4-Model ML Ensemble + Monte Carlo
-- LSTM, Attention-LSTM, GRU, GARCH (optimized: 12s per stock)
+- LSTM, Attention-LSTM, GRU, GARCH (12s/stock)
 
 ### Portfolio System
 - 6 AI portfolios + Custom, XIRR, P&L, Rebalance History
-- **Proper rebalance accounting (Feb 2026)**: swap A→B preserves capital, realizes P&L on exits, tracks `cash_balance` + `realized_pnl` + `unrealized_pnl` separately; kept-stock cost basis preserved; invariant `current_value = holdings_value + cash_balance` and `total_pnl = realized + unrealized`
-- **HONEST P&L baseline (Feb 2026)**: All P&L measured against immutable `initial_capital` (AI) / `capital` (custom) — NOT shrunken `actual_invested`. Ensures losses from stop-outs show as real losses. Aggregate `total_pnl = total_value - total_capital`.
-- **SafeJSONResponse** (Feb 2026): Global FastAPI default response class strips NaN/Inf → null, preventing `ValueError: Out of range float values not JSON compliant` crashes on endpoints with pandas/numpy-derived metrics.
-- **PMS auto-reinvest (Feb 2026)**: `services/auto_reinvest.py` — strategy-aware picker using `PORTFOLIO_STRATEGIES` config (6 scoring types: momentum/breakout/blue_chip/oversold/contrarian/value). After every stop-out, daemon immediately redeploys proceeds into a thesis-appropriate stock. No idle cash possible. `GET /api/portfolios/exit-history/{type}` shows Realized Positions with full trail.
-- **Market hours guard (Feb 2026)**: `utils/market_hours.py` — ALL creation + rebalancing + auto-reinvest operations blocked outside safe window (Mon-Fri 09:30-15:15 IST, excluding NSE holidays). Avoids 09:15-09:30 open auction and 15:15-15:30 close auction volatility. Returns HTTP 400 with clear reason on routes; logs-and-skips in daemon.
+- HONEST P&L baseline vs immutable `initial_capital`; rebalance swaps preserve capital, realize P&L on exits
+- SafeJSONResponse strips NaN/Inf → null
+- PMS auto-reinvest (strategy-aware NIFTY-500 picker, no idle cash) + Exit History UI
+- Market hours guard (IST 09:30-15:15 Mon-Fri, excl. NSE holidays)
 
 ### RAG & Intelligence
-- 3-Month TF-IDF vectorization (25K+ vectors)
+- 3-Month TF-IDF vectorization (25K+ vectors) for BSE Guidance
 - GPT-4.1 → Gemini 2.5 Flash pipeline
 - Daily Guidance Briefing on Cockpit
 - Screener.in-style per-stock documents
 
 ### Auth & Audit
-- OrgLens JWT + global fetch interceptor
-- Audit log with proper user tracking
+- OrgLens JWT + global fetch interceptor, audit log
 
 ## Backlog
-- P2: CSV/PDF export, WebSocket/SSE
-- Future: Portfolio alerts, Benchmark dashboard
+- P1: Enhance Big Market — Market Movers scatter, FII/DII flows, Earnings Calendar, PCR, Analyst Estimates, News
+- P2: CSV/PDF portfolio export
+- P2: WebSocket/SSE real-time Cockpit (replace polling)
+- Future: Portfolio push-alerts on rebalance/P&L thresholds
+- Future: Benchmark comparison dashboard
 - Refactor: Rename TOTPGate.js → AuthGate.js
+
