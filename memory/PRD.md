@@ -17,6 +17,7 @@ Build a Tier-1 Quant Analyst for Indian Equity and Commodity markets.
   - Polite `COMPLIANCE_REQUEST_DELAY_SEC=3s` between HTTP calls; all tunables exposed via env vars
   - Silent no-ops surfaced as `errors_count++` + `last_error` so UI accurately shows blocked sources
 - RAG chat answered by Claude Sonnet 4.5 via `emergentintegrations` (`services/compliance_agent.py`), strict [CIT-N] citation format + `## Sources` list
+- **"Cite in report"** one-click export on every answer: copies publication-ready markdown to clipboard with citations remapped to sequential `[1][2]…` (order of first appearance) + a numbered bibliography (circular no, date, title, category, URL). Auto-strips the LLM's inline Sources block. Ready to paste into email/PDF/Word.
 - **Progress UI** in Compliance page & modal:
   - Overall phase badge (BACKFILL / LIVE) + per-source progress bars (BACKFILLING / LIVE)
   - Honest `progress_pct` = distinct years ingested ÷ total years span (2010 → today)
