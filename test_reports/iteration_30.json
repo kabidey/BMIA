@@ -1,0 +1,39 @@
+{
+  "summary": "Iteration 30 — Compliance ingestion upgraded to production-ready: per-source workers, state persistence, honest distinct-year progress, rich /stats endpoint, live progress UI. 9/9 pytest cases green on /api/compliance/stats, /ingest-now, /research + Mongo state persistence. Frontend /compliance page + Ctrl+Shift+C modal render overall-phase-badge, progress-{nse|bse|sebi} bars, totals, and Force sync button correctly; auto-poll confirmed at 10s interval while overall_phase='backfill'.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/compliance/stats", "issue": "NSE worker showed cycle_count=0 in compliance_ingestion_state after 3+ min uptime while SEBI/BSE reached cycle_count=7. Likely the NSE fetcher is blocked or timing out before even a single cycle completes inside the 2-min cadence. Not a blocker (seeded rows keep UI honest), but worth adding a per-attempt timeout guard so NSE worker at least logs errors_count/last_error instead of appearing silent."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration30_compliance_progress.py",
+    "/app/test_reports/pytest/iteration_30_results.xml"
+  ],
+  "action_items": [
+    "OPTIONAL: In _source_worker, wrap the outer fetcher() calls with per-iteration timeout/error bump so a silent hang on NSE shows up as errors_count>0 and last_error!=null. Current code only catches raised exceptions, not slow no-ops.",
+    "OPTIONAL: Daemon thread-name verification via /proc was not possible (Linux truncates comm to 'python'); relied instead on state-doc existence + advancing cycle_count. If you want programmatic thread-name assertion, expose a tiny /api/compliance/_debug/threads endpoint enumerating threading.enumerate() names."
+  ],
+  "critical_code_review_comments": [
+    "daemons/compliance_ingestion.py _source_worker: state dict is mutated locally then _save_state pushes the whole dict incl. 'source' — harmless upsert but redundant; prefer $set of changed fields only.",
+    "daemons/compliance_ingestion.py: when backfill returns 0 items the oldest_date_iso cursor never advances, which is correct (honest) but also means the 'target_start_year <= oldest_date_iso' transition to live mode will never fire if the source is permanently blocked. Consider a max_backfill_wall_time guard (e.g. 7 days) after which it flips to live anyway.",
+    "routes/compliance.py /stats: years_covered uses {'$gte': target_year, '$lte': current_year} which silently drops circulars with year=None (unparsed dates). Acceptable but should be logged.",
+    "ComplianceResearchPanel.js: auto-poll useEffect resets interval on every stats change, not just phase change — minor re-setup cost; using only stats?.overall_phase in deps (already done) keeps it stable.",
+    "ComplianceResearchPanel.js: /api/compliance/* fetches still don't attach the bmia_session_token header; currently these routes are un-gated so it works, but unifying with the global interceptor would be cleaner."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration30_compliance_progress.py"
+  ],
+  "success_rate": {"backend": "100% (9/9)", "frontend": "100% (all 7 UI + auto-poll + modal checks)"},
+  "test_credentials": "somnath.dey@smifs.com / admin123 (from /app/memory/test_credentials.md); token goes into localStorage bmia_session_token.",
+  "seed_data_creation": "Used existing seeded rows from iter_29 (4 circulars across NSE/BSE/SEBI). compliance_ingestion_state docs were auto-created by the 3 workers on first cycle.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Compliance progress feature is green. Key verifications: (1) /api/compliance/stats returns overall_phase, totals{circulars,chunks,avg_progress_pct}, and per-source {phase, progress_pct, oldest_date, newest_date, target_start_year, years_covered, total_years_span, cycle_count, last_cycle_at, last_new_ingest_at, started_at, errors_count, last_error}. (2) progress_pct == round(100 * distinct_years_in_db / (current_year - target_start_year + 1), 1). (3) compliance_ingestion_state in Mongo has one doc per source (nse/bse/sebi). (4) Frontend test-ids: overall-phase-badge, progress-source-list, progress-{nse|bse|sebi}, trigger-ingest-btn. (5) Auto-poll interval = 10s in backfill, 60s in live. (6) Ctrl+Shift+C opens modal that reuses the same progress card. NSE fetcher is likely blocked from preview pod (cycle_count stays at 0) — that is expected/correct per problem statement.",
+  "rca of the issue": "N/A — no functional bug. Minor observability gap around NSE worker silent no-ops noted under backend_issues.minor and action_items."
+}

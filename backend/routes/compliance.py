@@ -1,5 +1,6 @@
 """Compliance — NSE/BSE/SEBI circulars RAG routes (NotebookLM-style research)."""
 import logging
+import os
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Request
@@ -38,14 +39,62 @@ async def research_endpoint(req: ResearchRequest):
 
 @router.get("/stats")
 async def compliance_stats(request: Request):
-    """Ingestion + vector-store stats for each source."""
+    """Ingestion + vector-store stats for each source (for UI progress bar)."""
     db = request.app.db
-    stats = compliance_router.stats()
-    # Add Mongo counts
+    from datetime import datetime, timezone
+
+    store_stats = compliance_router.stats()
+    target_year = int(os.environ.get("COMPLIANCE_TARGET_START_YEAR", "2010"))
+    current_year = datetime.now(timezone.utc).year
+    total_years_span = max(1, current_year - target_year + 1)
+
+    stats: dict = {}
     for src in ("nse", "bse", "sebi"):
-        stats[src]["circular_count"] = await db.compliance_circulars.count_documents({"source": src})
-        stats[src]["total_chunks_in_db"] = await db.compliance_chunks.count_documents({"source": src})
-    return {"stores": stats, "sources": list(stats.keys())}
+        circular_count = await db.compliance_circulars.count_documents({"source": src})
+        chunk_count_db = await db.compliance_chunks.count_documents({"source": src})
+        state = await db.compliance_ingestion_state.find_one({"source": src}, {"_id": 0}) or {}
+
+        # HONEST progress: distinct years with at least 1 ingested circular / target span
+        year_pipeline = [
+            {"$match": {"source": src, "year": {"$gte": target_year, "$lte": current_year}}},
+            {"$group": {"_id": "$year"}},
+        ]
+        year_docs = await db.compliance_circulars.aggregate(year_pipeline).to_list(length=None)
+        years_covered = len(year_docs)
+        progress = round(100.0 * years_covered / total_years_span, 1) if total_years_span else 0.0
+
+        stats[src] = {
+            **store_stats.get(src, {}),
+            "circular_count": circular_count,
+            "total_chunks_in_db": chunk_count_db,
+            "phase": state.get("phase", "idle"),
+            "progress_pct": progress,
+            "oldest_date": state.get("oldest_date_iso"),
+            "newest_date": state.get("newest_date_iso"),
+            "target_start_year": state.get("target_start_year", target_year),
+            "years_covered": years_covered,
+            "total_years_span": total_years_span,
+            "cycle_count": state.get("cycle_count", 0),
+            "last_cycle_at": state.get("last_cycle_at"),
+            "last_new_ingest_at": state.get("last_new_ingest_at"),
+            "started_at": state.get("started_at"),
+            "errors_count": state.get("errors_count", 0),
+            "last_error": state.get("last_error"),
+        }
+
+    overall_phase = (
+        "backfill" if any(s["phase"] == "backfill" for s in stats.values())
+        else "live" if all(s["phase"] == "live" for s in stats.values())
+        else "idle"
+    )
+    totals = {
+        "circulars": sum(s["circular_count"] for s in stats.values()),
+        "chunks": sum(s["total_chunks_in_db"] for s in stats.values()),
+        "avg_progress_pct": round(
+            sum(s["progress_pct"] for s in stats.values()) / max(1, len(stats)), 1
+        ),
+    }
+    return {"stores": stats, "sources": list(stats.keys()), "overall_phase": overall_phase, "totals": totals}
 
 
 @router.get("/circulars")

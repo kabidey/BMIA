@@ -100,6 +100,14 @@ export default function ComplianceResearchPanel({ compact = false }) {
   }, []);
 
   useEffect(() => { loadStats(); }, [loadStats]);
+
+  // Auto-poll stats: 10s while any source is backfilling, 60s when all live
+  useEffect(() => {
+    const isBackfilling = stats?.overall_phase === 'backfill';
+    const interval = setInterval(loadStats, isBackfilling ? 10000 : 60000);
+    return () => clearInterval(interval);
+  }, [stats?.overall_phase, loadStats]);
+
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, loading]);
 
   const toggleSource = (id) => {
@@ -142,13 +150,6 @@ export default function ComplianceResearchPanel({ compact = false }) {
       setTimeout(loadStats, 2000);
     } catch {}
   };
-
-  const totalChunks = stats?.stores
-    ? Object.values(stats.stores).reduce((a, s) => a + (s.chunk_count || 0), 0)
-    : 0;
-  const totalCirculars = stats?.stores
-    ? Object.values(stats.stores).reduce((a, s) => a + (s.circular_count || 0), 0)
-    : 0;
 
   return (
     <div className={`flex ${compact ? 'h-full' : 'h-[calc(100vh-3.5rem)]'} bg-[hsl(var(--background))]`} data-testid="compliance-panel">
@@ -211,19 +212,84 @@ export default function ComplianceResearchPanel({ compact = false }) {
             </select>
           </div>
 
-          {/* Index Stats */}
+          {/* Ingestion Progress */}
           <div className="pt-3 border-t border-[hsl(var(--border))]">
-            <div className="text-[11px] font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wider mb-2">Index Status</div>
-            <div className="space-y-1 text-[11px]">
-              <div className="flex justify-between text-[hsl(var(--muted-foreground))]">
-                <span>Circulars</span>
-                <span className="text-[hsl(var(--foreground))] font-mono">{totalCirculars.toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between text-[hsl(var(--muted-foreground))]">
-                <span>Vector chunks</span>
-                <span className="text-[hsl(var(--foreground))] font-mono">{totalChunks.toLocaleString()}</span>
-              </div>
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-[11px] font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wider">Ingestion</div>
+              {stats?.overall_phase && (
+                <span
+                  data-testid="overall-phase-badge"
+                  className={`text-[9px] font-semibold px-1.5 py-0.5 rounded uppercase tracking-wider ${
+                    stats.overall_phase === 'live'
+                      ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                      : stats.overall_phase === 'backfill'
+                      ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                      : 'bg-[hsl(var(--surface-3))] text-[hsl(var(--muted-foreground))]'
+                  }`}
+                >
+                  {stats.overall_phase === 'backfill' && (
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse mr-1 align-middle" />
+                  )}
+                  {stats.overall_phase === 'live' && (
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1 align-middle" />
+                  )}
+                  {stats.overall_phase}
+                </span>
+              )}
             </div>
+
+            <div className="space-y-2" data-testid="progress-source-list">
+              {SOURCES.map(src => {
+                const s = stats?.stores?.[src.id];
+                if (!s) return null;
+                const pct = Math.max(2, s.progress_pct || 0); // min 2% so bar is visible
+                return (
+                  <div key={src.id} className="space-y-1" data-testid={`progress-${src.id}`}>
+                    <div className="flex items-center justify-between text-[11px]">
+                      <div className="flex items-center gap-1.5">
+                        <span className={`w-1.5 h-1.5 rounded-full ${src.dot}`} />
+                        <span className={src.color}>{src.label}</span>
+                        {s.phase === 'backfill' && (
+                          <span className="text-[9px] text-amber-400 uppercase font-semibold">Backfilling</span>
+                        )}
+                        {s.phase === 'live' && (
+                          <span className="text-[9px] text-emerald-400 uppercase font-semibold">Live</span>
+                        )}
+                      </div>
+                      <span className="font-mono text-[hsl(var(--foreground))]">{(s.progress_pct || 0).toFixed(0)}%</span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-[hsl(var(--surface-2))] overflow-hidden">
+                      <div
+                        className={`h-full ${s.phase === 'live' ? 'bg-emerald-500' : 'bg-amber-500'}`}
+                        style={{ width: `${pct}%`, transition: 'width 0.5s ease-out' }}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between text-[9px] text-[hsl(var(--muted-foreground))]">
+                      <span>{s.years_covered}/{s.total_years_span} yrs · {(s.circular_count || 0).toLocaleString()} docs</span>
+                      {s.oldest_date && <span className="font-mono">→ {s.oldest_date.slice(0, 7)}</span>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {stats?.totals && (
+              <div className="mt-3 pt-2 border-t border-[hsl(var(--border))] text-[10px] text-[hsl(var(--muted-foreground))] space-y-0.5">
+                <div className="flex justify-between">
+                  <span>Total circulars</span>
+                  <span className="font-mono text-[hsl(var(--foreground))]">{stats.totals.circulars.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Vector chunks</span>
+                  <span className="font-mono text-[hsl(var(--foreground))]">{stats.totals.chunks.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Overall</span>
+                  <span className="font-mono text-[hsl(var(--foreground))]">{(stats.totals.avg_progress_pct || 0).toFixed(0)}%</span>
+                </div>
+              </div>
+            )}
+
             <button
               onClick={triggerIngest}
               data-testid="trigger-ingest-btn"
@@ -231,7 +297,7 @@ export default function ComplianceResearchPanel({ compact = false }) {
               style={{ transition: 'background-color 0.15s ease' }}
             >
               <RefreshCw className="w-3 h-3" />
-              Fetch latest
+              Force sync now
             </button>
           </div>
 
