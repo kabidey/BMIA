@@ -69,10 +69,12 @@ class ComplianceStore:
             return
 
         texts = [c["text_chunk"] for c in chunks]
+        # max_df auto-adjusts: relaxed for small corpora, tighter for large
+        max_df = 0.95 if len(texts) >= 10 else 1.0
         self.vectorizer = TfidfVectorizer(
             max_features=50000, ngram_range=(1, 2),
             stop_words="english", lowercase=True,
-            min_df=2, max_df=0.95,
+            min_df=1, max_df=max_df,
         )
         self.matrix = self.vectorizer.fit_transform(texts)
         self.chunks = chunks

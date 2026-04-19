@@ -20,6 +20,8 @@ from services.pdf_extractor_service import start_pdf_extraction_daemon
 from services.vector_store import guidance_vector_store
 from daemons.evaluation_scheduler import start_evaluation_scheduler
 from daemons.portfolio_daemon import start_portfolio_daemon
+from daemons.compliance_ingestion import start_compliance_daemon
+from services.compliance_rag import compliance_router
 from utils.safe_json import SafeJSONResponse
 
 from routes.symbols import router as symbols_router
@@ -34,6 +36,7 @@ from routes.totp_auth import router as totp_auth_router
 from routes.daemon_control import router as daemon_control_router
 from routes.audit_log import router as audit_log_router, audit_middleware
 from routes.big_market import router as big_market_router
+from routes.compliance import router as compliance_router_routes
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -55,6 +58,7 @@ async def lifespan(app: FastAPI):
         ("Guidance scheduler", start_guidance_scheduler, (MONGO_URL, DB_NAME)),
         ("PDF extraction daemon", start_pdf_extraction_daemon, (MONGO_URL, DB_NAME)),
         ("Portfolio daemon", start_portfolio_daemon, (MONGO_URL, DB_NAME)),
+        ("Compliance ingestion daemon", start_compliance_daemon, (MONGO_URL, DB_NAME)),
     ]:
         try:
             starter(*args)
@@ -69,6 +73,14 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.error(f"Vector store initial build failed (non-fatal): {e}")
     asyncio.ensure_future(_build_vector_store())
+
+    # Build compliance RAG stores (non-blocking)
+    async def _build_compliance_stores():
+        try:
+            await compliance_router.build_all(app.db)
+        except Exception as e:
+            logger.error(f"Compliance RAG initial build failed (non-fatal): {e}")
+    asyncio.ensure_future(_build_compliance_stores())
 
     yield
     app.mongodb_client.close()
@@ -107,6 +119,7 @@ app.include_router(totp_auth_router)
 app.include_router(daemon_control_router)
 app.include_router(audit_log_router)
 app.include_router(big_market_router)
+app.include_router(compliance_router_routes)
 
 app.middleware("http")(audit_middleware)
 

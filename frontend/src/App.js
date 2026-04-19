@@ -17,6 +17,7 @@ import CustomPortfolioDetail from './pages/CustomPortfolioDetail';
 import HowItWorks from './pages/HowItWorks';
 import AuditLog from './pages/AuditLog';
 import BigMarket from './pages/BigMarket';
+import Compliance from './pages/Compliance';
 import SignalAlerts from './components/layout/SignalAlerts';
 import { Toaster } from './components/ui/sonner';
 
@@ -61,6 +62,7 @@ function App() {
               <Route path="/signals" element={<SignalDashboard />} />
               <Route path="/track-record" element={<TrackRecord />} />
               <Route path="/guidance" element={<Guidance />} />
+              <Route path="/compliance" element={<Compliance />} />
               <Route path="/watchlist" element={<Watchlist />} />
               <Route path="/portfolio/custom/new" element={<CustomPortfolioCreate />} />
               <Route path="/portfolio/custom/:id" element={<CustomPortfolioDetail />} />

@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { BarChart3, Search, TrendingUp, LayoutGrid, ChevronLeft, ChevronRight, Zap, Trophy, Menu, X, BookOpen, Briefcase, PieChart, FileText, ClipboardList, Globe2 } from 'lucide-react';
+import { BarChart3, Search, TrendingUp, LayoutGrid, ChevronLeft, ChevronRight, Zap, Trophy, Menu, X, BookOpen, Briefcase, PieChart, FileText, ClipboardList, Globe2, Scale } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import SearchCommand from './SearchCommand';
+import ComplianceModal from '../ComplianceModal';
 
 const navItems = [
   { to: '/', icon: LayoutGrid, label: 'Market Overview', shortcut: '1' },
@@ -12,6 +13,7 @@ const navItems = [
   { to: '/scanner', icon: BarChart3, label: 'Batch Scanner', shortcut: '4' },
   { to: '/track-record', icon: Trophy, label: 'Track Record', shortcut: '5' },
   { to: '/guidance', icon: BookOpen, label: 'Guidance', shortcut: '6' },
+  { to: '/compliance', icon: Scale, label: 'Compliance', shortcut: 'c' },
   { to: '/watchlist', icon: Briefcase, label: 'Portfolio', shortcut: '7' },
   { to: '/analytics', icon: PieChart, label: 'Analytics', shortcut: '8' },
   { to: '/how-it-works', icon: FileText, label: 'How It Works', shortcut: '9' },
@@ -22,6 +24,7 @@ export default function Sidebar() {
   const [expanded, setExpanded] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [complianceOpen, setComplianceOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
@@ -58,6 +61,10 @@ export default function Sidebar() {
         e.preventDefault();
         setSearchOpen(true);
       }
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'c' || e.key === 'C')) {
+        e.preventDefault();
+        setComplianceOpen(true);
+      }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
@@ -93,6 +100,20 @@ export default function Sidebar() {
             <>
               <span className="flex-1 text-left">Search...</span>
               <kbd className="text-xs bg-[hsl(var(--surface-3))] px-1.5 py-0.5 rounded hidden sm:inline">Ctrl+K</kbd>
+            </>
+          )}
+        </button>
+        <button
+          data-testid="compliance-quicklaunch-btn"
+          onClick={() => setComplianceOpen(true)}
+          className="mt-2 flex items-center gap-2 w-full rounded-lg px-3 py-2 text-sm text-[hsl(var(--muted-foreground))] bg-[hsl(var(--surface-2))] hover:bg-[hsl(var(--surface-3))] border border-[hsl(var(--border))]"
+          style={{ transition: 'background-color 0.15s ease' }}
+        >
+          <Scale className="w-4 h-4 flex-shrink-0 text-[hsl(var(--primary))]" />
+          {(expanded || mobileOpen) && (
+            <>
+              <span className="flex-1 text-left">Compliance</span>
+              <kbd className="text-[10px] bg-[hsl(var(--surface-3))] px-1.5 py-0.5 rounded hidden sm:inline">⌃⇧C</kbd>
             </>
           )}
         </button>
@@ -190,6 +211,7 @@ export default function Sidebar() {
         setSearchOpen(false);
         navigate(`/analyze/${encodeURIComponent(sym)}`);
       }} />
+      <ComplianceModal open={complianceOpen} onClose={() => setComplianceOpen(false)} />
     </TooltipProvider>
   );
 }

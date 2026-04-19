@@ -1,0 +1,377 @@
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Send, Loader2, Scale, Filter, BookOpen, ExternalLink, Sparkles, RefreshCw, Search } from 'lucide-react';
+import { Badge } from './ui/badge';
+import { ScrollArea } from './ui/scroll-area';
+
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const SOURCES = [
+  { id: 'nse', label: 'NSE', color: 'text-sky-400', dot: 'bg-sky-500' },
+  { id: 'bse', label: 'BSE', color: 'text-amber-400', dot: 'bg-amber-500' },
+  { id: 'sebi', label: 'SEBI', color: 'text-emerald-400', dot: 'bg-emerald-500' },
+];
+const YEARS = (() => {
+  const arr = [];
+  const cur = new Date().getFullYear();
+  for (let y = cur; y >= 2010; y--) arr.push(y);
+  return arr;
+})();
+
+const SUGGESTED = [
+  'What are the latest SEBI insider trading disclosure rules?',
+  'Recent circulars on ESG reporting requirements for listed companies',
+  'How have listing obligations (LODR) evolved since 2015?',
+  'NSE circulars on algorithmic trading risk management',
+  'BSE circulars on corporate governance norms',
+];
+
+// Render markdown-lite content (bold, headings, lists, [CIT-N] chips)
+const renderMarkdown = (text, citations = []) => {
+  if (!text) return null;
+  const citeById = Object.fromEntries(citations.map(c => [c.id, c]));
+
+  const renderInline = (line) => {
+    // Replace [CIT-N] with chip
+    const parts = [];
+    let last = 0;
+    const re = /\[CIT-(\d+)\]/g;
+    let m;
+    let k = 0;
+    while ((m = re.exec(line)) !== null) {
+      if (m.index > last) parts.push(<span key={`t-${k++}`}>{line.slice(last, m.index)}</span>);
+      const id = `CIT-${m[1]}`;
+      const cit = citeById[id];
+      parts.push(
+        <span
+          key={`c-${k++}`}
+          title={cit ? `${cit.source} | ${cit.circular_no} | ${cit.date}` : id}
+          className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded bg-[hsl(var(--primary))]/15 text-[hsl(var(--primary))] text-[10px] font-semibold border border-[hsl(var(--primary))]/30 hover:bg-[hsl(var(--primary))]/25 cursor-pointer align-middle"
+          data-testid={`citation-chip-${id}`}
+        >
+          {id}
+        </span>
+      );
+      last = m.index + m[0].length;
+    }
+    if (last < line.length) parts.push(<span key={`t-${k++}`}>{line.slice(last)}</span>);
+    // Bold
+    return parts.map((p, i) => {
+      if (typeof p.props?.children !== 'string') return p;
+      const s = p.props.children;
+      if (!s.includes('**')) return p;
+      const subs = s.split(/(\*\*[^*]+\*\*)/g).map((part, j) =>
+        part.startsWith('**') && part.endsWith('**')
+          ? <strong key={j} className="text-[hsl(var(--foreground))]">{part.slice(2, -2)}</strong>
+          : <React.Fragment key={j}>{part}</React.Fragment>
+      );
+      return <span key={i}>{subs}</span>;
+    });
+  };
+
+  return text.split('\n').map((line, i) => {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('## ')) {
+      return <h3 key={i} className="text-sm font-bold text-[hsl(var(--primary))] mt-3 mb-1">{trimmed.slice(3)}</h3>;
+    }
+    if (trimmed.startsWith('# ')) {
+      return <h2 key={i} className="text-base font-bold text-[hsl(var(--foreground))] mt-3 mb-1">{trimmed.slice(2)}</h2>;
+    }
+    if (trimmed.startsWith('- ') || trimmed.startsWith('• ')) {
+      return <li key={i} className="text-sm text-[hsl(var(--foreground))] ml-4 mb-0.5 list-disc">{renderInline(trimmed.slice(2))}</li>;
+    }
+    if (trimmed === '') return <div key={i} className="h-2" />;
+    return <p key={i} className="text-sm text-[hsl(var(--foreground))] leading-relaxed mb-1">{renderInline(line)}</p>;
+  });
+};
+
+export default function ComplianceResearchPanel({ compact = false }) {
+  const [question, setQuestion] = useState('');
+  const [selectedSources, setSelectedSources] = useState(['nse', 'bse', 'sebi']);
+  const [yearFilter, setYearFilter] = useState('');
+  const [messages, setMessages] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [stats, setStats] = useState(null);
+  const endRef = useRef(null);
+
+  const loadStats = useCallback(() => {
+    fetch(`${BACKEND_URL}/api/compliance/stats`)
+      .then(r => r.json())
+      .then(setStats)
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => { loadStats(); }, [loadStats]);
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, loading]);
+
+  const toggleSource = (id) => {
+    setSelectedSources(prev =>
+      prev.includes(id) ? (prev.length > 1 ? prev.filter(s => s !== id) : prev) : [...prev, id]
+    );
+  };
+
+  const ask = async (q) => {
+    const text = (q ?? question).trim();
+    if (!text || loading) return;
+    setMessages(prev => [...prev, { role: 'user', content: text }]);
+    setQuestion('');
+    setLoading(true);
+    try {
+      const body = { question: text, sources: selectedSources, top_k: 10 };
+      if (yearFilter) body.year_filter = parseInt(yearFilter, 10);
+      const res = await fetch(`${BACKEND_URL}/api/compliance/research`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: data.answer || 'No response',
+        citations: data.citations || [],
+        sources_searched: data.sources_searched || [],
+        error: data.error,
+      }]);
+    } catch (e) {
+      setMessages(prev => [...prev, { role: 'assistant', content: `Error: ${e.message}`, citations: [] }]);
+    }
+    setLoading(false);
+  };
+
+  const triggerIngest = async () => {
+    try {
+      await fetch(`${BACKEND_URL}/api/compliance/ingest-now`, { method: 'POST' });
+      setTimeout(loadStats, 2000);
+    } catch {}
+  };
+
+  const totalChunks = stats?.stores
+    ? Object.values(stats.stores).reduce((a, s) => a + (s.chunk_count || 0), 0)
+    : 0;
+  const totalCirculars = stats?.stores
+    ? Object.values(stats.stores).reduce((a, s) => a + (s.circular_count || 0), 0)
+    : 0;
+
+  return (
+    <div className={`flex ${compact ? 'h-full' : 'h-[calc(100vh-3.5rem)]'} bg-[hsl(var(--background))]`} data-testid="compliance-panel">
+      {/* LEFT: Filters + Stats */}
+      <div className={`${compact ? 'w-60' : 'w-72'} border-r border-[hsl(var(--border))] bg-[hsl(var(--surface-1))] flex flex-col flex-shrink-0`}>
+        <div className="p-4 border-b border-[hsl(var(--border))]">
+          <div className="flex items-center gap-2 mb-1">
+            <Scale className="w-4 h-4 text-[hsl(var(--primary))]" />
+            <h2 className="text-sm font-display font-semibold tracking-wide">Compliance Research</h2>
+          </div>
+          <p className="text-[11px] text-[hsl(var(--muted-foreground))]">NSE · BSE · SEBI circulars · 2010 → today</p>
+        </div>
+
+        <div className="p-4 space-y-4 overflow-y-auto">
+          {/* Sources */}
+          <div>
+            <div className="flex items-center gap-1.5 text-[11px] font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wider mb-2">
+              <Filter className="w-3 h-3" /> Sources
+            </div>
+            <div className="space-y-1">
+              {SOURCES.map(src => {
+                const s = stats?.stores?.[src.id];
+                const active = selectedSources.includes(src.id);
+                return (
+                  <button
+                    key={src.id}
+                    onClick={() => toggleSource(src.id)}
+                    data-testid={`source-toggle-${src.id}`}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium border ${
+                      active
+                        ? 'bg-[hsl(var(--surface-3))] border-[hsl(var(--primary))]/40 text-[hsl(var(--foreground))]'
+                        : 'bg-[hsl(var(--surface-2))] border-transparent text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]'
+                    }`}
+                    style={{ transition: 'background-color 0.15s ease' }}
+                  >
+                    <span className="flex items-center gap-2">
+                      <span className={`w-2 h-2 rounded-full ${src.dot}`} />
+                      <span className={active ? src.color : ''}>{src.label}</span>
+                    </span>
+                    <span className="text-[10px] text-[hsl(var(--muted-foreground))]">
+                      {s?.ready ? `${s.chunk_count}` : s?.circular_count || 0}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Year Filter */}
+          <div>
+            <div className="text-[11px] font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wider mb-2">Year</div>
+            <select
+              value={yearFilter}
+              onChange={(e) => setYearFilter(e.target.value)}
+              data-testid="year-filter-select"
+              className="w-full px-3 py-2 rounded-lg text-xs bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))] text-[hsl(var(--foreground))]"
+            >
+              <option value="">All years</option>
+              {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+          </div>
+
+          {/* Index Stats */}
+          <div className="pt-3 border-t border-[hsl(var(--border))]">
+            <div className="text-[11px] font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wider mb-2">Index Status</div>
+            <div className="space-y-1 text-[11px]">
+              <div className="flex justify-between text-[hsl(var(--muted-foreground))]">
+                <span>Circulars</span>
+                <span className="text-[hsl(var(--foreground))] font-mono">{totalCirculars.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between text-[hsl(var(--muted-foreground))]">
+                <span>Vector chunks</span>
+                <span className="text-[hsl(var(--foreground))] font-mono">{totalChunks.toLocaleString()}</span>
+              </div>
+            </div>
+            <button
+              onClick={triggerIngest}
+              data-testid="trigger-ingest-btn"
+              className="mt-3 w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-[hsl(var(--surface-2))] hover:bg-[hsl(var(--surface-3))] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] border border-[hsl(var(--border))]"
+              style={{ transition: 'background-color 0.15s ease' }}
+            >
+              <RefreshCw className="w-3 h-3" />
+              Fetch latest
+            </button>
+          </div>
+
+          {messages.length === 0 && (
+            <div className="pt-3 border-t border-[hsl(var(--border))]">
+              <div className="text-[11px] font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wider mb-2 flex items-center gap-1">
+                <Sparkles className="w-3 h-3" /> Try asking
+              </div>
+              <div className="space-y-1.5">
+                {SUGGESTED.map((s, i) => (
+                  <button
+                    key={i}
+                    onClick={() => ask(s)}
+                    data-testid={`suggested-q-${i}`}
+                    className="w-full text-left px-2.5 py-2 rounded-md text-[11px] bg-[hsl(var(--surface-2))] hover:bg-[hsl(var(--surface-3))] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] border border-[hsl(var(--border))] leading-snug"
+                    style={{ transition: 'background-color 0.15s ease' }}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* RIGHT: Chat */}
+      <div className="flex-1 flex flex-col min-w-0">
+        <ScrollArea className="flex-1">
+          <div className="max-w-3xl mx-auto px-6 py-6 space-y-6">
+            {messages.length === 0 && (
+              <div className="text-center py-16" data-testid="compliance-empty-state">
+                <div className="inline-flex w-12 h-12 rounded-full bg-[hsl(var(--primary))]/10 items-center justify-center mb-3">
+                  <BookOpen className="w-6 h-6 text-[hsl(var(--primary))]" />
+                </div>
+                <h3 className="text-lg font-display font-semibold mb-2">Research Indian market regulations</h3>
+                <p className="text-sm text-[hsl(var(--muted-foreground))] max-w-md mx-auto leading-relaxed">
+                  Ask any question about NSE, BSE, or SEBI circulars. Every claim comes with an inline citation traceable to the source circular. Powered by Claude Sonnet 4.5.
+                </p>
+              </div>
+            )}
+
+            {messages.map((m, i) => (
+              <div key={i} className={m.role === 'user' ? 'flex justify-end' : ''} data-testid={`msg-${m.role}-${i}`}>
+                {m.role === 'user' ? (
+                  <div className="max-w-[80%] px-4 py-2.5 rounded-2xl bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] text-sm">
+                    {m.content}
+                  </div>
+                ) : (
+                  <div>
+                    <div className="flex items-center gap-2 mb-2 text-[11px] text-[hsl(var(--muted-foreground))]">
+                      <Scale className="w-3.5 h-3.5 text-[hsl(var(--primary))]" />
+                      <span className="font-semibold text-[hsl(var(--foreground))]">Compliance AI</span>
+                      {m.sources_searched?.length > 0 && (
+                        <span className="flex items-center gap-1">
+                          · searched {m.sources_searched.map(s => s.toUpperCase()).join(', ')}
+                        </span>
+                      )}
+                    </div>
+                    <div className="prose prose-invert prose-sm max-w-none text-[hsl(var(--foreground))]">
+                      {renderMarkdown(m.content, m.citations || [])}
+                    </div>
+                    {m.citations?.length > 0 && (
+                      <div className="mt-4 pt-3 border-t border-[hsl(var(--border))]">
+                        <div className="text-[11px] font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wider mb-2">
+                          Sources ({m.citations.length})
+                        </div>
+                        <div className="space-y-1.5">
+                          {m.citations.map((c) => (
+                            <a
+                              key={c.id}
+                              href={c.url || '#'}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => { if (!c.url) e.preventDefault(); }}
+                              data-testid={`citation-${c.id}`}
+                              className="flex items-start gap-2 px-3 py-2 rounded-lg bg-[hsl(var(--surface-2))] hover:bg-[hsl(var(--surface-3))] border border-[hsl(var(--border))] text-xs"
+                              style={{ transition: 'background-color 0.15s ease' }}
+                            >
+                              <Badge variant="outline" className="text-[9px] px-1.5 py-0 mt-0.5 shrink-0">{c.id}</Badge>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-[hsl(var(--foreground))] truncate font-medium">{c.title}</div>
+                                <div className="text-[10px] text-[hsl(var(--muted-foreground))] mt-0.5">
+                                  {c.source} · {c.circular_no} · {c.date} · {c.category}
+                                </div>
+                              </div>
+                              {c.url && <ExternalLink className="w-3 h-3 text-[hsl(var(--muted-foreground))] shrink-0 mt-1" />}
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+
+            {loading && (
+              <div className="flex items-center gap-2 text-sm text-[hsl(var(--muted-foreground))]" data-testid="compliance-loading">
+                <Loader2 className="w-4 h-4 animate-spin text-[hsl(var(--primary))]" />
+                Researching circulars...
+              </div>
+            )}
+            <div ref={endRef} />
+          </div>
+        </ScrollArea>
+
+        {/* Input */}
+        <div className="border-t border-[hsl(var(--border))] bg-[hsl(var(--surface-1))] p-4">
+          <div className="max-w-3xl mx-auto flex items-end gap-2">
+            <div className="flex-1 relative">
+              <Search className="w-4 h-4 absolute left-3 top-3 text-[hsl(var(--muted-foreground))]" />
+              <textarea
+                value={question}
+                onChange={(e) => setQuestion(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    ask();
+                  }
+                }}
+                placeholder="Ask about any NSE, BSE, or SEBI regulation..."
+                rows={1}
+                data-testid="compliance-question-input"
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl text-sm bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))] text-[hsl(var(--foreground))] placeholder:text-[hsl(var(--muted-foreground))] resize-none focus:outline-none focus:ring-1 focus:ring-[hsl(var(--primary))]"
+              />
+            </div>
+            <button
+              onClick={() => ask()}
+              disabled={!question.trim() || loading}
+              data-testid="compliance-send-btn"
+              className="h-11 px-4 rounded-xl bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] text-sm font-medium flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90"
+              style={{ transition: 'opacity 0.15s ease' }}
+            >
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              Ask
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

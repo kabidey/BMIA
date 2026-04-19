@@ -89,7 +89,7 @@ def _fetch_sebi_circulars(limit: int = MAX_CIRCULARS_PER_CYCLE) -> List[dict]:
             re.DOTALL | re.IGNORECASE,
         )
         results = []
-        for m in pattern.finditer(html)[:limit]:
+        for m in list(pattern.finditer(html))[:limit]:
             date_str, link, title = m.group(1), m.group(2), m.group(3).strip()
             if not link.startswith("http"):
                 link = f"https://www.sebi.gov.in{link}"
@@ -279,7 +279,7 @@ def _run_cycle(db_sync):
                 store.vectorizer = TfidfVectorizer(
                     max_features=50000, ngram_range=(1, 2),
                     stop_words="english", lowercase=True,
-                    min_df=2, max_df=0.95,
+                    min_df=1, max_df=0.95 if len(rows) >= 10 else 1.0,
                 )
                 store.matrix = store.vectorizer.fit_transform([r["text_chunk"] for r in rows])
                 store.chunks = rows
