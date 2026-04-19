@@ -35,7 +35,14 @@ Build a Tier-1 Quant Analyst for Indian Equity and Commodity markets.
 
 ### Big Market — Koyfin-Style Global Dashboard
 - 13 Indian indices, 15 global, 7 commodities, 7 currencies, 4 yields, Factor Grid, Stock Snapshot
-- Endpoints: `GET /api/big-market/overview`, `GET /api/big-market/snapshot/{symbol}`
+- **Intel Tab (NEW, Apr 2026)** — 6 aggregators with zero data-source leakage in UI per user requirement:
+  - Market Movers scatter (gainers/losers/high-volume, x=%chg y=vol z=traded-value)
+  - Institutional Flows (FII/DII daily net cash + F&O contracts)
+  - Earnings & Events calendar (NSE + BSE merged, configurable window)
+  - Put-Call Ratio (Nifty + Bank Nifty OI-based with sentiment labels + expiry)
+  - Analyst Estimates (CMP, P/E, ROE, Mcap, Book, Yield per ticker; live re-load)
+  - Market News (multi-source RSS dedup, auto-refresh 5m)
+- Endpoints: `GET /api/big-market/overview`, `/snapshot/{symbol}`, `/movers`, `/fii-dii`, `/earnings-calendar`, `/pcr`, `/analyst-estimates/{symbol}`, `/news`
 
 ### Core Platform
 - Market Cockpit, Symbol Analysis, God Mode Scanner (NSE+BSE 3400+ stocks), AI Signals, BSE Guidance RAG
@@ -60,10 +67,11 @@ Build a Tier-1 Quant Analyst for Indian Equity and Commodity markets.
 - OrgLens JWT + global fetch interceptor, audit log
 
 ## Backlog
-- P1: Enhance Big Market — Market Movers scatter, FII/DII flows, Earnings Calendar, PCR, Analyst Estimates, News
 - P2: CSV/PDF portfolio export
 - P2: WebSocket/SSE real-time Cockpit (replace polling)
+- P2: Exponential backoff in compliance_ingestion workers on repeated `no_data` cycles (BSE/SEBI are upstream-blocked from cloud IPs; errors_count grows unbounded today)
 - Future: Portfolio push-alerts on rebalance/P&L thresholds
 - Future: Benchmark comparison dashboard
+- Future: Compliance "Save research" + Monday digest email
 - Refactor: Rename TOTPGate.js → AuthGate.js
 

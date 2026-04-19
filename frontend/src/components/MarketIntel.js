@@ -208,7 +208,7 @@ function AnalystEstimates() {
   ] : [];
   return (
     <Card className="bg-[hsl(var(--card))] border-[hsl(var(--border))] p-4" data-testid="analyst-estimates-card">
-      <SectionTitle icon={Target} title="Analyst Estimates">
+      <SectionTitle icon={Target} title={`Analyst Estimates · ${d?.symbol || sym}`}>
         <form onSubmit={(e) => { e.preventDefault(); load(sym); }} className="flex items-center gap-1">
           <input
             value={sym}
