@@ -38,11 +38,29 @@ from routes.audit_log import router as audit_log_router, audit_middleware
 from routes.big_market import router as big_market_router
 from routes.compliance import router as compliance_router_routes
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    force=True,
+    handlers=[logging.StreamHandler()],  # ensure stdout stream is used (deploy logs capture stdout)
+)
 logger = logging.getLogger(__name__)
+logger.info("BMIA server.py imported — bootstrapping FastAPI")
 
-MONGO_URL = os.environ["MONGO_URL"]
-DB_NAME = os.environ["DB_NAME"]
+MONGO_URL = os.environ.get("MONGO_URL")
+DB_NAME = os.environ.get("DB_NAME")
+
+if not MONGO_URL or not DB_NAME:
+    # Fail fast with a CLEAR message instead of a cryptic KeyError deep inside
+    # FastAPI's lifespan. This also ensures the process writes *something* to
+    # stdout before exiting, which helps deploy log triage.
+    import sys
+    sys.stderr.write(
+        f"[BMIA FATAL] Missing env vars — MONGO_URL={'set' if MONGO_URL else 'MISSING'} "
+        f"DB_NAME={'set' if DB_NAME else 'MISSING'}. Backend cannot start.\n"
+    )
+    sys.stderr.flush()
+    raise SystemExit(1)
 
 
 @asynccontextmanager
