@@ -65,40 +65,52 @@ if not MONGO_URL or not DB_NAME:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app.mongodb_client = AsyncIOMotorClient(MONGO_URL)
+    # Use `serverSelectionTimeoutMS=5000` so we don't hang forever on a dead
+    # Mongo Atlas endpoint during startup — fail fast with a clear error instead.
+    app.mongodb_client = AsyncIOMotorClient(MONGO_URL, serverSelectionTimeoutMS=5000)
     app.db = app.mongodb_client[DB_NAME]
-    logger.info("Connected to MongoDB")
+    logger.info("Connected to MongoDB (lazy — first query triggers actual connection)")
 
     # ─── STARTUP POLICY ───────────────────────────────────────────────────
-    # On resource-constrained pods the deploy health-probe times out at 120s,
-    # so the lifespan hot-path must be as tiny as possible. We:
-    #   • spawn all background daemons (they launch threads, return instantly)
-    #   • DEFER every heavy build (vector store, compliance RAG, compliance
-    #     ingestion workers) by 90-120s so the initial probe + first user
-    #     requests can be served well before the GIL gets busy.
+    # On deploy pods, the probe times out at 120s. The lifespan hot-path must
+    # therefore be as tiny as possible. We:
+    #   • spawn all background daemons (threads — return instantly)
+    #   • DEFER every heavy build (vector store, compliance RAG, ingestion
+    #     workers) well past the probe window
+    #
+    # If things still fail, set BMIA_MINIMAL_STARTUP=1 in the deploy env —
+    # this skips ALL background daemons and heavy work entirely, so the
+    # process is a bare FastAPI server with DB access only. Once the probe
+    # passes, remove the flag for full functionality.
     import asyncio
+    import os as _os
 
-    # Light-weight daemons — safe to start immediately
-    for name, starter, args in [
-        ("Background cache", start_background_cache, ()),
-        ("Evaluation scheduler", start_evaluation_scheduler, (MONGO_URL, DB_NAME)),
-        ("Guidance scheduler", start_guidance_scheduler, (MONGO_URL, DB_NAME)),
-        ("PDF extraction daemon", start_pdf_extraction_daemon, (MONGO_URL, DB_NAME)),
-        ("Portfolio daemon", start_portfolio_daemon, (MONGO_URL, DB_NAME)),
-    ]:
-        try:
-            starter(*args)
-        except Exception as e:
-            logger.error(f"{name} start failed (non-fatal): {e}")
+    minimal = _os.environ.get("BMIA_MINIMAL_STARTUP", "").strip().lower() in ("1", "true", "yes")
 
-    # Heavy background work — deferred
-    async def _deferred_vector_store_build():
-        try:
-            await asyncio.sleep(90)
-            logger.info("Starting deferred guidance vector store build")
-            await guidance_vector_store.build(app.db)
-        except Exception as e:
-            logger.error(f"Vector store initial build failed (non-fatal): {e}")
+    if minimal:
+        logger.warning("BMIA_MINIMAL_STARTUP=1 → skipping ALL background daemons & deferred builds")
+    else:
+        # Light-weight daemons — safe to start immediately
+        for name, starter, args in [
+            ("Background cache", start_background_cache, ()),
+            ("Evaluation scheduler", start_evaluation_scheduler, (MONGO_URL, DB_NAME)),
+            ("Guidance scheduler", start_guidance_scheduler, (MONGO_URL, DB_NAME)),
+            ("PDF extraction daemon", start_pdf_extraction_daemon, (MONGO_URL, DB_NAME)),
+            ("Portfolio daemon", start_portfolio_daemon, (MONGO_URL, DB_NAME)),
+        ]:
+            try:
+                starter(*args)
+            except Exception as e:
+                logger.error(f"{name} start failed (non-fatal): {e}")
+
+        # Heavy background work — deferred well past probe window
+        async def _deferred_vector_store_build():
+            try:
+                await asyncio.sleep(90)
+                logger.info("Starting deferred guidance vector store build")
+                await guidance_vector_store.build(app.db)
+            except Exception as e:
+                logger.error(f"Vector store initial build failed (non-fatal): {e}")
 
     async def _deferred_compliance_init():
         try:
@@ -109,8 +121,17 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.error(f"Compliance init failed (non-fatal): {e}")
 
-    asyncio.ensure_future(_deferred_vector_store_build())
-    asyncio.ensure_future(_deferred_compliance_init())
+    if not minimal:
+        asyncio.ensure_future(_deferred_vector_store_build())
+        asyncio.ensure_future(_deferred_compliance_init())
+
+    # LOUD ready marker — flushed to stdout so any log-scraping deploy probe
+    # can pattern-match on it. Printed immediately before FastAPI marks the
+    # app as ready to serve requests.
+    import sys as _sys
+    print("READY: BMIA backend listening on 0.0.0.0:8001", flush=True)
+    _sys.stdout.flush()
+    logger.info("READY: BMIA backend listening on 0.0.0.0:8001")
 
     yield
     app.mongodb_client.close()
@@ -131,6 +152,9 @@ app.add_middleware(
 )
 
 
+from fastapi.responses import PlainTextResponse
+
+
 @app.get("/api/health")
 @app.get("/health")
 @app.get("/healthz")
@@ -138,6 +162,13 @@ app.add_middleware(
 @app.get("/livez")
 async def health():
     return {"status": "ok", "service": "BMIA", "timestamp": datetime.now().isoformat()}
+
+
+# Plain-text health aliases — some deploy probes expect `text/plain` "OK"
+@app.get("/ping", response_class=PlainTextResponse)
+@app.get("/status", response_class=PlainTextResponse)
+async def ping():
+    return "OK"
 
 
 # Root — many deploy platforms probe "/" expecting a 200 response to mark the
