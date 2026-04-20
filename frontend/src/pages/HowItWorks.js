@@ -4,7 +4,8 @@ import {
   Brain, Zap, Shield, BarChart3, TrendingUp, Target, Activity,
   Layers, Eye, Lock, Database, GitBranch, ChevronDown, ChevronRight,
   AlertTriangle, CheckCircle, Cpu, Crosshair, History, Sparkles,
-  BookOpen, RefreshCw, PieChart
+  BookOpen, RefreshCw, PieChart, Newspaper, FileText, Copy, Globe,
+  HeartPulse, Gauge, Clipboard
 } from 'lucide-react';
 
 function Section({ id, icon: Icon, iconColor, title, subtitle, children }) {
@@ -68,20 +69,27 @@ const TOC_ITEMS = [
   { id: 'philosophy', label: 'Philosophy' },
   { id: 'architecture', label: 'Architecture' },
   { id: 'market-cockpit', label: 'Market Cockpit' },
+  { id: 'big-market-intel', label: 'Big Market Intel' },
+  { id: 'morning-brief', label: 'Morning Brief' },
   { id: 'symbol-analysis', label: 'Symbol Analysis' },
   { id: 'god-mode', label: 'God Mode Scanner' },
   { id: 'signal-engine', label: 'Signal Engine' },
   { id: 'portfolio-engine', label: 'Portfolio Engine' },
+  { id: 'fresh-backtest', label: 'Fresh Backtest Flow' },
   { id: 'hardening', label: 'Hardening Layer' },
   { id: 'daemon', label: 'Autonomous Daemon' },
   { id: 'backtest', label: '5-Year Backtest' },
   { id: 'simulation', label: 'Ensemble + Monte Carlo' },
   { id: 'walk-forward', label: 'Walk-Forward' },
   { id: 'custom-portfolios', label: 'Make Your Own' },
+  { id: 'compliance-rag', label: 'Compliance RAG' },
   { id: 'bse-guidance', label: 'BSE Guidance' },
+  { id: 'resilient-pipeline', label: 'Resilient Fetchers' },
   { id: 'anti-hallucination', label: 'Anti-Hallucination' },
   { id: 'security', label: 'OrgLens Auth' },
   { id: 'risk-framework', label: 'Risk Framework' },
+  { id: 'production-hardening', label: 'Production Hardening' },
+  { id: 'deploy-health', label: 'Deploy Health Probe' },
 ];
 
 export default function HowItWorks() {
@@ -607,6 +615,135 @@ export default function HowItWorks() {
               </tbody>
             </table>
           </div>
+        </Section>
+
+        {/* Disclaimer */}
+        <Section id="compliance-rag" icon={FileText} iconColor="bg-cyan-500/15" title="Compliance Research Agent" subtitle="NotebookLM-style RAG over every NSE / BSE / SEBI circular since 2010">
+          <p>
+            The Compliance page is a dedicated research workspace on top of a self-maintained vector store of Indian capital-markets regulation. Ask it anything about insider-trading norms, margin frameworks, listing obligations, SEBI-registered intermediaries, delisting procedures, etc. — it answers in plain English with source citations that deep-link to the original PDF.
+          </p>
+          <div className="flex flex-wrap gap-2 mt-2">
+            <MetricBadge label="Sources" value="NSE · BSE · SEBI" />
+            <MetricBadge label="Model" value="Claude Sonnet 4.5" color="border-cyan-500/40 bg-cyan-500/10" />
+            <MetricBadge label="Index" value="TF-IDF + cosine sim" />
+            <MetricBadge label="Citations" value="[CIT-N] deep links" color="border-emerald-500/40 bg-emerald-500/10" />
+          </div>
+          <p className="mt-3">
+            <strong>Dual-mode ingestion daemon</strong>: one process simultaneously runs (a) a <em>live</em> loop fetching today's new circulars every 2 min, and (b) a <em>backfill</em> loop walking the archive 30 days at a time back to 2010. UI shows per-source progress (% complete, chunks built, last ingest timestamp). Backfill is paced to finish in ≤5 days without ever hitting rate limits.
+          </p>
+          <p>
+            <strong>Multi-source fallback</strong>: when BSE's JSON API is blocked from cloud IPs, we transparently fall through to <code className="text-cyan-400">bseindia.com/data/xml/notices.xml</code> RSS. SEBI queries the correct circulars listing (<code className="text-cyan-400">ssid=7</code>, not Guidelines). UA rotation across 5 browser profiles defeats naive bot filters. See "Resilient Fetchers" section.
+          </p>
+          <p>
+            <strong>Cite in report</strong>: every answer has a one-click export that remaps inline citations to a sequential Markdown bibliography — paste directly into a SEBI-facing memo or client note.
+          </p>
+          <p>
+            <strong>Force sync now</strong>: a button under the Sources pane that fires one ingestion cycle immediately (bypassing the 2-min wait) and shows live progress — toast says <em>"Sync complete — 10 new circulars · NSE: +5 · BSE: +3 · SEBI: +2"</em>.
+          </p>
+        </Section>
+
+        <Section id="big-market-intel" icon={Globe} iconColor="bg-[hsl(var(--primary))]/15" title="Big Market — Intel Tab" subtitle="Six live intelligence feeds aggregated behind one tab">
+          <p>The <strong>Intel</strong> tab in Big Market Dashboard is the desk's single-pane-of-glass for short-horizon market signals. No data-source branding in the UI — just the numbers that matter.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+            {[
+              ['Market Movers', 'Scatter (x=%chg, y=volume, z=traded-value) covering top gainers, losers and high-volume A-group names'],
+              ['Institutional Flows', 'FII + DII daily net cash · FII F&O long/short contract delta · trailing 5-day ladder'],
+              ['Earnings & Events', 'Upcoming board meetings / dividends / AGMs filtered to a configurable window (default 14 d)'],
+              ['Put-Call Ratio', 'Live OI-based PCR for Nifty + Bank Nifty with sentiment label (bearish / neutral / bullish) + current expiry'],
+              ['Analyst Estimates', 'Per-ticker CMP / P-E / ROE / Mcap / Book Value / Div Yield — live re-load on symbol change'],
+              ['Market News', '25+ headlines, multi-source RSS dedup, auto-refresh every 5 minutes'],
+            ].map(([h, d]) => (
+              <div key={h} className="p-3 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--surface-2))]">
+                <p className="font-semibold text-[hsl(var(--foreground))] text-xs">{h}</p>
+                <p className="text-[11px] text-[hsl(var(--muted-foreground))] mt-1 leading-relaxed">{d}</p>
+              </div>
+            ))}
+          </div>
+        </Section>
+
+        <Section id="morning-brief" icon={Copy} iconColor="bg-amber-500/15" title="Copy Morning Brief" subtitle="One click, clipboard-ready briefing for Slack / WhatsApp">
+          <p>At the top of the Market Cockpit is a teal <strong>Morning Brief</strong> button. Single click composes a markdown-formatted briefing from live cockpit state + Intel tab APIs and copies it to clipboard in ~200 ms:</p>
+          <ul className="list-disc list-inside text-sm space-y-1 text-[hsl(var(--foreground))]/85 mt-2">
+            <li>4 major indices (Nifty 50, Sensex, Bank Nifty, Midcap 100) with change %</li>
+            <li>India VIX level + regime label (calm / elevated / spiked)</li>
+            <li>Market breadth (advances / declines / ratio)</li>
+            <li>Last 5 days FII/DII net cash</li>
+            <li>Today + tomorrow earnings / board meetings (top 8)</li>
+            <li>3 top Intel headlines</li>
+          </ul>
+          <p className="mt-3 text-xs text-[hsl(var(--muted-foreground))]">Output is Slack-friendly (<code className="text-amber-400">*bold*</code> / bullets / emoji section headers) so it pastes cleanly into the desk's morning chat without touching formatting.</p>
+        </Section>
+
+        <Section id="fresh-backtest" icon={Clipboard} iconColor="bg-red-500/15" title="Fresh Backtest on Reconstruction" subtitle="Every new portfolio starts from a clean audit slate">
+          <p>When you click <strong>Construct Now</strong> on any autonomous strategy with the <em>Fresh backtest</em> toggle ON (default), three collections are wiped for that strategy before the pipeline runs:</p>
+          <ul className="list-disc list-inside text-sm space-y-1 text-[hsl(var(--foreground))]/85 mt-2">
+            <li><code className="text-red-400">portfolio_rebalance_log</code> — every swap / exit / add event</li>
+            <li><code className="text-red-400">portfolio_backtests</code> — stale 1-year backtest cache</li>
+            <li><code className="text-red-400">portfolio_simulations</code> — stale Monte Carlo + LSTM forecasts</li>
+          </ul>
+          <p className="mt-3">Flush runs at <strong>trigger time</strong> (not after LLM success) so history is cleaned even if the downstream LLM step fails. Success toast summarises the archive: <em>"Portfolio constructed · 10 stocks allocated · flushed 23 rebalance events, 1 stale backtest"</em>.</p>
+          <p>Separate <code className="text-red-400">POST /api/portfolios/{'{type}'}/flush-history</code> endpoint for manual cleanup without reconstruction — hit it from the "Clear" and "Clear All" buttons in the Recent Rebalancing Activity panel.</p>
+        </Section>
+
+        <Section id="resilient-pipeline" icon={RefreshCw} iconColor="bg-emerald-500/15" title="Resilient Data Pipeline" subtitle="Multi-strategy fetchers that survive upstream blocking">
+          <p>Cloud IPs get rate-limited or bot-walled by NSE / BSE / SEBI / Moneycontrol routinely. The fetcher layer is designed to fail <em>gracefully and silently</em> and keep the app ingesting whatever it can:</p>
+          <ul className="list-disc list-inside text-sm space-y-1 text-[hsl(var(--foreground))]/85 mt-2">
+            <li><strong>UA rotation</strong>: every request draws from a pool of 5 modern desktop browsers</li>
+            <li><strong>Chain-of-strategy per source</strong>: BSE tries JSON API → public RSS notices feed on failure. SEBI auto-flips between listing-ID variants.</li>
+            <li><strong>Exponential backoff on no_data</strong>: a source that returns zero items N cycles in a row sleeps <code className="text-emerald-400">base × 2^(N-1)</code>, capped at 1 hour. Prevents errors_count from ballooning while upstream is blocked; resets instantly when data flows again.</li>
+            <li><strong>RSS multi-source for news</strong>: ET Markets + Livemint + Moneycontrol + Business Standard + Hindu Business Line — whichever responds.</li>
+            <li><strong>Date-format tolerance</strong>: 10+ formats recognised (including <code>"April 17, 2026"</code>, <code>"15-Apr-26"</code>, <code>"02-May-2026 00:00"</code>).</li>
+          </ul>
+        </Section>
+
+        <Section id="production-hardening" icon={Shield} iconColor="bg-[hsl(var(--primary))]/15" title="Production Hardening" subtitle="Lessons learned from real deploy incidents, now automated">
+          <div className="overflow-x-auto -mx-3 px-3">
+            <table className="w-full text-xs border border-[hsl(var(--border))] rounded-lg overflow-hidden min-w-[560px]">
+              <thead>
+                <tr className="bg-[hsl(var(--surface-2))] text-[hsl(var(--muted-foreground))]">
+                  <th className="px-3 py-2 text-left">Issue found in prod</th>
+                  <th className="px-3 py-2 text-left">Permanent fix</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[hsl(var(--border))]">
+                {[
+                  ['Blank recharts on React 19 prod build', '`react-is` pinned to 19.0.0 via yarn resolutions'],
+                  ['Blank charts on mobile (0-width ResponsiveContainer race)', 'Custom `SafeResponsiveContainer` with ResizeObserver + retry loop'],
+                  ['120s K8s probe timeout (heavy ML on boot)', 'Deferred lifespan: vectors build @ 300s, compliance daemon @ 60s'],
+                  ['CF 520 on production deploy', '`.gitignore` rewritten so `.env` files ship with the build'],
+                  ['Portfolio construct UX hung forever on LLM budget error', 'Proper 502 status + toast telling user to top up the key'],
+                  ['Old rebalance log persisted after reconstruction', 'Flush-at-trigger + standalone /flush-history + Clear All button'],
+                  ['"Force sync" silent fire-and-forget', 'Polling loop detects stats deltas + toasts on completion'],
+                  ['No branded tab icon', 'Custom SVG favicon (teal shield + B + up-tick)'],
+                ].map(([bug, fix]) => (
+                  <tr key={bug} className="text-[hsl(var(--foreground))]/80">
+                    <td className="px-3 py-2">{bug}</td>
+                    <td className="px-3 py-2 font-mono text-[10px]">{fix}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-xs text-[hsl(var(--muted-foreground))] mt-3">
+            CI smoke test <code className="text-[hsl(var(--primary))]">yarn check:charts</code> spins up headless Chromium against the built bundle, logs in, and asserts `svg.recharts-surface` count ≥ threshold on Cockpit + Intel tab. Catches any future recharts / dep-tree drift in &lt; 30 s before it reaches prod.
+          </p>
+        </Section>
+
+        <Section id="deploy-health" icon={HeartPulse} iconColor="bg-emerald-500/15" title="Deep Deploy Health Probe" subtitle="Auto-restart on subsystem failure instead of silent fail">
+          <p>
+            <code className="text-emerald-400">GET /api/deploy-health</code> returns a one-line JSON status bundle:
+          </p>
+          <pre className="text-[10px] bg-[hsl(var(--surface-2))] rounded-md p-3 overflow-x-auto mt-2 font-mono text-[hsl(var(--foreground))]/85">
+{`{
+  "service": "BMIA", "status": "ok",
+  "mongo": "ok",  "llm_key": "ok",
+  "compliance_workers": { "nse": "live", "bse": "backfill", "sebi": "backfill" },
+  "last_new_ingest": "2 min ago",
+  "vector_stores_ready": { "nse": true, "bse": true, "sebi": true },
+  "failing": null
+}`}
+          </pre>
+          <p className="mt-2">Returns <strong>503</strong> if MongoDB is unreachable or the Emergent LLM key env var goes missing — Emergent's probe then auto-restarts the pod instead of leaving you in a silent-fail state. Plain <code className="text-emerald-400">/api/health</code> stays lightweight (always 200) for initial probes.</p>
         </Section>
 
         {/* Disclaimer */}

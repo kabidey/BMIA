@@ -239,11 +239,74 @@ export default function ComplianceResearchPanel({ compact = false }) {
     setLoading(false);
   };
 
+  const [syncing, setSyncing] = useState(false);
+
   const triggerIngest = async () => {
+    if (syncing) return;
+    setSyncing(true);
+    // stats.stores is a dict keyed by source name: { nse: {...}, bse: {...}, sebi: {...} }
+    const storesObj = (stats && stats.stores && typeof stats.stores === 'object') ? stats.stores : {};
+    const baseline = {};
+    let totBefore = 0;
+    for (const [src, s] of Object.entries(storesObj)) {
+      const circ = (s && s.circular_count) || 0;
+      baseline[src] = { circ, chunks: (s && s.chunk_count) || 0 };
+      totBefore += circ;
+    }
+
+    toast.loading('Sync started — fetching latest NSE / BSE / SEBI circulars', { id: 'force-sync' });
+
     try {
-      await fetch(`${BACKEND_URL}/api/compliance/ingest-now`, { method: 'POST' });
-      setTimeout(loadStats, 2000);
-    } catch {}
+      const r = await fetch(`${BACKEND_URL}/api/compliance/ingest-now`, { method: 'POST' });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+
+      let attempts = 0;
+      const maxAttempts = 30;  // 30 × 3s = 90s
+      const poll = async () => {
+        attempts += 1;
+        try {
+          const res = await fetch(`${BACKEND_URL}/api/compliance/stats`);
+          const s = await res.json();
+          setStats(s);
+          const obj = (s && s.stores && typeof s.stores === 'object') ? s.stores : {};
+          const changes = [];
+          let totAfter = 0;
+          for (const [src, st] of Object.entries(obj)) {
+            const circ = (st && st.circular_count) || 0;
+            totAfter += circ;
+            const b = baseline[src] || { circ: 0 };
+            if (circ > b.circ) changes.push({ src, delta: circ - b.circ });
+          }
+          if (changes.length > 0) {
+            const by = changes.map(c => `${c.src.toUpperCase()}: +${c.delta}`).join(' · ');
+            const delta = totAfter - totBefore;
+            toast.success(`Sync complete — ${delta} new circular${delta === 1 ? '' : 's'}`, {
+              id: 'force-sync', description: by, duration: 6000,
+            });
+            setSyncing(false);
+            return;
+          }
+          if (attempts >= maxAttempts) {
+            toast.info('No new circulars found', {
+              id: 'force-sync',
+              description: 'Upstream regulators have no updates since the last ingest.',
+              duration: 6000,
+            });
+            setSyncing(false);
+            return;
+          }
+          setTimeout(poll, 3000);
+        } catch {
+          setTimeout(poll, 3000);
+        }
+      };
+      setTimeout(poll, 2500);
+    } catch (err) {
+      toast.error('Force sync failed', {
+        id: 'force-sync', description: String(err?.message || err), duration: 6000,
+      });
+      setSyncing(false);
+    }
   };
 
   // Mobile: hide the filters pane by default and show a toggle button
@@ -413,12 +476,13 @@ export default function ComplianceResearchPanel({ compact = false }) {
 
             <button
               onClick={triggerIngest}
+              disabled={syncing}
               data-testid="trigger-ingest-btn"
-              className="mt-3 w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-[hsl(var(--surface-2))] hover:bg-[hsl(var(--surface-3))] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] border border-[hsl(var(--border))]"
+              className="mt-3 w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-[hsl(var(--surface-2))] hover:bg-[hsl(var(--surface-3))] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] border border-[hsl(var(--border))] disabled:opacity-60 disabled:cursor-wait"
               style={{ transition: 'background-color 0.15s ease' }}
             >
-              <RefreshCw className="w-3 h-3" />
-              Force sync now
+              <RefreshCw className={`w-3 h-3 ${syncing ? 'animate-spin' : ''}`} />
+              {syncing ? 'Syncing...' : 'Force sync now'}
             </button>
           </div>
 
