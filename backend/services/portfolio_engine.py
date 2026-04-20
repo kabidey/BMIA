@@ -1175,9 +1175,25 @@ async def construct_portfolio(db, strategy_type: str):
         },
     }
 
-    await db.portfolios.update_one(
+    # ═══════════════════════════════════════════════════════════════════════
+    # FLUSH stale data for this strategy — prevents old swaps/exits/rebalances
+    # from a prior construction from leaking into the new portfolio's history.
+    # ═══════════════════════════════════════════════════════════════════════
+    flush_counts = {}
+    for coll in ("portfolio_rebalance_log", "portfolio_backtests",
+                 "portfolio_simulations"):
+        res = await db[coll].delete_many({"portfolio_type": strategy_type})
+        flush_counts[coll] = res.deleted_count
+    logger.info(
+        f"PORTFOLIO [{strategy_type}]: Flushed stale history → {flush_counts}"
+    )
+
+    # Use replace_one (not $set) so residual fields from the prior portfolio
+    # doc (last_rebalanced, realized_pnl, unrealized_pnl, cash_balance,
+    # prices_updated_at, …) are NOT carried over into the new portfolio.
+    await db.portfolios.replace_one(
         {"type": strategy_type},
-        {"$set": portfolio_doc},
+        portfolio_doc,
         upsert=True,
     )
 
