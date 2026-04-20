@@ -306,9 +306,33 @@ function PortfolioCard({ portfolio, strategies, rebalanceLogs }) {
 }
 
 
-function GlobalRebalanceActivity({ logs }) {
+function GlobalRebalanceActivity({ logs, onRefresh }) {
   const rebalancedLogs = logs.filter(l => l.action === 'REBALANCE' && l.changes?.length > 0);
   if (rebalancedLogs.length === 0) return null;
+
+  // Group logs by portfolio type so the per-portfolio flush button is scoped.
+  const byType = {};
+  for (const l of rebalancedLogs) {
+    const t = l.portfolio_type || 'unknown';
+    (byType[t] = byType[t] || []).push(l);
+  }
+
+  const flushOne = async (portfolio_type, e) => {
+    e.stopPropagation();
+    if (!window.confirm(`Clear all rebalance history for ${portfolio_type.replace(/_/g, ' ')}?`)) return;
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/portfolios/${portfolio_type}/flush-history`, { method: 'POST' });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+      const fc = data.flush_counts || {};
+      toast.success('History cleared', {
+        description: `${fc.rebalance_events || 0} rebalance events, ${fc.backtests || 0} backtests, ${fc.simulations || 0} simulations archived`,
+      });
+      onRefresh?.();
+    } catch (err) {
+      toast.error('Flush failed', { description: String(err?.message || err) });
+    }
+  };
 
   return (
     <div className="space-y-3" data-testid="global-rebalance-activity">
@@ -324,9 +348,19 @@ function GlobalRebalanceActivity({ logs }) {
               <ArrowRightLeft className="w-3.5 h-3.5 text-amber-400" />
               <span className="text-xs font-semibold text-amber-400 capitalize">{log.portfolio_type?.replace(/_/g, ' ')}</span>
             </div>
-            <span className="text-[10px] text-[hsl(var(--muted-foreground))] font-mono">
-              {log.timestamp ? new Date(log.timestamp).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-[hsl(var(--muted-foreground))] font-mono">
+                {log.timestamp ? new Date(log.timestamp).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''}
+              </span>
+              <button
+                onClick={(e) => flushOne(log.portfolio_type, e)}
+                className="text-[10px] px-2 py-0.5 rounded bg-red-500/15 border border-red-500/30 text-red-400 hover:bg-red-500/25"
+                data-testid={`flush-btn-${log.portfolio_type}`}
+                title="Clear all rebalance history for this portfolio"
+              >
+                Clear
+              </button>
+            </div>
           </div>
           {log.changes?.map((ch, j) => (
             <SwapCard key={j} change={ch} index={j} />
@@ -492,7 +526,7 @@ export default function Watchlist() {
       )}
 
       {/* Global Rebalance Activity */}
-      <GlobalRebalanceActivity logs={rebalanceLogs} />
+      <GlobalRebalanceActivity logs={rebalanceLogs} onRefresh={fetchData} />
 
       {/* Custom Portfolios Section */}
       <div>

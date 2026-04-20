@@ -899,6 +899,24 @@ async def construct_portfolio(db, strategy_type: str, flush_history: bool = True
         logger.info(f"CONSTRUCT [{strategy_type}]: skipped — {reason}")
         return {"error": reason, "market_closed": True}
 
+    # ─ Flush stale history UP-FRONT (user expectation: toggle semantics) ─
+    # We flush as soon as reconstruction is triggered so the old rebalance log
+    # is gone regardless of whether the downstream LLM stage succeeds. If the
+    # pipeline later fails (e.g. budget exhausted), holdings stay intact but
+    # the audit log is cleaned — matching the user's mental model.
+    flush_counts = {"rebalance_events": 0, "backtests": 0, "simulations": 0}
+    if flush_history:
+        for coll, key in (
+            ("portfolio_rebalance_log", "rebalance_events"),
+            ("portfolio_backtests", "backtests"),
+            ("portfolio_simulations", "simulations"),
+        ):
+            res = await db[coll].delete_many({"portfolio_type": strategy_type})
+            flush_counts[key] = res.deleted_count
+        logger.info(
+            f"PORTFOLIO [{strategy_type}]: Flushed stale history → {flush_counts}"
+        )
+
     logger.info(f"PORTFOLIO: Constructing '{cfg['name']}' with HARDENED pipeline...")
 
     # Stage 1: Get universe
@@ -1182,22 +1200,8 @@ async def construct_portfolio(db, strategy_type: str, flush_history: bool = True
     }
 
     # ═══════════════════════════════════════════════════════════════════════
-    # FLUSH stale data for this strategy — prevents old swaps/exits/rebalances
-    # from a prior construction from leaking into the new portfolio's history.
-    # Skipped when flush_history=False (e.g. daemon silent re-runs).
+    # (history flush + rebalance-log cleanup already done UP-FRONT above)
     # ═══════════════════════════════════════════════════════════════════════
-    flush_counts = {"rebalance_events": 0, "backtests": 0, "simulations": 0}
-    if flush_history:
-        for coll, key in (
-            ("portfolio_rebalance_log", "rebalance_events"),
-            ("portfolio_backtests", "backtests"),
-            ("portfolio_simulations", "simulations"),
-        ):
-            res = await db[coll].delete_many({"portfolio_type": strategy_type})
-            flush_counts[key] = res.deleted_count
-        logger.info(
-            f"PORTFOLIO [{strategy_type}]: Flushed stale history → {flush_counts}"
-        )
 
     # Use replace_one (not $set) so residual fields from the prior portfolio
     # doc (last_rebalanced, realized_pnl, unrealized_pnl, cash_balance,

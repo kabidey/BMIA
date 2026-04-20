@@ -691,6 +691,28 @@ async def portfolio_refresh_prices(strategy_type: str, request: Request):
     return result
 
 
+@router.post("/portfolios/{strategy_type}/flush-history")
+async def portfolio_flush_history(strategy_type: str, request: Request):
+    """Manually wipe rebalance log / backtests / simulations for this strategy.
+
+    Lets the desk clean up stale audit trail *without* triggering a full
+    reconstruction (useful when LLM budget is exhausted but old swap entries
+    are cluttering the UI).
+    """
+    db = request.app.db
+    if strategy_type not in PORTFOLIO_STRATEGIES:
+        raise HTTPException(status_code=400, detail="Invalid strategy type")
+    counts = {"rebalance_events": 0, "backtests": 0, "simulations": 0}
+    for coll, key in (
+        ("portfolio_rebalance_log", "rebalance_events"),
+        ("portfolio_backtests", "backtests"),
+        ("portfolio_simulations", "simulations"),
+    ):
+        res = await db[coll].delete_many({"portfolio_type": strategy_type})
+        counts[key] = res.deleted_count
+    return {"status": "flushed", "type": strategy_type, "flush_counts": counts}
+
+
 @router.post("/portfolios/{strategy_type}/construct")
 async def portfolio_construct(strategy_type: str, request: Request, flush_history: bool = True):
     db = request.app.db
