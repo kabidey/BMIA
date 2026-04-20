@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { RefreshCw, TrendingUp, TrendingDown, ChevronRight, ArrowRightLeft, Clock, Zap, Target, Shield, Rocket, BarChart3, Gem, Loader2, IndianRupee, ArrowUpRight, ArrowDownRight, History, CheckCircle2, Plus } from 'lucide-react';
+import { RefreshCw, TrendingUp, TrendingDown, ChevronRight, ArrowRightLeft, Clock, Zap, Target, Shield, Rocket, BarChart3, Gem, Loader2, IndianRupee, ArrowUpRight, ArrowDownRight, History, CheckCircle2, Plus, Trash2 } from 'lucide-react';
 import { Card, CardContent } from '../components/ui/card';
 import { toast } from 'sonner';
 
@@ -310,12 +310,7 @@ function GlobalRebalanceActivity({ logs, onRefresh }) {
   const rebalancedLogs = logs.filter(l => l.action === 'REBALANCE' && l.changes?.length > 0);
   if (rebalancedLogs.length === 0) return null;
 
-  // Group logs by portfolio type so the per-portfolio flush button is scoped.
-  const byType = {};
-  for (const l of rebalancedLogs) {
-    const t = l.portfolio_type || 'unknown';
-    (byType[t] = byType[t] || []).push(l);
-  }
+  const uniqueTypes = Array.from(new Set(rebalancedLogs.map(l => l.portfolio_type).filter(Boolean)));
 
   const flushOne = async (portfolio_type, e) => {
     e.stopPropagation();
@@ -334,12 +329,50 @@ function GlobalRebalanceActivity({ logs, onRefresh }) {
     }
   };
 
+  const flushAll = async () => {
+    if (!window.confirm(`Clear ALL rebalance history across ${uniqueTypes.length} portfolio${uniqueTypes.length === 1 ? '' : 's'}?\n\nThis wipes every swap log, stale backtest, and simulation cache. Holdings stay intact.`)) return;
+    try {
+      const results = await Promise.allSettled(
+        uniqueTypes.map(t => fetch(`${BACKEND_URL}/api/portfolios/${t}/flush-history`, { method: 'POST' }).then(r => r.json()))
+      );
+      let totRebal = 0, totBt = 0, totSim = 0, errored = 0;
+      for (const res of results) {
+        if (res.status === 'fulfilled' && res.value?.flush_counts) {
+          totRebal += res.value.flush_counts.rebalance_events || 0;
+          totBt += res.value.flush_counts.backtests || 0;
+          totSim += res.value.flush_counts.simulations || 0;
+        } else { errored += 1; }
+      }
+      if (errored === uniqueTypes.length) {
+        toast.error('Clear All failed', { description: 'No portfolios responded to the flush request.' });
+      } else {
+        toast.success(`Cleared ${uniqueTypes.length - errored} portfolio${uniqueTypes.length - errored === 1 ? '' : 's'}`, {
+          description: `${totRebal} rebalance events · ${totBt} backtests · ${totSim} simulations archived${errored ? ` · ${errored} failed` : ''}`,
+          duration: 7000,
+        });
+      }
+      onRefresh?.();
+    } catch (err) {
+      toast.error('Clear All failed', { description: String(err?.message || err) });
+    }
+  };
+
   return (
     <div className="space-y-3" data-testid="global-rebalance-activity">
-      <div className="flex items-center gap-2">
-        <History className="w-4 h-4 text-amber-400" />
-        <h3 className="text-sm font-semibold text-[hsl(var(--foreground))]">Recent Rebalancing Activity</h3>
-        <span className="text-[10px] bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded-full font-mono">{rebalancedLogs.length} swap{rebalancedLogs.length !== 1 ? 's' : ''}</span>
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-2">
+          <History className="w-4 h-4 text-amber-400" />
+          <h3 className="text-sm font-semibold text-[hsl(var(--foreground))]">Recent Rebalancing Activity</h3>
+          <span className="text-[10px] bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded-full font-mono">{rebalancedLogs.length} swap{rebalancedLogs.length !== 1 ? 's' : ''}</span>
+        </div>
+        <button
+          onClick={flushAll}
+          className="text-[11px] px-2.5 py-1 rounded-md bg-red-500/15 border border-red-500/40 text-red-400 hover:bg-red-500/25 flex items-center gap-1.5 font-medium"
+          data-testid="flush-all-btn"
+          title={`Clear rebalance history for all ${uniqueTypes.length} portfolio(s)`}
+        >
+          <Trash2 className="w-3 h-3" /> Clear All
+        </button>
       </div>
       {rebalancedLogs.slice(0, 5).map((log, i) => (
         <div key={i} className="p-3 rounded-lg bg-[hsl(var(--surface-1))] border border-amber-500/20" data-testid={`global-rebalance-${i}`}>
