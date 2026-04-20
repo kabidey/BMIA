@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { RefreshCw, TrendingUp, TrendingDown, ChevronRight, ArrowRightLeft, Clock, Zap, Target, Shield, Rocket, BarChart3, Gem, Loader2, IndianRupee, ArrowUpRight, ArrowDownRight, History, CheckCircle2, Plus } from 'lucide-react';
 import { Card, CardContent } from '../components/ui/card';
+import { toast } from 'sonner';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -179,7 +180,32 @@ function PortfolioCard({ portfolio, strategies, rebalanceLogs }) {
   const handleConstruct = async (e) => {
     e.stopPropagation();
     setConstructing(true);
-    fetch(`${BACKEND_URL}/api/portfolios/${type}/construct`, { method: 'POST' }).catch(() => {});
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/portfolios/${type}/construct`, { method: 'POST' });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok || data.error) {
+        const msg = (data.detail || data.error || `HTTP ${r.status}`).toString();
+        // Detect the specific "Emergent key budget exhausted" failure and guide the user
+        const budgetHit = msg.toLowerCase().includes('budget has been exceeded')
+          || msg.toLowerCase().includes('all llms failed');
+        if (budgetHit) {
+          toast.error('Emergent LLM Key budget exhausted', {
+            description: 'Top up in Profile → Universal Key → Add Balance, then retry.',
+            duration: 8000,
+          });
+        } else if (data.market_closed) {
+          toast.error('Market is closed', { description: msg, duration: 6000 });
+        } else {
+          toast.error('Construction failed', { description: msg.slice(0, 160), duration: 6000 });
+        }
+        return;
+      }
+      toast.success('Portfolio constructed', { description: `${data.holdings?.length || 0} stocks allocated` });
+    } catch (err) {
+      toast.error('Network error', { description: String(err?.message || err) });
+    } finally {
+      setConstructing(false);
+    }
   };
 
   const pnl = portfolio.total_pnl || 0;
@@ -518,9 +544,33 @@ function UnconstructedCard({ type, strategies, BACKEND_URL }) {
         </div>
         <button
           disabled={building}
-          onClick={() => {
+          onClick={async () => {
             setBuilding(true);
-            fetch(`${BACKEND_URL}/api/portfolios/${type}/construct`, { method: 'POST' }).catch(() => {});
+            try {
+              const r = await fetch(`${BACKEND_URL}/api/portfolios/${type}/construct`, { method: 'POST' });
+              const data = await r.json().catch(() => ({}));
+              if (!r.ok || data.error) {
+                const msg = (data.detail || data.error || `HTTP ${r.status}`).toString();
+                const budgetHit = msg.toLowerCase().includes('budget has been exceeded')
+                  || msg.toLowerCase().includes('all llms failed');
+                if (budgetHit) {
+                  toast.error('Emergent LLM Key budget exhausted', {
+                    description: 'Top up in Profile → Universal Key → Add Balance, then retry.',
+                    duration: 8000,
+                  });
+                } else if (data.market_closed) {
+                  toast.error('Market is closed', { description: msg, duration: 6000 });
+                } else {
+                  toast.error('Construction failed', { description: msg.slice(0, 160), duration: 6000 });
+                }
+              } else {
+                toast.success('Portfolio constructed', { description: `${data.holdings?.length || 0} stocks allocated` });
+              }
+            } catch (err) {
+              toast.error('Network error', { description: String(err?.message || err) });
+            } finally {
+              setBuilding(false);
+            }
           }}
           className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-[hsl(var(--primary))]/15 border border-[hsl(var(--primary))]/30 text-[hsl(var(--primary))] hover:bg-[hsl(var(--primary))]/25 disabled:opacity-50"
           data-testid={`construct-btn-${type}`}>

@@ -700,6 +700,24 @@ async def portfolio_construct(strategy_type: str, request: Request):
     from utils.market_hours import assert_market_safe
     await assert_market_safe(db)
     result = await construct_portfolio(db, strategy_type)
+
+    # Surface upstream LLM failures as 502 so the client knows it's a provider
+    # issue (e.g. Emergent LLM Key budget exhausted) and not a transient bug.
+    if isinstance(result, dict) and result.get("error"):
+        err_text = str(result.get("error", "")).lower()
+        details = result.get("details") or {}
+        details_str = str(details).lower()
+        if ("budget has been exceeded" in details_str
+                or "all llms failed" in err_text):
+            raise HTTPException(
+                status_code=502,
+                detail=("Emergent LLM Key budget exhausted — top up in "
+                        "Profile → Universal Key → Add Balance, then retry."),
+            )
+        # Other construction errors: return the error payload with 422 so UI
+        # stops the spinner and can display a reason.
+        if not result.get("market_closed"):
+            raise HTTPException(status_code=422, detail=result.get("error"))
     return result
 
 
