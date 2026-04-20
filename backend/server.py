@@ -5,6 +5,7 @@ Slim entry point — routes and daemons are modularized.
 import os
 import logging
 from datetime import datetime
+from typing import Optional
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
@@ -193,6 +194,86 @@ async def ping():
 @app.get("/")
 async def root():
     return {"service": "BMIA", "status": "ok"}
+
+
+# ── Deep health probe for post-deploy monitoring ─────────────────────────
+# Unlike /api/health (which always 200s so K8s doesn't kill boot), this
+# endpoint actually pings each subsystem and returns 503 if anything is
+# degraded. Wire this into Emergent's health-check URL once backfill is
+# past the first 5 min so failures auto-restart the pod.
+@app.get("/api/deploy-health")
+async def deploy_health():
+    from fastapi.responses import JSONResponse
+    from datetime import timezone as _tz
+
+    result: dict = {"service": "BMIA", "checked_at": datetime.now(_tz.utc).isoformat()}
+    critical_failures: list = []
+
+    # 1. Mongo reachability
+    try:
+        await app.db.command("ping")
+        result["mongo"] = "ok"
+    except Exception as e:
+        result["mongo"] = f"error: {str(e)[:80]}"
+        critical_failures.append("mongo")
+
+    # 2. Emergent LLM key present (non-empty env var)
+    llm_key = os.environ.get("EMERGENT_LLM_KEY", "").strip()
+    result["llm_key"] = "ok" if llm_key else "missing"
+    if not llm_key:
+        critical_failures.append("llm_key")
+
+    # 3. Compliance worker phases + freshness
+    try:
+        workers: dict = {}
+        latest_ingest_at: Optional[datetime] = None
+        async for state in app.db.compliance_ingestion_state.find({}, {"_id": 0}):
+            src = state.get("source")
+            if not src:
+                continue
+            workers[src] = state.get("phase", "unknown")
+            ts = state.get("last_new_ingest_at")
+            if ts:
+                try:
+                    dt = datetime.fromisoformat(ts.replace("Z", "+00:00")) if isinstance(ts, str) else ts
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=_tz.utc)
+                    if latest_ingest_at is None or dt > latest_ingest_at:
+                        latest_ingest_at = dt
+                except Exception:
+                    pass
+        result["compliance_workers"] = workers or "not_started"
+
+        if latest_ingest_at:
+            delta = datetime.now(_tz.utc) - latest_ingest_at
+            mins = int(delta.total_seconds() // 60)
+            if mins < 60:
+                result["last_new_ingest"] = f"{mins} min ago"
+            elif mins < 1440:
+                result["last_new_ingest"] = f"{mins // 60} h ago"
+            else:
+                result["last_new_ingest"] = f"{mins // 1440} d ago"
+            result["last_new_ingest_at"] = latest_ingest_at.isoformat()
+        else:
+            result["last_new_ingest"] = "never"
+    except Exception as e:
+        result["compliance_workers"] = f"error: {str(e)[:80]}"
+
+    # 4. Vector stores ready flags (non-critical — report but don't fail)
+    try:
+        from routes import compliance as compliance_router
+        stores = {}
+        for src in ("nse", "bse", "sebi"):
+            store = compliance_router._STORES.get(src) if hasattr(compliance_router, "_STORES") else None
+            stores[src] = bool(store and getattr(store, "ready", False))
+        result["vector_stores_ready"] = stores
+    except Exception:
+        pass
+
+    result["status"] = "degraded" if critical_failures else "ok"
+    result["failing"] = critical_failures or None
+    status_code = 503 if critical_failures else 200
+    return JSONResponse(status_code=status_code, content=result)
 
 
 # Register route modules
