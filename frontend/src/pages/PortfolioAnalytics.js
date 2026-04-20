@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { RefreshCw, BarChart3, TrendingUp, TrendingDown, Shield, Activity, Award, Loader2, History, Target, Brain, Zap, AlertTriangle, Percent, ChevronRight, RotateCcw, Crosshair } from 'lucide-react';
 import { Card, CardContent } from '../components/ui/card';
 import { getUser } from '../components/TOTPGate';
-import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, Radar, Legend, LineChart, Line, CartesianGrid, Area, AreaChart, ComposedChart, ReferenceLine } from 'recharts';
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, RadarChart, PolarGrid, PolarAngleAxis, Radar, Legend, LineChart, Line, CartesianGrid, Area, AreaChart, ComposedChart, ReferenceLine } from 'recharts';
+import { ResponsiveContainer } from '../components/layout/SafeResponsiveContainer';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 

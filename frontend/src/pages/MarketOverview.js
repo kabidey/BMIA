@@ -19,11 +19,12 @@ import {
   AlertTriangle, Users, CalendarDays, Newspaper, Sparkles, ChevronRight, Copy
 } from 'lucide-react';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Treemap, Cell, ScatterChart, Scatter, ZAxis,
   ReferenceLine, LineChart, Line, PieChart, Pie,
   Tooltip as RTooltip, Legend
 } from 'recharts';
+import { ResponsiveContainer } from '../components/layout/SafeResponsiveContainer';
 import { useApi } from '../hooks/useApi';
 
 import { toast } from 'sonner';

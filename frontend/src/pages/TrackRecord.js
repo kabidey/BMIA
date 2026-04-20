@@ -3,7 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Badge } from '../components/ui/badge';
 import { Skeleton } from '../components/ui/skeleton';
 import { Trophy, TrendingUp, TrendingDown, Target, ShieldAlert, BarChart3, Brain } from 'lucide-react';
-import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
+import { ResponsiveContainer } from '../components/layout/SafeResponsiveContainer';
 import { useApi } from '../hooks/useApi';
 
 const PIE_COLORS = ['#22c55e', '#ef4444', '#f59e0b', '#6b7280'];

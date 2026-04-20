@@ -7,10 +7,11 @@ import {
   History, Crosshair, ArrowUpRight, ArrowDownRight, ChevronRight, ChevronDown
 } from 'lucide-react';
 import {
-  PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell, XAxis, YAxis, Tooltip,
   CartesianGrid, Area, AreaChart, ComposedChart, Line, BarChart, Bar,
   ReferenceLine, Legend
 } from 'recharts';
+import { ResponsiveContainer } from '../components/layout/SafeResponsiveContainer';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 

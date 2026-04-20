@@ -4,9 +4,10 @@ import {
   TrendingUp, TrendingDown, Activity, Loader2, RefreshCw,
 } from 'lucide-react';
 import {
-  ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, ZAxis,
+  ScatterChart, Scatter, XAxis, YAxis, ZAxis,
   Tooltip, BarChart, Bar, Cell,
 } from 'recharts';
+import { ResponsiveContainer } from './layout/SafeResponsiveContainer';
 import { Card } from './ui/card';
 import { Badge } from './ui/badge';
 

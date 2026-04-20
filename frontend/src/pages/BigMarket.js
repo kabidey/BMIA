@@ -11,9 +11,10 @@ import {
   Calendar, Users, Scale, Target, ExternalLink
 } from 'lucide-react';
 import {
-  ResponsiveContainer, LineChart as RLineChart, Line, XAxis, YAxis,
+  LineChart as RLineChart, Line, XAxis, YAxis,
   Tooltip, BarChart, Bar, Cell, CartesianGrid, ScatterChart, Scatter, ZAxis
 } from 'recharts';
+import { ResponsiveContainer } from '../components/layout/SafeResponsiveContainer';
 import MarketIntel from '../components/MarketIntel';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
