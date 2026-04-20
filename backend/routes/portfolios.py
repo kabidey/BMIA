@@ -692,14 +692,14 @@ async def portfolio_refresh_prices(strategy_type: str, request: Request):
 
 
 @router.post("/portfolios/{strategy_type}/construct")
-async def portfolio_construct(strategy_type: str, request: Request):
+async def portfolio_construct(strategy_type: str, request: Request, flush_history: bool = True):
     db = request.app.db
     if strategy_type not in PORTFOLIO_STRATEGIES:
         raise HTTPException(status_code=400, detail="Invalid strategy type")
     # Hard rule: portfolio creation only during safe market hours
     from utils.market_hours import assert_market_safe
     await assert_market_safe(db)
-    result = await construct_portfolio(db, strategy_type)
+    result = await construct_portfolio(db, strategy_type, flush_history=flush_history)
 
     # Surface upstream LLM failures as 502 so the client knows it's a provider
     # issue (e.g. Emergent LLM Key budget exhausted) and not a transient bug.

@@ -176,16 +176,19 @@ function PortfolioCard({ portfolio, strategies, rebalanceLogs }) {
   const isError = portfolio.status === 'error';
   const isActive = portfolio.status === 'active';
   const [constructing, setConstructing] = useState(false);
+  const [flushHistory, setFlushHistory] = useState(true);
 
   const handleConstruct = async (e) => {
     e.stopPropagation();
     setConstructing(true);
     try {
-      const r = await fetch(`${BACKEND_URL}/api/portfolios/${type}/construct`, { method: 'POST' });
+      const r = await fetch(
+        `${BACKEND_URL}/api/portfolios/${type}/construct?flush_history=${flushHistory}`,
+        { method: 'POST' }
+      );
       const data = await r.json().catch(() => ({}));
       if (!r.ok || data.error) {
         const msg = (data.detail || data.error || `HTTP ${r.status}`).toString();
-        // Detect the specific "Emergent key budget exhausted" failure and guide the user
         const budgetHit = msg.toLowerCase().includes('budget has been exceeded')
           || msg.toLowerCase().includes('all llms failed');
         if (budgetHit) {
@@ -200,7 +203,21 @@ function PortfolioCard({ portfolio, strategies, rebalanceLogs }) {
         }
         return;
       }
-      toast.success('Portfolio constructed', { description: `${data.holdings?.length || 0} stocks allocated` });
+      // Compose a descriptive success toast: holdings + flush counts
+      const n = data.holdings ?? 0;
+      const fc = data.flush_counts || {};
+      const parts = [`${n} stocks allocated`];
+      if (data.history_flushed) {
+        const chips = [];
+        if (fc.rebalance_events > 0) chips.push(`${fc.rebalance_events} rebalance events`);
+        if (fc.backtests > 0) chips.push(`${fc.backtests} stale backtest${fc.backtests === 1 ? '' : 's'}`);
+        if (fc.simulations > 0) chips.push(`${fc.simulations} stale simulation${fc.simulations === 1 ? '' : 's'}`);
+        if (chips.length) parts.push(`flushed ${chips.join(', ')}`);
+        else parts.push('clean slate — no prior history');
+      } else {
+        parts.push('history preserved');
+      }
+      toast.success('Portfolio constructed', { description: parts.join(' · '), duration: 7000 });
     } catch (err) {
       toast.error('Network error', { description: String(err?.message || err) });
     } finally {
@@ -241,12 +258,23 @@ function PortfolioCard({ portfolio, strategies, rebalanceLogs }) {
 
           <div className="text-right flex-shrink-0 ml-4">
             {(isConstructing || isError) && (
-              <button onClick={handleConstruct} disabled={constructing}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-500/15 border border-amber-500/30 text-amber-400 hover:bg-amber-500/25 disabled:opacity-50"
-                data-testid={`construct-btn-${type}`}>
-                {constructing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
-                {constructing ? 'Building... ~2-3 min' : 'Construct Now'}
-              </button>
+              <div className="flex flex-col items-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+                <button onClick={handleConstruct} disabled={constructing}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-500/15 border border-amber-500/30 text-amber-400 hover:bg-amber-500/25 disabled:opacity-50"
+                  data-testid={`construct-btn-${type}`}>
+                  {constructing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
+                  {constructing ? 'Building... ~2-3 min' : 'Construct Now'}
+                </button>
+                <label className="flex items-center gap-1.5 text-[10px] text-[hsl(var(--muted-foreground))] cursor-pointer select-none"
+                  data-testid={`flush-toggle-label-${type}`}>
+                  <input type="checkbox" checked={flushHistory}
+                    onChange={(e) => setFlushHistory(e.target.checked)}
+                    disabled={constructing}
+                    className="w-3 h-3 accent-amber-400"
+                    data-testid={`flush-toggle-${type}`} />
+                  Fresh backtest (flush old history)
+                </label>
+              </div>
             )}
             {isActive && (
               <>
@@ -529,6 +557,7 @@ function UnconstructedCard({ type, strategies, BACKEND_URL }) {
   const Icon = STRATEGY_ICONS[type] || BarChart3;
   const colors = STRATEGY_COLORS[type] || '';
   const [building, setBuilding] = useState(false);
+  const [flushHistory, setFlushHistory] = useState(true);
 
   return (
     <div className={`p-4 rounded-xl border bg-gradient-to-br ${colors}`} data-testid={`portfolio-card-${type}`}>
@@ -542,41 +571,68 @@ function UnconstructedCard({ type, strategies, BACKEND_URL }) {
             <p className="text-xs text-[hsl(var(--muted-foreground))] mt-0.5">{building ? 'Construction in progress... ~2-3 min' : 'Not yet constructed'}</p>
           </div>
         </div>
-        <button
-          disabled={building}
-          onClick={async () => {
-            setBuilding(true);
-            try {
-              const r = await fetch(`${BACKEND_URL}/api/portfolios/${type}/construct`, { method: 'POST' });
-              const data = await r.json().catch(() => ({}));
-              if (!r.ok || data.error) {
-                const msg = (data.detail || data.error || `HTTP ${r.status}`).toString();
-                const budgetHit = msg.toLowerCase().includes('budget has been exceeded')
-                  || msg.toLowerCase().includes('all llms failed');
-                if (budgetHit) {
-                  toast.error('Emergent LLM Key budget exhausted', {
-                    description: 'Top up in Profile → Universal Key → Add Balance, then retry.',
-                    duration: 8000,
-                  });
-                } else if (data.market_closed) {
-                  toast.error('Market is closed', { description: msg, duration: 6000 });
+        <div className="flex flex-col items-end gap-1.5">
+          <button
+            disabled={building}
+            onClick={async () => {
+              setBuilding(true);
+              try {
+                const r = await fetch(
+                  `${BACKEND_URL}/api/portfolios/${type}/construct?flush_history=${flushHistory}`,
+                  { method: 'POST' }
+                );
+                const data = await r.json().catch(() => ({}));
+                if (!r.ok || data.error) {
+                  const msg = (data.detail || data.error || `HTTP ${r.status}`).toString();
+                  const budgetHit = msg.toLowerCase().includes('budget has been exceeded')
+                    || msg.toLowerCase().includes('all llms failed');
+                  if (budgetHit) {
+                    toast.error('Emergent LLM Key budget exhausted', {
+                      description: 'Top up in Profile → Universal Key → Add Balance, then retry.',
+                      duration: 8000,
+                    });
+                  } else if (data.market_closed) {
+                    toast.error('Market is closed', { description: msg, duration: 6000 });
+                  } else {
+                    toast.error('Construction failed', { description: msg.slice(0, 160), duration: 6000 });
+                  }
                 } else {
-                  toast.error('Construction failed', { description: msg.slice(0, 160), duration: 6000 });
+                  const n = data.holdings ?? 0;
+                  const fc = data.flush_counts || {};
+                  const parts = [`${n} stocks allocated`];
+                  if (data.history_flushed) {
+                    const chips = [];
+                    if (fc.rebalance_events > 0) chips.push(`${fc.rebalance_events} rebalance events`);
+                    if (fc.backtests > 0) chips.push(`${fc.backtests} stale backtest${fc.backtests === 1 ? '' : 's'}`);
+                    if (fc.simulations > 0) chips.push(`${fc.simulations} stale simulation${fc.simulations === 1 ? '' : 's'}`);
+                    if (chips.length) parts.push(`flushed ${chips.join(', ')}`);
+                    else parts.push('clean slate — no prior history');
+                  } else {
+                    parts.push('history preserved');
+                  }
+                  toast.success('Portfolio constructed', { description: parts.join(' · '), duration: 7000 });
                 }
-              } else {
-                toast.success('Portfolio constructed', { description: `${data.holdings?.length || 0} stocks allocated` });
+              } catch (err) {
+                toast.error('Network error', { description: String(err?.message || err) });
+              } finally {
+                setBuilding(false);
               }
-            } catch (err) {
-              toast.error('Network error', { description: String(err?.message || err) });
-            } finally {
-              setBuilding(false);
-            }
-          }}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-[hsl(var(--primary))]/15 border border-[hsl(var(--primary))]/30 text-[hsl(var(--primary))] hover:bg-[hsl(var(--primary))]/25 disabled:opacity-50"
-          data-testid={`construct-btn-${type}`}>
-          {building ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
-          {building ? 'Building...' : 'Construct Now'}
-        </button>
+            }}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-[hsl(var(--primary))]/15 border border-[hsl(var(--primary))]/30 text-[hsl(var(--primary))] hover:bg-[hsl(var(--primary))]/25 disabled:opacity-50"
+            data-testid={`construct-btn-${type}`}>
+            {building ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
+            {building ? 'Building...' : 'Construct Now'}
+          </button>
+          <label className="flex items-center gap-1.5 text-[10px] text-[hsl(var(--muted-foreground))] cursor-pointer select-none"
+            data-testid={`flush-toggle-label-${type}`}>
+            <input type="checkbox" checked={flushHistory}
+              onChange={(e) => setFlushHistory(e.target.checked)}
+              disabled={building}
+              className="w-3 h-3 accent-[hsl(var(--primary))]"
+              data-testid={`flush-toggle-${type}`} />
+            Fresh backtest (flush old history)
+          </label>
+        </div>
       </div>
     </div>
   );
