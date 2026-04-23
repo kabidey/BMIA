@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Send, Loader2, Scale, Filter, BookOpen, ExternalLink, Sparkles, RefreshCw, Search, Copy, Check } from 'lucide-react';
+import { Send, Loader2, Scale, Filter, BookOpen, ExternalLink, Sparkles, RefreshCw, Search, Copy, Check, Upload } from 'lucide-react';
 import { Badge } from './ui/badge';
 import { ScrollArea } from './ui/scroll-area';
 import { toast } from 'sonner';
+import ComplianceBulkUploadModal from './ComplianceBulkUploadModal';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const SOURCES = [
@@ -311,6 +312,7 @@ export default function ComplianceResearchPanel({ compact = false }) {
 
   // Mobile: hide the filters pane by default and show a toggle button
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [bulkUploadOpen, setBulkUploadOpen] = useState(false);
 
   return (
     <div className={`flex flex-col sm:flex-row ${compact ? 'h-full' : 'h-[calc(100vh-3.5rem)] sm:h-[calc(100vh-3.5rem)]'} bg-[hsl(var(--background))]`} data-testid="compliance-panel">
@@ -484,6 +486,17 @@ export default function ComplianceResearchPanel({ compact = false }) {
               <RefreshCw className={`w-3 h-3 ${syncing ? 'animate-spin' : ''}`} />
               {syncing ? 'Syncing...' : 'Force sync now'}
             </button>
+
+            <button
+              onClick={() => setBulkUploadOpen(true)}
+              data-testid="open-bulk-upload-btn"
+              title="Upload a ZIP archive of historical circulars (bypasses upstream rate limits)"
+              className="mt-2 w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-[hsl(var(--primary))]/10 hover:bg-[hsl(var(--primary))]/20 text-[hsl(var(--primary))] border border-[hsl(var(--primary))]/30"
+              style={{ transition: 'background-color 0.15s ease' }}
+            >
+              <Upload className="w-3 h-3" />
+              Bulk upload archive
+            </button>
           </div>
 
           {messages.length === 0 && (
@@ -631,6 +644,12 @@ export default function ComplianceResearchPanel({ compact = false }) {
           </div>
         </div>
       </div>
+
+      <ComplianceBulkUploadModal
+        open={bulkUploadOpen}
+        onClose={() => setBulkUploadOpen(false)}
+        onCompleted={loadStats}
+      />
     </div>
   );
 }

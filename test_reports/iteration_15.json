@@ -75,7 +75,7 @@
     "backend": "100% (22/22 tests passed)",
     "frontend": "100% (All 3 pages load correctly with expected elements)"
   },
-  "test_credentials": "No auth required. Backend at https://portfolio-forecast-4.preview.emergentagent.com",
+  "test_credentials": "No auth required. Backend at https://compliance-rag-agent.preview.emergentagent.com",
   "seed_data_creation": "None - used existing signals data",
   "retest_needed": false,
   "should_main_agent_self_test": false,

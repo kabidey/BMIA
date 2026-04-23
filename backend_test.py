@@ -10,7 +10,7 @@ import json
 from datetime import datetime
 
 class BMIAAPITester:
-    def __init__(self, base_url="https://portfolio-forecast-4.preview.emergentagent.com"):
+    def __init__(self, base_url="https://compliance-rag-agent.preview.emergentagent.com"):
         self.base_url = base_url
         self.tests_run = 0
         self.tests_passed = 0

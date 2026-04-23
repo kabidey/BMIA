@@ -15,7 +15,7 @@ MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
 DB_NAME = os.environ.get("DB_NAME", "test_database")
 BACKEND_URL = os.environ.get(
     "REACT_APP_BACKEND_URL",
-    "https://portfolio-forecast-4.preview.emergentagent.com"
+    "https://compliance-rag-agent.preview.emergentagent.com"
 )
 API = f"{BACKEND_URL}/api"
 

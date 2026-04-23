@@ -7,7 +7,7 @@ import os
 import pytest
 import requests
 
-BACKEND_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://portfolio-forecast-4.preview.emergentagent.com")
+BACKEND_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://compliance-rag-agent.preview.emergentagent.com")
 
 
 class TestExitHistoryEndpoint:

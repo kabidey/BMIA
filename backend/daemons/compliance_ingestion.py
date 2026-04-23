@@ -362,6 +362,51 @@ def _save_state(db_sync, source: str, patch: dict):
     )
 
 
+def _ingest_pdf_bytes(
+    db_sync, source: str, circ_no: str, title: str, date_str: str,
+    pdf_bytes: bytes, category: str = "General", source_url: str = "",
+) -> Optional[dict]:
+    """Ingest a PDF provided as raw bytes (e.g. from a user-uploaded ZIP).
+
+    Mirrors _ingest_circular but skips the HTTP download step. Returns the
+    stored doc dict or None if deduped / empty / parse-failed.
+    """
+    if not circ_no:
+        return None
+    # Idempotency
+    if db_sync.compliance_circulars.find_one(
+        {"source": source, "circular_no": circ_no}, {"_id": 1}
+    ):
+        return None
+    text = _extract_pdf_text(pdf_bytes)
+    if not text or len(text) < 100:
+        return None
+    dt = _parse_date(date_str) if date_str else None
+    date_iso = dt.date().isoformat() if dt else ""
+    year = dt.year if dt else None
+    doc = {
+        "source": source,
+        "circular_no": circ_no,
+        "title": title[:500],
+        "url": source_url,
+        "date_iso": date_iso,
+        "year": year,
+        "category": category,
+        "ingested_at": datetime.now(timezone.utc).isoformat(),
+        "text_length": len(text),
+        "via": "bulk_upload",
+    }
+    db_sync.compliance_circulars.insert_one(dict(doc))
+    from services.compliance_rag import chunk_text
+    chunks = chunk_text(text)
+    if chunks:
+        db_sync.compliance_chunks.insert_many([
+            {**doc, "chunk_idx": i, "text_chunk": c} for i, c in enumerate(chunks)
+        ])
+    logger.info(f"COMPLIANCE BULK [{source}]: {circ_no} — {len(chunks)} chunks")
+    return {**doc, "chunk_count": len(chunks)}
+
+
 def _ingest_circular(db_sync, meta: dict) -> Optional[dict]:
     """Download + extract + chunk + store one circular. Returns stored doc or None."""
     source = meta["source"]

@@ -1,9 +1,15 @@
 """Compliance — NSE/BSE/SEBI circulars RAG routes (NotebookLM-style research)."""
+import io
 import logging
 import os
+import re
+import threading
+import uuid
+import zipfile
+from datetime import datetime, timezone
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Body, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
 from services.compliance_agent import research as compliance_research
@@ -12,6 +18,20 @@ from services.compliance_rag import compliance_router
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/compliance", tags=["compliance"])
+
+
+# ─── Bulk-upload config ──────────────────────────────────────────────────
+# Max upload size in MB — user-friendly default; override via env.
+BULK_UPLOAD_MAX_MB = int(os.environ.get("COMPLIANCE_BULK_UPLOAD_MAX_MB", "500"))
+ALLOWED_SOURCES = ("nse", "bse", "sebi")
+
+# Filename pattern:  "YYYY-MM-DD_<circ-no>_title.pdf" or "YYYY-MM-DD_title.pdf"
+# Examples: "2023-08-14_CIR-2023-08_Insider-Trading.pdf" → date=2023-08-14, circ=CIR-2023-08
+#           "2024-06-02_LODR-amendment.pdf"              → date=2024-06-02, circ=auto
+_BULK_FNAME_RE = re.compile(
+    r"^(\d{4}-\d{2}-\d{2})(?:_([A-Za-z0-9._/-]+?))?_(.+?)\.pdf$",
+    re.IGNORECASE,
+)
 
 
 class ResearchRequest(BaseModel):
@@ -161,3 +181,166 @@ async def trigger_ingest(request: Request):
     t = threading.Thread(target=_go, daemon=True, name="compliance-manual-ingest")
     t.start()
     return {"status": "started", "message": "Ingestion cycle running in background"}
+
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# BULK UPLOAD — ingest a ZIP of PDFs straight into the RAG pipeline.
+# Purpose: cloud IPs can't crawl NSE/BSE/SEBI historical archives reliably,
+# but SMIFS compliance team almost certainly has years of PDFs on their
+# file server. This endpoint accepts a zip → extracts → ingests each PDF
+# via the same _ingest_pdf_bytes path the live scraper uses.
+# ══════════════════════════════════════════════════════════════════════════
+
+def _parse_bulk_filename(name: str) -> dict:
+    """Extract (date_str, circ_no, title) from a filename if it follows the
+    recommended `YYYY-MM-DD_<circ-no>_title.pdf` convention. Falls back to
+    using the filename itself as the title with no date."""
+    base = os.path.basename(name)
+    m = _BULK_FNAME_RE.match(base)
+    if m:
+        date_str = m.group(1)                                 # YYYY-MM-DD
+        circ_no = m.group(2) or base.rsplit(".", 1)[0][:80]   # auto if missing
+        title = m.group(3).replace("-", " ").replace("_", " ").strip()
+        return {"date_str": date_str, "circ_no": circ_no, "title": title}
+    # Fallback: filename stem is the title, circ_no derived from stem
+    stem = base.rsplit(".", 1)[0]
+    return {"date_str": "", "circ_no": stem[:80], "title": stem.replace("-", " ").replace("_", " ").strip()}
+
+
+def _run_bulk_job(job_id: str, source: str, zip_bytes: bytes):
+    """Background worker: unzip, ingest each PDF, update job progress."""
+    from pymongo import MongoClient
+    from daemons.compliance_ingestion import _ingest_pdf_bytes, _rebuild_store
+    client = MongoClient(os.environ["MONGO_URL"])
+    db = client[os.environ["DB_NAME"]]
+
+    def _patch(**fields):
+        db.compliance_bulkload_jobs.update_one(
+            {"_id": job_id}, {"$set": {**fields, "updated_at": datetime.now(timezone.utc).isoformat()}}
+        )
+
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(zip_bytes))
+        pdfs = [n for n in zf.namelist()
+                if n.lower().endswith(".pdf") and not n.startswith("__MACOSX/")]
+        total = len(pdfs)
+        if total == 0:
+            _patch(status="failed", error="ZIP contained no .pdf files", total=0)
+            return
+
+        _patch(status="running", total=total, processed=0, ingested=0, skipped=0, failed=0)
+        ingested = skipped = failed = 0
+
+        for i, name in enumerate(pdfs):
+            try:
+                meta = _parse_bulk_filename(name)
+                pdf_bytes = zf.read(name)
+                if not pdf_bytes or len(pdf_bytes) < 200:
+                    skipped += 1
+                    continue
+                stored = _ingest_pdf_bytes(
+                    db,
+                    source=source,
+                    circ_no=meta["circ_no"],
+                    title=meta["title"],
+                    date_str=meta["date_str"],
+                    pdf_bytes=pdf_bytes,
+                    category=f"bulk_upload_{source}",
+                )
+                if stored:
+                    ingested += 1
+                else:
+                    skipped += 1
+            except Exception as e:
+                failed += 1
+                logger.warning(f"BULK [{source}] {name}: {e}")
+            # Persist progress every 5 files
+            if (i + 1) % 5 == 0 or i == total - 1:
+                _patch(processed=i + 1, ingested=ingested, skipped=skipped, failed=failed)
+
+        # Rebuild TF-IDF once at the end — way more efficient than per-PDF
+        _rebuild_store(db, source)
+        _patch(
+            status="done",
+            processed=total,
+            ingested=ingested,
+            skipped=skipped,
+            failed=failed,
+            finished_at=datetime.now(timezone.utc).isoformat(),
+        )
+        logger.info(f"BULK UPLOAD [{source}] job {job_id}: done — {ingested} ingested, {skipped} skipped, {failed} failed")
+    except Exception as e:
+        logger.error(f"BULK UPLOAD [{source}] job {job_id} crashed: {e}")
+        _patch(status="failed", error=str(e)[:500])
+    finally:
+        try:
+            client.close()
+        except Exception:
+            pass
+
+
+@router.post("/bulk-upload")
+async def compliance_bulk_upload(
+    request: Request,
+    source: str = Form(...),
+    file: UploadFile = File(...),
+):
+    """Kick off a bulk upload. Returns a job_id immediately; poll status via
+    GET /api/compliance/bulk-upload/{job_id}.
+
+    Filename convention inside the zip (optional but recommended):
+      `YYYY-MM-DD_<circ-no>_title.pdf`
+    """
+    if source not in ALLOWED_SOURCES:
+        raise HTTPException(status_code=400, detail=f"source must be one of {ALLOWED_SOURCES}")
+    raw = await file.read()
+    size_mb = len(raw) / (1024 * 1024)
+    if size_mb > BULK_UPLOAD_MAX_MB:
+        raise HTTPException(status_code=413, detail=f"Upload exceeds {BULK_UPLOAD_MAX_MB} MB limit ({size_mb:.1f} MB)")
+    # Quick sanity — is it a valid zip?
+    try:
+        zipfile.ZipFile(io.BytesIO(raw)).testzip()
+    except zipfile.BadZipFile:
+        raise HTTPException(status_code=400, detail="File is not a valid ZIP archive")
+
+    db = request.app.db
+    job_id = str(uuid.uuid4())
+    await db.compliance_bulkload_jobs.insert_one({
+        "_id": job_id,
+        "source": source,
+        "filename": file.filename,
+        "size_mb": round(size_mb, 2),
+        "status": "queued",
+        "total": 0,
+        "processed": 0,
+        "ingested": 0,
+        "skipped": 0,
+        "failed": 0,
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    })
+    threading.Thread(
+        target=_run_bulk_job, args=(job_id, source, raw),
+        daemon=True, name=f"bulk-{source}-{job_id[:8]}",
+    ).start()
+    return {"job_id": job_id, "status": "queued", "source": source, "size_mb": round(size_mb, 2)}
+
+
+@router.get("/bulk-upload/{job_id}")
+async def compliance_bulk_upload_status(job_id: str, request: Request):
+    doc = await request.app.db.compliance_bulkload_jobs.find_one({"_id": job_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Unknown job_id")
+    doc["job_id"] = doc.pop("_id")
+    return doc
+
+
+@router.get("/bulk-upload")
+async def compliance_bulk_upload_list(request: Request, limit: int = 20):
+    cursor = request.app.db.compliance_bulkload_jobs.find({}).sort("started_at", -1).limit(limit)
+    jobs = []
+    async for d in cursor:
+        d["job_id"] = d.pop("_id")
+        jobs.append(d)
+    return {"jobs": jobs}
