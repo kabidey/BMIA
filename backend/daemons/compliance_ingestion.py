@@ -37,14 +37,26 @@ logger = logging.getLogger(__name__)
 
 # ─── Tunables ────────────────────────────────────────────────────────────────
 REQUEST_DELAY_SEC = float(os.environ.get("COMPLIANCE_REQUEST_DELAY_SEC", "3.0"))
-BACKFILL_CYCLE_SLEEP_SEC = int(os.environ.get("COMPLIANCE_BACKFILL_SLEEP", "120"))   # 2 min
+BACKFILL_CYCLE_SLEEP_SEC = int(os.environ.get("COMPLIANCE_BACKFILL_SLEEP", "120"))   # base: 2 min
+# Fast-path sleep when a cycle actually ingested new items — makes the
+# backfill sprint through history when upstream is cooperating instead of
+# idling at 2-minute intervals. At ~15s/cycle with 10+ items/cycle, NSE
+# completes 16 years of backfill in ~3-4 days instead of 2+ months.
+BACKFILL_FAST_SLEEP_SEC = int(os.environ.get("COMPLIANCE_BACKFILL_FAST_SLEEP", "15"))
 LIVE_CYCLE_SLEEP_SEC = int(os.environ.get("COMPLIANCE_LIVE_SLEEP", "900"))           # 15 min
 BATCH_SIZE = int(os.environ.get("COMPLIANCE_BATCH_SIZE", "15"))                      # items per batch call
+# Days of history to request per backfill cycle. Was 30, widened to 90 so
+# each successful NSE call advances the cursor ~3× faster without extra calls.
+BACKFILL_WINDOW_DAYS = int(os.environ.get("COMPLIANCE_BACKFILL_WINDOW_DAYS", "90"))
 PER_CYCLE_MAX_PDFS = int(os.environ.get("COMPLIANCE_MAX_PDFS_PER_CYCLE", "10"))      # hard cap on PDF fetches per worker cycle
 PDF_READ_TIMEOUT = int(os.environ.get("COMPLIANCE_PDF_READ_TIMEOUT", "10"))          # seconds
 TARGET_START_YEAR = int(os.environ.get("COMPLIANCE_TARGET_START_YEAR", "2010"))
 REBUILD_AFTER_N_CHUNKS = int(os.environ.get("COMPLIANCE_REBUILD_AFTER_N_CHUNKS", "50"))
 MAX_BACKOFF_SEC = int(os.environ.get("COMPLIANCE_MAX_BACKOFF_SEC", "3600"))  # 1h cap
+# When the cursor is stuck (upstream returns only recent items, all dedup'd)
+# jump the cursor backwards by this many days anyway so the backfill keeps
+# advancing. Prevents NSE-style "stuck at 5.9% forever" stalls.
+CURSOR_NUDGE_DAYS = int(os.environ.get("COMPLIANCE_CURSOR_NUDGE_DAYS", "30"))
 
 HEADERS = {
     "User-Agent": (
@@ -463,17 +475,20 @@ def _source_worker(mongo_url: str, db_name: str, source: str):
             if state["phase"] == "backfill":
                 oldest = _parse_date(state["oldest_date_iso"]) or now.replace(tzinfo=None)
                 back_to = oldest - timedelta(days=1)
-                back_from = back_to - timedelta(days=365)
+                back_from = back_to - timedelta(days=BACKFILL_WINDOW_DAYS)
                 if back_from.year < state["target_start_year"]:
                     back_from = datetime(state["target_start_year"], 1, 1)
                 try:
                     back_batch = fetcher(back_from, back_to)
+                    fetched_batch_size = len(back_batch or [])
+                    all_dupes = fetched_batch_size > 0
                     for meta in back_batch:
                         if pdfs_fetched >= PER_CYCLE_MAX_PDFS:
                             break
                         stored = _ingest_circular(db, meta)
                         pdfs_fetched += 1
                         if stored:
+                            all_dupes = False
                             total_new += 1
                             new_since_rebuild += 1
                             d = stored.get("date_iso")
@@ -481,11 +496,19 @@ def _source_worker(mongo_url: str, db_name: str, source: str):
                                 state["oldest_date_iso"] = d
                         time.sleep(REQUEST_DELAY_SEC)
 
-                    # Only advance cursor when we ingested items. If the batch
-                    # was empty it likely means the source blocked us or didn't
-                    # return historical data via this endpoint — retry next cycle
-                    # rather than fake progress. The UI's progress % is computed
-                    # from actual ingested data, so "stuck" is visible truthfully.
+                    # Cursor-nudge: if the batch returned items but they were ALL
+                    # duplicates (upstream repeatedly serves the same recent
+                    # window ignoring our date filter), walk the cursor back
+                    # anyway so backfill progresses through history instead of
+                    # stalling at the first hurdle.
+                    if all_dupes and fetched_batch_size > 0:
+                        nudged = (back_from - timedelta(days=1)).date().isoformat()
+                        if (not state.get("oldest_date_iso")) or nudged < state["oldest_date_iso"]:
+                            state["oldest_date_iso"] = nudged
+                            logger.info(
+                                f"COMPLIANCE WORKER [{source}]: cursor nudged "
+                                f"→ {nudged} (all {fetched_batch_size} items were duplicates)"
+                            )
 
                     # Transition to live mode if we've collected enough history.
                     if state.get("oldest_date_iso") and state["oldest_date_iso"] <= f"{state['target_start_year']}-01-01":
@@ -528,12 +551,16 @@ def _source_worker(mongo_url: str, db_name: str, source: str):
             if new_since_rebuild >= REBUILD_AFTER_N_CHUNKS or (total_new > 0 and state["cycle_count"] <= 2):
                 _rebuild_store(db, source)
 
-            # ─ Sleep (with exponential backoff on repeated no_data) ─
+            # ─ Sleep (fast-path when ingesting, exponential backoff on no_data) ─
             base_sleep = BACKFILL_CYCLE_SLEEP_SEC if state["phase"] == "backfill" else LIVE_CYCLE_SLEEP_SEC
             nd = state.get("consecutive_no_data", 0)
             if nd > 0:
                 # 2^(nd-1) multiplier, capped at 3600s (1h)
                 sleep_for = min(base_sleep * (2 ** (nd - 1)), MAX_BACKOFF_SEC)
+            elif state["phase"] == "backfill" and total_new > 0:
+                # Fast-path: upstream is cooperating and we just ingested new
+                # items — sprint through the backfill instead of idling 2 min.
+                sleep_for = BACKFILL_FAST_SLEEP_SEC
             else:
                 sleep_for = base_sleep
             logger.info(
