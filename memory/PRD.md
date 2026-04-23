@@ -32,6 +32,12 @@ Build a Tier-1 Quant Analyst for Indian Equity and Commodity markets.
   - `GET /circulars` — list ingested circulars with filters + pagination
   - `POST /rebuild` — manual TF-IDF rebuild
   - `POST /ingest-now` — manual ingestion trigger
+- **Bulk Archive Upload (NEW, Feb 2026)** — bypasses cloud-IP rate limits on NSE/BSE/SEBI:
+  - `POST /api/compliance/bulk-upload` — multipart ZIP of PDFs + `source` (nse/bse/sebi), max 500 MB. Returns `job_id` immediately.
+  - `GET /api/compliance/bulk-upload/{job_id}` — job status + progress (processed/ingested/skipped/failed)
+  - `GET /api/compliance/bulk-upload` — list recent jobs
+  - Background worker (`_run_bulk_job`) extracts each PDF, parses optional `YYYY-MM-DD_<circ-no>_title.pdf` filename convention, ingests via same `_ingest_pdf_bytes` path as live scraper, rebuilds TF-IDF store once at end.
+  - UI: `ComplianceBulkUploadModal.js` — source selector, file dropzone with .zip validation, upload button, recent jobs list with per-job progress bar + 3s polling (full test coverage at `/app/backend/tests/test_compliance_bulk_upload.py` — 7/7 pass)
 
 ### Big Market — Koyfin-Style Global Dashboard
 - 13 Indian indices, 15 global, 7 commodities, 7 currencies, 4 yields, Factor Grid, Stock Snapshot
