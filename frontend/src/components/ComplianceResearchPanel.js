@@ -187,12 +187,17 @@ export default function ComplianceResearchPanel({ compact = false }) {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState(null);
+  const [graphStatus, setGraphStatus] = useState(null);
   const endRef = useRef(null);
 
   const loadStats = useCallback(() => {
     fetch(`${BACKEND_URL}/api/compliance/stats`)
       .then(r => r.json())
       .then(setStats)
+      .catch(() => {});
+    fetch(`${BACKEND_URL}/api/compliance/graph/extraction-status`)
+      .then(r => r.json())
+      .then(setGraphStatus)
       .catch(() => {});
   }, []);
 
@@ -532,6 +537,69 @@ export default function ComplianceResearchPanel({ compact = false }) {
               </div>
             )}
 
+            {/* Graph-entity extraction progress */}
+            {graphStatus && graphStatus.total_circulars > 0 && (
+              <div className="mt-3 pt-2 border-t border-[hsl(var(--border))]" data-testid="graph-extraction-section">
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-1 text-[11px] font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wider">
+                    <Network className="w-3 h-3" /> Knowledge Graph
+                  </div>
+                  <span
+                    className={`text-[9px] font-semibold px-1.5 py-0.5 rounded uppercase tracking-wider ${
+                      graphStatus.phase === 'running'
+                        ? 'bg-fuchsia-500/15 text-fuchsia-300 border border-fuchsia-500/30'
+                        : graphStatus.phase === 'idle'
+                        ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                        : graphStatus.phase === 'error'
+                        ? 'bg-red-500/15 text-red-400 border border-red-500/30'
+                        : 'bg-[hsl(var(--surface-3))] text-[hsl(var(--muted-foreground))]'
+                    }`}
+                    data-testid="graph-extraction-phase"
+                  >
+                    {graphStatus.phase === 'running' && (
+                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-fuchsia-400 animate-pulse mr-1 align-middle" />
+                    )}
+                    {graphStatus.phase || 'not started'}
+                  </span>
+                </div>
+                <div className="h-1.5 rounded-full bg-[hsl(var(--surface-2))] overflow-hidden">
+                  <div
+                    className="h-full bg-fuchsia-500"
+                    style={{
+                      width: `${Math.max(2, graphStatus.progress_pct || 0)}%`,
+                      transition: 'width 0.5s ease-out',
+                    }}
+                  />
+                </div>
+                <div className="flex items-center justify-between text-[9px] text-[hsl(var(--muted-foreground))] mt-1">
+                  <span>
+                    {graphStatus.extracted?.toLocaleString()}/{graphStatus.total_circulars?.toLocaleString()} enriched
+                    {graphStatus.total_errors ? ` · ${graphStatus.total_errors} err` : ''}
+                  </span>
+                  <span className="font-mono">{(graphStatus.progress_pct || 0).toFixed(0)}%</span>
+                </div>
+                {graphStatus.phase === 'not_started' && (
+                  <button
+                    onClick={async () => {
+                      try {
+                        await fetch(`${BACKEND_URL}/api/compliance/graph/start-extraction`, { method: 'POST' });
+                        toast.success('Entity extraction daemon started');
+                        loadStats();
+                      } catch (e) {
+                        toast.error('Could not start daemon');
+                      }
+                    }}
+                    data-testid="start-graph-extraction-btn"
+                    className="mt-2 w-full flex items-center justify-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-medium bg-fuchsia-500/10 hover:bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-500/30"
+                    style={{ transition: 'background-color 0.15s ease' }}
+                  >
+                    <Sparkles className="w-3 h-3" />
+                    Start graph extraction
+                  </button>
+                )}
+              </div>
+            )}
+
             <button
               onClick={triggerIngest}
               disabled={syncing}
@@ -627,11 +695,24 @@ export default function ComplianceResearchPanel({ compact = false }) {
                       )}
                       {m.citations?.length > 0 && !m.error && (
                         <>
+                          {m.mode === 'narrow' && (
+                            <button
+                              onClick={() => ask(messages[i - 1]?.content || m.question, 'multihop')}
+                              data-testid={`retry-deeper-${i}`}
+                              disabled={loading}
+                              title="Re-run this question with the GraphRAG multi-hop pipeline to surface cross-circular relationships Claude couldn't see first time (takes ~30s)."
+                              className="ml-auto flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-fuchsia-500/15 hover:bg-fuchsia-500/25 text-fuchsia-300 border border-fuchsia-500/40 disabled:opacity-50 disabled:cursor-not-allowed"
+                              style={{ transition: 'background-color 0.15s ease' }}
+                            >
+                              <Sparkles className="w-3 h-3" />
+                              Retry with deeper graph
+                            </button>
+                          )}
                           <button
                             onClick={() => openGraphForMessage(i)}
                             data-testid={`view-graph-${i}`}
                             title="Visualise the citations and their related regulations in a 3D knowledge graph"
-                            className="ml-auto flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-[hsl(var(--primary))]/15 hover:bg-[hsl(var(--primary))]/25 text-[hsl(var(--primary))] border border-[hsl(var(--primary))]/30"
+                            className={`${m.mode === 'narrow' ? '' : 'ml-auto'} flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-[hsl(var(--primary))]/15 hover:bg-[hsl(var(--primary))]/25 text-[hsl(var(--primary))] border border-[hsl(var(--primary))]/30`}
                             style={{ transition: 'background-color 0.15s ease' }}
                           >
                             <Network className="w-3 h-3" />

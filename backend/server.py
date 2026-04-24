@@ -240,6 +240,15 @@ async def lifespan(app: FastAPI):
                 await asyncio.sleep(240)  # additional 4 min → total 5 min post-boot
                 logger.info("Starting deferred compliance RAG vector build")
                 await compliance_router.build_all(app.db)
+
+                # 3) Start the background graph-entity extraction daemon. This
+                #    pre-computes LLM entity/relation extractions for every
+                #    circular so the "View 3D Graph" button opens instantly
+                #    without on-demand LLM latency. Kicks off only AFTER the
+                #    RAG store is warm, so it doesn't compete for CPU during
+                #    the critical post-boot interval.
+                from daemons.graph_extraction import start_graph_extraction_daemon
+                start_graph_extraction_daemon(MONGO_URL, DB_NAME)
             except Exception as e:
                 logger.error(f"Compliance init failed (non-fatal): {e}")
 

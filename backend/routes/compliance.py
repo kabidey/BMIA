@@ -263,6 +263,41 @@ async def trigger_ingest(request: Request):
 
 
 # ─── GraphRAG endpoints ────────────────────────────────────────────────
+@router.get("/graph/extraction-status")
+async def graph_extraction_status(request: Request):
+    """Progress for the background entity-extraction daemon."""
+    db = request.app.db
+    state = await db.compliance_graph_extraction_state.find_one(
+        {"_id": "graph_extraction"}, {"_id": 0},
+    ) or {"phase": "not_started"}
+    total_circulars = await db.compliance_circulars.count_documents({})
+    extracted = await db.compliance_graph_entities.count_documents({})
+    pending = max(0, total_circulars - extracted)
+    pct = round(100.0 * extracted / total_circulars, 1) if total_circulars else 0.0
+    return {
+        **state,
+        "total_circulars": total_circulars,
+        "extracted": extracted,
+        "pending": pending,
+        "progress_pct": pct,
+    }
+
+
+@router.post("/graph/start-extraction")
+async def graph_start_extraction():
+    """Manually kick off the background entity-extraction daemon. Safe to call
+    multiple times — the worker thread is idempotent; a second start is a no-op
+    thread. Useful on fresh deploys before the 5-min deferred start fires."""
+    from daemons.graph_extraction import start_graph_extraction_daemon
+    mongo_url = os.environ["MONGO_URL"]
+    db_name = os.environ["DB_NAME"]
+    try:
+        start_graph_extraction_daemon(mongo_url, db_name)
+        return {"status": "started"}
+    except Exception as e:
+        raise HTTPException(500, f"Could not start extraction daemon: {e}")
+
+
 @router.get("/graph/stats")
 async def graph_stats_ep(request: Request):
     """Summary stats for the GraphRAG layer."""
