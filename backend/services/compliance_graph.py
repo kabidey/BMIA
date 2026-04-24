@@ -241,48 +241,56 @@ async def extract_entities_llm(text: str, circ_no: str, api_key: str) -> Dict:
 async def enrich_subgraph_with_llm(db: Database, subgraph: Dict, max_enrich: int = 8) -> Dict:
     """Take a structural subgraph and layer in LLM-extracted entities for the
     seed nodes. Cached per circular in compliance_graph_entities so we never
-    re-extract."""
+    re-extract. Parallelised with asyncio.gather so 8-10 enrichments finish
+    in ~one LLM round-trip instead of sequentially."""
+    import asyncio
     api_key = os.environ.get("EMERGENT_LLM_KEY")
     if not api_key:
         return subgraph  # no enrichment available
 
     seeds = [n for n in subgraph["nodes"] if n.get("seed")][:max_enrich]
-    added_entities: Dict[str, Dict] = {}
-    added_relations: List[Dict] = []
 
-    for node in seeds:
+    async def _enrich_one(node: Dict) -> Tuple[Dict, List[Dict], List[Dict]]:
         circ_no = node["id"].split(":", 1)[1] if ":" in node["id"] else node["id"]
-        # Check cache
         cached = db.compliance_graph_entities.find_one(
             {"circular_id": node["id"]}, {"_id": 0, "entities": 1, "relations": 1},
         )
         if cached:
-            ents = cached.get("entities", [])
-            rels = cached.get("relations", [])
-        else:
-            # Pull the circular's full text chunks
-            chunks = list(db.compliance_chunks.find(
-                {"source": node["source"], "circular_no": circ_no},
-                {"_id": 0, "text": 1},
-            ).limit(6))
-            if not chunks:
-                continue
-            full_text = (node["label"] or "") + "\n\n" + "\n".join(
-                c.get("text", "") for c in chunks
-            )
-            extracted = await extract_entities_llm(full_text, circ_no, api_key)
-            ents = extracted["entities"]
-            rels = extracted["relations"]
-            db.compliance_graph_entities.update_one(
-                {"circular_id": node["id"]},
-                {"$set": {
-                    "circular_id": node["id"],
-                    "entities": ents,
-                    "relations": rels,
-                    "extracted_at": datetime.utcnow().isoformat(),
-                }},
-                upsert=True,
-            )
+            return node, cached.get("entities", []), cached.get("relations", [])
+
+        chunks = list(db.compliance_chunks.find(
+            {"source": node["source"], "circular_no": circ_no},
+            {"_id": 0, "text_chunk": 1},
+        ).limit(6))
+        if not chunks:
+            return node, [], []
+        full_text = (node["label"] or "") + "\n\n" + "\n".join(
+            c.get("text_chunk", "") for c in chunks
+        )
+        extracted = await extract_entities_llm(full_text, circ_no, api_key)
+        db.compliance_graph_entities.update_one(
+            {"circular_id": node["id"]},
+            {"$set": {
+                "circular_id": node["id"],
+                "entities": extracted["entities"],
+                "relations": extracted["relations"],
+                "extracted_at": datetime.utcnow().isoformat(),
+            }},
+            upsert=True,
+        )
+        return node, extracted["entities"], extracted["relations"]
+
+    # Run all extractions concurrently — Claude Sonnet 4.5 handles parallel calls
+    # fine, and this collapses ~10×5s serial → ~1×5s parallel.
+    results = await asyncio.gather(*[_enrich_one(n) for n in seeds], return_exceptions=True)
+
+    added_entities: Dict[str, Dict] = {}
+    added_relations: List[Dict] = []
+
+    for item in results:
+        if isinstance(item, Exception) or not item:
+            continue
+        node, ents, rels = item
 
         # Merge entities as new nodes (color = by type)
         for ent in ents:
@@ -299,7 +307,6 @@ async def enrich_subgraph_with_llm(db: Database, subgraph: Dict, max_enrich: int
                     "val": 3,
                     "entity_type": ent["type"],
                 }
-            # Edge from circular → entity
             added_relations.append({
                 "source": node["id"],
                 "target": key,

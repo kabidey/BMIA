@@ -1,0 +1,45 @@
+{
+  "summary": "Iteration 34 — Smart Research query router + parallel LLM enrichment. Backend: 10/10 pytest cases pass (/api/compliance/smart-research narrow/multihop/thematic all return correct mode, citations, subgraph; force_mode override works; legacy /research regression ok; graph/query with enrich=true produces entity nodes; cached second call faster). IMPORTANT: First run requires a /api/compliance/rebuild call because TF-IDF stores were not built at container start — the ingestion daemon rebuilds them in parallel which occasionally causes NotFittedError 500s. Once stores are warm, smart-research is consistently <10s. Frontend: login (OrgLens 2-step) OK, compliance panel opens, 3 questions each trigger the correct mode badge ('Flat RAG'/'Graph · Multi-hop'/'Graph · Thematic') with proper classifier reason tooltips. View 3D Graph on multihop message opens instantly with pre-built subgraph (17 nodes/36 edges — reuses msg.subgraph, NO 'Building knowledge graph' spinner). View 3D Graph on narrow message lazily calls /api/compliance/graph/query and shows the 'Building knowledge graph...' spinner as expected. All regression selectors (copy/cite report, bulk upload, year filter, source toggles, progress bars, suggested questions) intact.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/compliance/smart-research", "issue": "Returns 500 NotFittedError when ingestion daemon's _rebuild_store fires concurrently with a search request. Race condition in services/compliance_rag.py — store.vectorizer is replaced non-atomically during rebuild. Recoverable via /api/compliance/rebuild or retry. Existing issue, not introduced by this iteration."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "ComplianceResearchPanel.ask", "issue": "Reproduced once at the start of test session: 'Failed to execute text on Response: body stream already read' for all 3 asks while backend was mid-rebuild of TF-IDF stores (concurrent ingestion cycle). After rebuild completed, subsequent asks succeeded 3/3. Likely secondary symptom of the backend 500 race above — when the Response is a 500 error page the res.text() can fail under some browser conditions if the global fetch interceptor triggers a retry. Non-blocking once stores are warm.", "affected_selectors": ["[data-testid^='msg-assistant-']"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration34_smart_research.py",
+    "/app/test_reports/pytest/iteration_34_results.xml"
+  ],
+  "action_items": [
+    "Make /services/compliance_rag.py rebuild atomic: build the new vectorizer+matrix in local variables and swap via a single attribute assignment under a lock, so concurrent search() never observes a half-fitted vectorizer. This will eliminate the intermittent NotFittedError 500s during background ingestion rebuilds.",
+    "Consider kicking off an automatic /api/compliance/rebuild on server startup if stores are missing — currently requires a manual POST after fresh container boots.",
+    "Optional: in ComplianceResearchPanel.ask(), on a non-OK response, parse res.text() once and surface the backend 500 detail (currently the caught JSON.parse error hides the real cause)."
+  ],
+  "critical_code_review_comments": [
+    "services/compliance_query_router.py: classifier uses hash(question) & 0xFFFFFF as session_id — fine for caching, but note Python's hash() is randomized per process so cache keys won't survive restarts. Acceptable here.",
+    "services/compliance_graph.py: enrich_subgraph_with_llm now properly uses text_chunk (not text) field — bug fix verified; parallel asyncio.gather confirmed in source; cache via compliance_graph_entities is keyed correctly.",
+    "routes/compliance.py /smart-research opens a sync pymongo client inside an async FastAPI handler for the subgraph build (lines 124-129). For multihop/thematic requests this briefly blocks the event loop during build_structural_graph (iterates up to 8000 circulars). Non-fatal at current volume but consider run_in_threadpool.",
+    "ComplianceResearchPanel.js ask() correctly stores mode/classifier/subgraph; openGraphForMessage correctly short-circuits when msg.subgraph is present (no spinner on multihop). Verified visually.",
+    "Classifier LLM source verified ('source':'llm' across all three questions in this run). Heuristic fallback path cannot be exercised without removing EMERGENT_LLM_KEY — skipped."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration34_smart_research.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (10/10 passed after rebuild)",
+    "frontend": "100% — all three mode badges, view-graph lazy+prebuilt paths, and regression selectors verified"
+  },
+  "test_credentials": "somnath.dey@smifs.com / admin123 (Preview, OrgLens 2-step). JWT in localStorage 'bmia_session_token'.",
+  "seed_data_creation": "None — tests only read.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "If backend pytest tests fail with 'No relevant circulars found' or citations=[], FIRST POST /api/compliance/rebuild (takes 5-10s) then re-run. The root cause is a concurrent ingestion-daemon rebuild race (see action item #1). Selectors for smart-research UI: mode-badge-{i}, view-graph-{i}, copy-report-{i}, compliance-graph-3d, graph-close-btn, compliance-question-input, compliance-send-btn. Message indices: user msgs are at even i, assistant at odd (i-1 is the question). The 3D graph for multihop msg shows ~17 nodes/36 edges with ENTITY legend chip after lazy-enrichment completes. Narrow mode's graph view calls /graph/query lazily (~15s) and shows 'Building knowledge graph...' during the call — working as designed.",
+  "rca of the issue": "Backend intermittent 500 + frontend 'body stream already read' — both symptoms of the same root cause: services/compliance_rag.CompRAGStore.rebuild() mutates self.vectorizer and self.matrix non-atomically while search() may concurrently call self.vectorizer.transform(). When a rebuild is in progress (e.g., after ingestion finds new circulars), search() sees a freshly-initialized-but-not-yet-fit vectorizer → sklearn NotFittedError → 500. The frontend then tries res.text() on a Response whose body may have been consumed by ErrorBoundary/React retry under certain edge conditions, surfacing as 'body stream already read'. Fix: guard rebuild with an asyncio/threading lock and swap the fitted vectorizer+matrix together via a single assignment to an internal tuple attribute. Mitigation: call /api/compliance/rebuild once on startup and/or add retry-on-500 in ComplianceResearchPanel.ask()."
+}

@@ -213,16 +213,17 @@ export default function ComplianceResearchPanel({ compact = false }) {
     );
   };
 
-  const ask = async (q) => {
+  const ask = async (q, forceMode = null) => {
     const text = (q ?? question).trim();
     if (!text || loading) return;
     setMessages(prev => [...prev, { role: 'user', content: text }]);
     setQuestion('');
     setLoading(true);
     try {
-      const body = { question: text, sources: selectedSources, top_k: 10 };
+      const body = { question: text, sources: selectedSources };
       if (yearFilter) body.year_filter = parseInt(yearFilter, 10);
-      const res = await fetch(`${BACKEND_URL}/api/compliance/research`, {
+      if (forceMode) body.force_mode = forceMode;
+      const res = await fetch(`${BACKEND_URL}/api/compliance/smart-research`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -237,7 +238,11 @@ export default function ComplianceResearchPanel({ compact = false }) {
         content: data.answer || 'No response',
         citations: data.citations || [],
         sources_searched: data.sources_searched || [],
+        mode: data.mode || null,
+        classifier: data.classifier || null,
+        subgraph: data.subgraph || null,   // pre-built by the router for multi-hop/thematic
         error: data.error,
+        question: text,
       }]);
     } catch (e) {
       setMessages(prev => [...prev, { role: 'assistant', content: `Error: ${e.message}`, citations: [] }]);
@@ -327,9 +332,19 @@ export default function ComplianceResearchPanel({ compact = false }) {
 
   const openGraphForMessage = async (msgIdx) => {
     const msg = messages[msgIdx];
-    const userQ = messages[msgIdx - 1]?.content || '';
+    const userQ = messages[msgIdx - 1]?.content || msg?.question || '';
     if (!msg || !userQ) return;
     setGraphTitle(userQ.length > 80 ? userQ.slice(0, 80) + '…' : userQ);
+
+    // If smart-research already attached a subgraph (multi-hop / thematic),
+    // reuse it — saves a 40-60s LLM round-trip.
+    if (msg.subgraph && (msg.subgraph.nodes || []).length > 0) {
+      setGraphData(msg.subgraph);
+      setGraphLoading(false);
+      setGraphOpen(true);
+      return;
+    }
+
     setGraphData(null);
     setGraphLoading(true);
     setGraphOpen(true);
@@ -590,6 +605,21 @@ export default function ComplianceResearchPanel({ compact = false }) {
                     <div className="flex items-center gap-2 mb-2 text-[11px] text-[hsl(var(--muted-foreground))]">
                       <Scale className="w-3.5 h-3.5 text-[hsl(var(--primary))]" />
                       <span className="font-semibold text-[hsl(var(--foreground))]">Compliance AI</span>
+                      {m.mode && (
+                        <span
+                          data-testid={`mode-badge-${i}`}
+                          title={m.classifier?.reason || ''}
+                          className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border ${
+                            m.mode === 'narrow'
+                              ? 'bg-sky-500/10 text-sky-300 border-sky-500/30'
+                              : m.mode === 'multihop'
+                              ? 'bg-fuchsia-500/10 text-fuchsia-300 border-fuchsia-500/30'
+                              : 'bg-amber-500/10 text-amber-300 border-amber-500/30'
+                          }`}
+                        >
+                          {m.mode === 'narrow' ? 'Flat RAG' : m.mode === 'multihop' ? 'Graph · Multi-hop' : 'Graph · Thematic'}
+                        </span>
+                      )}
                       {m.sources_searched?.length > 0 && (
                         <span className="flex items-center gap-1">
                           · searched {m.sources_searched.map(s => s.toUpperCase()).join(', ')}

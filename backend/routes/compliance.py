@@ -57,6 +57,85 @@ async def research_endpoint(req: ResearchRequest):
     return result
 
 
+class SmartResearchRequest(BaseModel):
+    question: str
+    sources: Optional[List[str]] = None
+    year_filter: Optional[int] = None
+    session_id: Optional[str] = None
+    force_mode: Optional[str] = None    # "narrow" | "multihop" | "thematic" — bypass the classifier
+
+
+@router.post("/smart-research")
+async def smart_research_endpoint(req: SmartResearchRequest):
+    """Router that classifies the question and picks the retrieval strategy:
+      - narrow   → flat RAG                         (top_k=10, no graph)
+      - multihop → flat RAG + GraphRAG overlay      (top_k=12, enrich=true)
+      - thematic → wider flat RAG + GraphRAG        (top_k=18, enrich=true)
+
+    Returns {mode, classifier_reason, answer, citations, subgraph?, ...}. The
+    UI shows a small mode badge so the user can tell which retrieval path
+    powered the answer (and override it on retry).
+    """
+    if not req.question or len(req.question.strip()) < 3:
+        raise HTTPException(status_code=400, detail="Question must be at least 3 characters")
+    q = req.question.strip()
+
+    # 1 — Classify (skip if force_mode is set)
+    from services.compliance_query_router import classify_query
+    if req.force_mode in ("narrow", "multihop", "thematic"):
+        classification = {"mode": req.force_mode, "reason": "user override", "source": "override"}
+    else:
+        classification = await classify_query(q)
+    mode = classification["mode"]
+
+    # 2 — Route
+    if mode == "narrow":
+        top_k = 10
+        result = await compliance_research(
+            question=q, sources=req.sources, year_filter=req.year_filter,
+            session_id=req.session_id, top_k=top_k,
+        )
+        result["mode"] = mode
+        result["classifier"] = classification
+        return result
+
+    # multihop or thematic → run flat RAG then layer the structural graph.
+    # We intentionally SKIP the LLM entity-enrichment layer here — it can take
+    # 20-40s on top of RAG and blow past the k8s 60s ingress timeout. The
+    # "View 3D Graph" button in the UI calls /graph/query lazily, which does
+    # the full enrichment pass (cached) only when the user actually wants it.
+    import pymongo
+    from services.compliance_graph import build_subgraph
+
+    top_k = 14 if mode == "thematic" else 12
+    result = await compliance_research(
+        question=q, sources=req.sources, year_filter=req.year_filter,
+        session_id=req.session_id, top_k=top_k,
+    )
+
+    seed_ids = []
+    for c in result.get("citations", []):
+        src = (c.get("source") or "").lower()
+        cn = c.get("circular_no") or c.get("id", "").split(":", 1)[-1]
+        if src and cn:
+            seed_ids.append(f"{src}:{cn}")
+    seed_ids = list(dict.fromkeys(seed_ids))
+
+    client = pymongo.MongoClient(os.environ["MONGO_URL"])
+    db = client[os.environ["DB_NAME"]]
+    try:
+        subgraph = build_subgraph(db, seed_ids, hop=1)
+    finally:
+        client.close()
+
+    return {
+        **result,
+        "mode": mode,
+        "classifier": classification,
+        "subgraph": subgraph,
+    }
+
+
 @router.get("/stats")
 async def compliance_stats(request: Request):
     """Ingestion + vector-store stats for each source (for UI progress bar)."""
