@@ -60,6 +60,102 @@ if not MONGO_URL or not DB_NAME:
     raise SystemExit(1)
 
 
+# ─── Auto-migration (idempotent, runs once per deploy) ──────────────────────
+# When the scraper was first wired, the daemon workers had already persisted
+# rows with year=None (old parser) and the SEBI worker had flipped to `live`
+# phase with only ~25 items of the 3,039-item corpus ingested. This helper
+# self-heals that state so every deploy starts from a known-good place,
+# without the operator having to remember to run curls.
+#
+# The `compliance_migrations` collection acts as a fingerprint ledger — each
+# migration runs at most once. New migrations are added by appending a new
+# `name` + code branch.
+async def _run_auto_migrations():
+    """One-shot repairs that should happen after a deploy picks up new code
+    or env. Idempotent: re-runs do nothing once the marker row exists."""
+    import pymongo
+    import re as _re
+    try:
+        client = pymongo.MongoClient(MONGO_URL, serverSelectionTimeoutMS=5000)
+        sync_db = client[DB_NAME]
+        done = {d["name"] for d in sync_db.compliance_migrations.find({}, {"_id": 0, "name": 1})}
+
+        if "2026-04-scraper-v1" not in done:
+            logger.info("AUTO-MIGRATION: 2026-04-scraper-v1 running")
+            from daemons.compliance_ingestion import _parse_date
+            fixed = 0
+            for doc in sync_db.compliance_circulars.find(
+                {"$or": [{"year": None}, {"year": {"$exists": False}}, {"date_iso": ""}]},
+                {"_id": 1, "source": 1, "circular_no": 1, "date_str": 1, "url": 1},
+            ):
+                date_str = doc.get("date_str") or ""
+                if not date_str and doc.get("url"):
+                    m = _re.search(r"/(\d{8})-\d+", doc["url"])
+                    if m:
+                        date_str = m.group(1)
+                dt = _parse_date(date_str)
+                if not dt:
+                    continue
+                patch = {"date_iso": dt.date().isoformat(), "year": dt.year}
+                sync_db.compliance_circulars.update_one({"_id": doc["_id"]}, {"$set": patch})
+                sync_db.compliance_chunks.update_many(
+                    {"source": doc["source"], "circular_no": doc["circular_no"]},
+                    {"$set": patch},
+                )
+                fixed += 1
+            for src in ("nse", "bse", "sebi"):
+                newest = list(sync_db.compliance_circulars.find(
+                    {"source": src, "date_iso": {"$ne": ""}}, {"date_iso": 1, "_id": 0},
+                ).sort("date_iso", -1).limit(1))
+                oldest = list(sync_db.compliance_circulars.find(
+                    {"source": src, "date_iso": {"$ne": ""}}, {"date_iso": 1, "_id": 0},
+                ).sort("date_iso", 1).limit(1))
+                patch = {}
+                if newest:
+                    patch["newest_date_iso"] = newest[0]["date_iso"]
+                if oldest:
+                    patch["oldest_date_iso"] = oldest[0]["date_iso"]
+                if patch:
+                    sync_db.compliance_ingestion_state.update_one(
+                        {"source": src}, {"$set": patch}, upsert=True,
+                    )
+            today_iso = datetime.utcnow().date().isoformat()
+            sync_db.compliance_ingestion_state.update_one(
+                {"source": "sebi"},
+                {"$set": {
+                    "phase": "backfill",
+                    "oldest_date_iso": today_iso,
+                    "target_start_year": 1995,
+                    "consecutive_no_data": 0,
+                    "last_error": None,
+                }},
+                upsert=True,
+            )
+            sync_db.compliance_ingestion_state.update_one(
+                {"source": "bse"},
+                {"$set": {
+                    "phase": "backfill",
+                    "target_start_year": 2010,
+                    "consecutive_no_data": 0,
+                    "last_error": None,
+                }},
+                upsert=True,
+            )
+            sync_db.compliance_migrations.insert_one({
+                "name": "2026-04-scraper-v1",
+                "ran_at": datetime.utcnow().isoformat(),
+                "fixed_rows": fixed,
+            })
+            logger.info(
+                f"AUTO-MIGRATION: 2026-04-scraper-v1 complete "
+                f"(fixed {fixed} rows, reset sebi+bse workers)"
+            )
+        client.close()
+    except Exception as e:
+        logger.error(f"AUTO-MIGRATION failed (non-fatal): {e}")
+
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Use `serverSelectionTimeoutMS=5000` so we don't hang forever on a dead
@@ -131,6 +227,13 @@ async def lifespan(app: FastAPI):
                 await asyncio.sleep(60)
                 logger.info("Starting compliance ingestion daemon (backfill workers)")
                 start_compliance_daemon(MONGO_URL, DB_NAME)
+
+                # 1.5) AUTO-MIGRATION: run once after each deploy to fix the DB
+                # state that older ingests left behind and to re-point SEBI's
+                # backfill cursor at the full 3,039-item corpus. Idempotent
+                # via `compliance_migrations` marker collection.
+                await _run_auto_migrations()
+
                 # 2) Defer the heavy TF-IDF vector build further — this loads all
                 #    persisted chunks and fits the vectorizer. If the DB is empty
                 #    it's a no-op; if large, it can take several seconds.
