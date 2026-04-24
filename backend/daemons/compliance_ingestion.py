@@ -88,6 +88,56 @@ def _rot_headers(extra: Optional[dict] = None) -> dict:
     return h
 
 
+# ─── Optional external scraper (SMIFS VPS) ───────────────────────────────────
+# When COMPLIANCE_SCRAPER_URL is set, all three fetchers delegate to a scraper
+# service running on an Indian-friendly IP to bypass Akamai/Cloudflare blocks
+# on cloud-container egress. Falls back to direct upstream when env is unset.
+SCRAPER_URL = os.environ.get("COMPLIANCE_SCRAPER_URL", "").rstrip("/")
+SCRAPER_KEY = os.environ.get("COMPLIANCE_SCRAPER_KEY", "")
+SCRAPER_TIMEOUT = int(os.environ.get("COMPLIANCE_SCRAPER_TIMEOUT", "90"))
+
+
+def _scraper_fetch(source: str, from_date: datetime, to_date: datetime, limit: int) -> List[dict]:
+    """Call the external scraper. Raises RuntimeError on failure so the worker
+    surfaces it in `last_error` instead of silently returning 0."""
+    url = f"{SCRAPER_URL}/fetch/{source}"
+    params = {
+        "from_date": from_date.strftime("%Y-%m-%d"),
+        "to_date": to_date.strftime("%Y-%m-%d"),
+        "limit": limit,
+    }
+    headers = {"X-API-Key": SCRAPER_KEY} if SCRAPER_KEY else {}
+    r = requests.get(url, params=params, headers=headers, timeout=(5, SCRAPER_TIMEOUT))
+    if r.status_code != 200:
+        raise RuntimeError(f"scraper {source} HTTP {r.status_code}: {r.text[:200]}")
+    data = r.json()
+    if "error" in data:
+        raise RuntimeError(f"scraper {source}: {data['error']}")
+    return data.get("items", [])
+
+
+def _fetch_pdf_bytes(url: str, timeout: int = PDF_READ_TIMEOUT) -> bytes:
+    """Download a PDF — via the scraper when enabled (NSE archives are also
+    cloud-IP-blocked), else directly."""
+    if SCRAPER_URL and url.startswith("http"):
+        try:
+            r = requests.get(
+                f"{SCRAPER_URL}/pdf",
+                params={"url": url},
+                headers={"X-API-Key": SCRAPER_KEY} if SCRAPER_KEY else {},
+                timeout=(5, SCRAPER_TIMEOUT),
+            )
+            if r.status_code == 200:
+                return r.content
+            logger.debug(f"scraper /pdf {url[:80]} HTTP {r.status_code}")
+        except Exception as e:
+            logger.debug(f"scraper /pdf {url[:80]}: {e}")
+    # Direct fallback
+    r = requests.get(url, headers=_rot_headers(), timeout=(5, timeout))
+    r.raise_for_status()
+    return r.content
+
+
 # ─── PDF/HTML text extraction (in-memory) ────────────────────────────────────
 def _extract_pdf_text(pdf_bytes: bytes) -> str:
     try:
@@ -100,6 +150,16 @@ def _extract_pdf_text(pdf_bytes: bytes) -> str:
 
 def _fetch_doc_text(url: str, timeout: int = PDF_READ_TIMEOUT) -> str:
     try:
+        ct_hint_pdf = url.lower().endswith(".pdf")
+        if ct_hint_pdf or SCRAPER_URL:
+            # Use the pdf proxy path (handles NSE archives block) and pdf extract
+            content = _fetch_pdf_bytes(url, timeout=timeout)
+            if content[:4] == b"%PDF" or ct_hint_pdf:
+                return _extract_pdf_text(content)
+            # Not a PDF — decode as text
+            html = content.decode("utf-8", errors="replace")
+            text = re.sub(r"<[^>]+>", " ", html)
+            return re.sub(r"\s+", " ", text).strip()
         r = requests.get(url, headers=HEADERS, timeout=(5, timeout))
         r.raise_for_status()
         ct = r.headers.get("Content-Type", "").lower()
@@ -116,6 +176,8 @@ def _fetch_doc_text(url: str, timeout: int = PDF_READ_TIMEOUT) -> str:
 # ─── Source-specific fetchers (date-ranged) ──────────────────────────────────
 def _fetch_sebi(from_date: datetime, to_date: datetime, limit: int = BATCH_SIZE) -> List[dict]:
     """SEBI circulars — chain of strategies until one returns data."""
+    if SCRAPER_URL:
+        return _scraper_fetch("sebi", from_date, to_date, limit)
     # ssid=7 is the actual "Circulars" section; ssid=5 is "Guidelines"
     urls = [
         "https://www.sebi.gov.in/sebiweb/home/HomeAction.do?doListing=yes&sid=1&ssid=7&smid=0",
@@ -173,6 +235,8 @@ def _fetch_bse(from_date: datetime, to_date: datetime, limit: int = BATCH_SIZE) 
     2. Fallback: public RSS feed at bseindia.com/data/xml/notices.xml
        (reachable; recent notices in RSS 2.0 format).
     """
+    if SCRAPER_URL:
+        return _scraper_fetch("bse", from_date, to_date, limit)
     # ─ Strategy A: JSON API (best when not blocked) ─
     try:
         api_url = (
@@ -263,6 +327,8 @@ def _parse_date_rfc822(s: str) -> Optional[datetime]:
 
 
 def _fetch_nse(from_date: datetime, to_date: datetime, limit: int = BATCH_SIZE) -> List[dict]:
+    if SCRAPER_URL:
+        return _scraper_fetch("nse", from_date, to_date, limit)
     session = requests.Session()
     session.headers.update(_rot_headers())
     try:
