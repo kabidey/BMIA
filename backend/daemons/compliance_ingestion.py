@@ -106,6 +106,8 @@ def _scraper_fetch(source: str, from_date: datetime, to_date: datetime, limit: i
         "to_date": to_date.strftime("%Y-%m-%d"),
         "limit": limit,
     }
+    if source == "bse" and os.environ.get("COMPLIANCE_BSE_INCLUDE_ANNOUNCEMENTS", "").lower() in ("1", "true", "yes"):
+        params["include_announcements"] = "true"
     headers = {"X-API-Key": SCRAPER_KEY} if SCRAPER_KEY else {}
     r = requests.get(url, params=params, headers=headers, timeout=(5, SCRAPER_TIMEOUT))
     if r.status_code != 200:
@@ -396,6 +398,11 @@ def _parse_date(date_str: str) -> Optional[datetime]:
     if not date_str:
         return None
     s = date_str.strip().replace(",", "")
+    # ISO 8601 with T (e.g. "2022-08-20T22:32:36.000") — common for BSE AnnGetData
+    try:
+        return datetime.fromisoformat(s.replace("Z", "+00:00").split(".")[0]).replace(tzinfo=None)
+    except Exception:
+        pass
     for fmt in ("%d %b %Y", "%d %B %Y", "%d-%b-%Y", "%d-%m-%Y",
                 "%Y-%m-%d", "%d/%m/%Y", "%Y%m%d", "%d-%b-%y",
                 "%B %d %Y", "%b %d %Y"):
