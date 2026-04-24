@@ -183,6 +183,97 @@ async def trigger_ingest(request: Request):
     return {"status": "started", "message": "Ingestion cycle running in background"}
 
 
+@router.post("/backfill-dates")
+async def backfill_dates():
+    """One-shot maintenance: re-parse date_str on rows with year=None using
+    the improved _parse_date (handles RFC822 + ISO-with-T). Safe to re-run.
+
+    Fixes rows ingested before the date-parsing fixes were deployed."""
+    import pymongo
+    from daemons.compliance_ingestion import _parse_date
+
+    client = pymongo.MongoClient(os.environ["MONGO_URL"])
+    db = client[os.environ["DB_NAME"]]
+
+    fixed = scanned = 0
+    for doc in db.compliance_circulars.find(
+        {"$or": [{"year": None}, {"year": {"$exists": False}}, {"date_iso": ""}]},
+        {"_id": 1, "source": 1, "circular_no": 1, "date_str": 1, "url": 1, "ingested_at": 1},
+    ):
+        scanned += 1
+        date_str = doc.get("date_str") or ""
+        if not date_str and doc.get("url"):
+            m = re.search(r"/(\d{8})-\d+", doc["url"])
+            if m:
+                date_str = m.group(1)
+        dt = _parse_date(date_str)
+        if not dt:
+            continue
+        patch = {"date_iso": dt.date().isoformat(), "year": dt.year}
+        db.compliance_circulars.update_one({"_id": doc["_id"]}, {"$set": patch})
+        db.compliance_chunks.update_many(
+            {"source": doc["source"], "circular_no": doc["circular_no"]},
+            {"$set": patch},
+        )
+        fixed += 1
+
+    # Refresh per-source oldest/newest cursors
+    for src in ("nse", "bse", "sebi"):
+        newest = list(db.compliance_circulars.find(
+            {"source": src, "date_iso": {"$ne": ""}}, {"date_iso": 1, "_id": 0},
+        ).sort("date_iso", -1).limit(1))
+        oldest = list(db.compliance_circulars.find(
+            {"source": src, "date_iso": {"$ne": ""}}, {"date_iso": 1, "_id": 0},
+        ).sort("date_iso", 1).limit(1))
+        patch = {}
+        if newest:
+            patch["newest_date_iso"] = newest[0]["date_iso"]
+        if oldest:
+            patch["oldest_date_iso"] = oldest[0]["date_iso"]
+        if patch:
+            db.compliance_ingestion_state.update_one(
+                {"source": src}, {"$set": patch}, upsert=True,
+            )
+
+    client.close()
+    return {"status": "ok", "scanned": scanned, "fixed": fixed}
+
+
+class ResetSourceRequest(BaseModel):
+    source: str
+    target_start_year: int = 1995
+    force_from_today: bool = True
+
+
+@router.post("/reset-source")
+async def reset_source(req: ResetSourceRequest):
+    """Reset a source's ingestion state so the worker resumes backfilling from
+    `target_start_year`. Needed when the worker has prematurely transitioned
+    to `live` mode with shallow coverage."""
+    if req.source not in ("nse", "bse", "sebi"):
+        raise HTTPException(400, f"source must be one of nse/bse/sebi, got {req.source}")
+    import pymongo
+    client = pymongo.MongoClient(os.environ["MONGO_URL"])
+    db = client[os.environ["DB_NAME"]]
+    update = {
+        "phase": "backfill",
+        "target_start_year": req.target_start_year,
+        "consecutive_no_data": 0,
+        "last_error": None,
+    }
+    if req.force_from_today:
+        update["oldest_date_iso"] = datetime.now(timezone.utc).date().isoformat()
+    r = db.compliance_ingestion_state.update_one(
+        {"source": req.source}, {"$set": update}, upsert=True,
+    )
+    client.close()
+    return {
+        "status": "ok", "source": req.source,
+        "matched": r.matched_count, "modified": r.modified_count,
+        "new_state": update,
+    }
+
+
 
 # ══════════════════════════════════════════════════════════════════════════
 # BULK UPLOAD — ingest a ZIP of PDFs straight into the RAG pipeline.
