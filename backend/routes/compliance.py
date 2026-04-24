@@ -336,24 +336,25 @@ async def graph_rag_query(request: Request, req: SubgraphQuery):
     # Step 2 — gather the citation circular ids as graph seeds
     client = pymongo.MongoClient(os.environ["MONGO_URL"])
     db = client[os.environ["DB_NAME"]]
-    seed_ids = []
-    for c in result.get("citations", []):
-        src = (c.get("source") or "").lower()       # citations return UPPERCASE
-        cn = c.get("circular_no") or c.get("id", "").split(":", 1)[-1]
-        if src and cn:
-            seed_ids.append(f"{src}:{cn}")
-    seed_ids = list(dict.fromkeys(seed_ids))  # dedupe, preserve order
+    try:
+        seed_ids = []
+        for c in result.get("citations", []):
+            src = (c.get("source") or "").lower()       # citations return UPPERCASE
+            cn = c.get("circular_no") or c.get("id", "").split(":", 1)[-1]
+            if src and cn:
+                seed_ids.append(f"{src}:{cn}")
+        seed_ids = list(dict.fromkeys(seed_ids))  # dedupe, preserve order
 
-    subgraph = build_subgraph(db, seed_ids, hop=1)
+        subgraph = build_subgraph(db, seed_ids, hop=1)
 
-    # Step 3 — optional LLM enrichment layered on the seeds
-    if req.enrich and subgraph["nodes"]:
-        try:
-            subgraph = await enrich_subgraph_with_llm(db, subgraph, max_enrich=6)
-        except Exception as e:
-            logger.warning(f"Graph enrich failed (non-fatal): {e}")
-
-    client.close()
+        # Step 3 — optional LLM enrichment layered on the seeds
+        if req.enrich and subgraph["nodes"]:
+            try:
+                subgraph = await enrich_subgraph_with_llm(db, subgraph, max_enrich=6)
+            except Exception as e:
+                logger.warning(f"Graph enrich failed (non-fatal): {e}")
+    finally:
+        client.close()
     return {**result, "subgraph": subgraph}
 
 

@@ -206,11 +206,22 @@ def _worker_loop(mongo_url: str, db_name: str):
         time.sleep(DELAY_SEC)
 
 
+_DAEMON_THREAD: threading.Thread | None = None
+_DAEMON_LOCK = threading.Lock()
+
+
 def start_graph_extraction_daemon(mongo_url: str, db_name: str) -> threading.Thread:
-    t = threading.Thread(
-        target=_worker_loop, args=(mongo_url, db_name),
-        daemon=True, name="compliance-graph-extraction",
-    )
-    t.start()
-    logger.info("COMPLIANCE GRAPH EXTRACTION DAEMON: Thread launched")
-    return t
+    """Idempotent — returns the existing worker thread if one is already alive,
+    so repeated API calls to /graph/start-extraction don't leak threads."""
+    global _DAEMON_THREAD
+    with _DAEMON_LOCK:
+        if _DAEMON_THREAD is not None and _DAEMON_THREAD.is_alive():
+            logger.info("COMPLIANCE GRAPH EXTRACTION DAEMON: already running — reusing thread")
+            return _DAEMON_THREAD
+        _DAEMON_THREAD = threading.Thread(
+            target=_worker_loop, args=(mongo_url, db_name),
+            daemon=True, name="compliance-graph-extraction",
+        )
+        _DAEMON_THREAD.start()
+        logger.info("COMPLIANCE GRAPH EXTRACTION DAEMON: Thread launched")
+        return _DAEMON_THREAD

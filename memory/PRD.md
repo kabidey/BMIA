@@ -5,6 +5,18 @@ Build a Tier-1 Quant Analyst for Indian Equity and Commodity markets.
 
 ## What's Implemented (Latest: Apr 2026)
 
+### Background Entity Extraction Daemon (NEW, Apr 24 2026)
+- **Problem**: On-demand LLM entity extraction takes 30-60s the first time a user opens the 3D graph for a specific circular, which breaks the "instant insight" UX.
+- **Solution**: `daemons/graph_extraction.py` — a background worker that pre-extracts entities/relations for every circular in `compliance_circulars` and caches them in `compliance_graph_entities`. Over time the full knowledge graph becomes warm and "View 3D Graph" opens in <1s.
+- **Tunables** (env): `COMPLIANCE_GRAPH_EXTRACTION_BATCH_SIZE=4`, `COMPLIANCE_GRAPH_EXTRACTION_DELAY_SEC=20`, `COMPLIANCE_GRAPH_EXTRACTION_MAX_CHUNKS=6`, `COMPLIANCE_GRAPH_EXTRACTION_IDLE_SEC=300`. Each cycle processes N circulars in parallel via `asyncio.gather`, then sleeps; when caught up the daemon sleeps 5 min before polling for new ingests. Idempotent (module-level singleton lock prevents thread leaks on repeated start calls).
+- **Endpoints**: `GET /api/compliance/graph/extraction-status` (progress: phase, extracted/pending/total, progress_pct, cycle_count, last_cycle_result), `POST /api/compliance/graph/start-extraction` (manual kick; auto-starts 5 min after boot via `server.py` lifespan).
+- **UI**: New "Knowledge Graph" progress section in the Compliance sidebar — fuchsia progress bar, phase badge (running/idle/error), "Start graph extraction" button when not started, polled alongside ingestion stats.
+
+### "Retry with Deeper Graph" (NEW, Apr 24 2026)
+- On narrow-mode answers (flat RAG), the assistant row now shows a **"Retry with deeper graph"** button in addition to "View 3D Graph" and "Cite in report".
+- Clicking it re-asks the same question with `force_mode='multihop'` — the classifier is bypassed, the multi-hop GraphRAG path runs, and a new assistant message is appended to the chat with a **Graph · Multi-hop** badge. User can compare both answers side-by-side.
+- Only shown on narrow answers (multihop/thematic already used the graph).
+
 ### Compliance Smart Query Router (NEW, Apr 24 2026)
 - **Problem**: Flat RAG and GraphRAG each shine for different query types — using one for everything wastes latency/budget on the "wrong" questions.
 - **Solution**: `services/compliance_query_router.py` — Claude Sonnet 4.5 classifier with regex heuristic fallback. Classifies each question into one of:
