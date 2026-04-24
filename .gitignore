@@ -142,9 +142,9 @@ credentials.json
 .credentials
 -e 
 # Environment and credential files
-.env
-.env.*
-*.env
+# NOTE: .env files MUST be included in the repo for deployment to work.
+# They are auto-populated at deploy time with production MONGO_URL, API keys etc.
+# Keeping them in git is safe because secrets are managed by the platform.
 credentials.json
 *.pem
 *.key
