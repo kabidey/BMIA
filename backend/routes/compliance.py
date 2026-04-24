@@ -183,6 +183,94 @@ async def trigger_ingest(request: Request):
     return {"status": "started", "message": "Ingestion cycle running in background"}
 
 
+# ─── GraphRAG endpoints ────────────────────────────────────────────────
+@router.get("/graph/stats")
+async def graph_stats_ep(request: Request):
+    """Summary stats for the GraphRAG layer."""
+    import pymongo
+    client = pymongo.MongoClient(os.environ["MONGO_URL"])
+    db = client[os.environ["DB_NAME"]]
+    from services.compliance_graph import graph_stats
+    s = graph_stats(db)
+    client.close()
+    return s
+
+
+class SubgraphQuery(BaseModel):
+    question: str
+    sources: Optional[List[str]] = None
+    top_k: int = 12
+    enrich: bool = True
+
+
+@router.post("/graph/query")
+async def graph_rag_query(request: Request, req: SubgraphQuery):
+    """Hybrid GraphRAG: TF-IDF retrieve → graph expand → optional LLM
+    entity enrichment. Returns {answer, citations, subgraph}. The subgraph
+    payload is what the 3D viewer renders."""
+    import pymongo
+    from services.compliance_graph import build_subgraph, enrich_subgraph_with_llm
+
+    # Step 1 — existing RAG answer (uses the in-memory TF-IDF store)
+    result = await compliance_research(
+        question=req.question,
+        sources=req.sources,
+        year_filter=None,
+        top_k=req.top_k,
+    )
+
+    # Step 2 — gather the citation circular ids as graph seeds
+    client = pymongo.MongoClient(os.environ["MONGO_URL"])
+    db = client[os.environ["DB_NAME"]]
+    seed_ids = []
+    for c in result.get("citations", []):
+        src = (c.get("source") or "").lower()       # citations return UPPERCASE
+        cn = c.get("circular_no") or c.get("id", "").split(":", 1)[-1]
+        if src and cn:
+            seed_ids.append(f"{src}:{cn}")
+    seed_ids = list(dict.fromkeys(seed_ids))  # dedupe, preserve order
+
+    subgraph = build_subgraph(db, seed_ids, hop=1)
+
+    # Step 3 — optional LLM enrichment layered on the seeds
+    if req.enrich and subgraph["nodes"]:
+        try:
+            subgraph = await enrich_subgraph_with_llm(db, subgraph, max_enrich=6)
+        except Exception as e:
+            logger.warning(f"Graph enrich failed (non-fatal): {e}")
+
+    client.close()
+    return {**result, "subgraph": subgraph}
+
+
+@router.get("/graph/subgraph")
+async def get_subgraph_ep(request: Request, source: Optional[str] = None,
+                          year: Optional[int] = None, limit: int = 800):
+    """Return a pre-built structural subgraph for the 3D viewer — used for
+    the "Explore all" mode (no query, just the whole corpus)."""
+    import pymongo
+    from services.compliance_graph import build_structural_graph
+    client = pymongo.MongoClient(os.environ["MONGO_URL"])
+    db = client[os.environ["DB_NAME"]]
+
+    if year:
+        # Pre-filter at DB for the full-graph case
+        q = {"year": year}
+        if source:
+            q["source"] = source
+        ids = [f"{c['source']}:{c.get('circular_no','')}"
+               for c in db.compliance_circulars.find(q, {"_id": 0, "source": 1, "circular_no": 1}).limit(limit)]
+        from services.compliance_graph import build_subgraph
+        sg = build_subgraph(db, ids, hop=1)
+    else:
+        sources = [source] if source else None
+        sg = build_structural_graph(db, source_filter=sources, max_nodes=limit)
+        sg = {"nodes": sg["nodes"], "edges": sg["edges"]}
+
+    client.close()
+    return sg
+
+
 @router.post("/backfill-dates")
 async def backfill_dates():
     """One-shot maintenance: re-parse date_str on rows with year=None using
@@ -237,6 +325,113 @@ async def backfill_dates():
 
     client.close()
     return {"status": "ok", "scanned": scanned, "fixed": fixed}
+
+
+class DedupeRequest(BaseModel):
+    source: Optional[str] = None   # "sebi" | "nse" | "bse" | None (all)
+    dry_run: bool = True           # preview first; set False to actually delete
+    match_on: str = "url"          # "url" (default) | "source_circno"
+
+
+@router.post("/dedupe")
+async def dedupe_circulars(req: DedupeRequest):
+    """Remove duplicate compliance_circulars (and their chunks) by grouping on
+    `url` (default) or `(source, circular_no)`. Keeps the FIRST document per
+    group; deletes the rest plus their associated chunks.
+
+    Safe to run repeatedly. Use `dry_run=True` first to preview counts.
+    """
+    import pymongo
+    client = pymongo.MongoClient(os.environ["MONGO_URL"])
+    db = client[os.environ["DB_NAME"]]
+
+    match: dict = {}
+    if req.source:
+        if req.source not in ALLOWED_SOURCES:
+            client.close()
+            raise HTTPException(400, f"source must be one of {ALLOWED_SOURCES}")
+        match["source"] = req.source
+
+    if req.match_on == "url":
+        match["url"] = {"$nin": ["", None]}
+        group_id = "$url"
+    elif req.match_on == "source_circno":
+        group_id = {"source": "$source", "circular_no": "$circular_no"}
+    else:
+        client.close()
+        raise HTTPException(400, "match_on must be 'url' or 'source_circno'")
+
+    pipeline = [
+        {"$match": match},
+        {"$sort": {"ingested_at": 1, "_id": 1}},
+        {"$group": {
+            "_id": group_id,
+            "keeper_id": {"$first": "$_id"},
+            "keeper_circno": {"$first": "$circular_no"},
+            "keeper_source": {"$first": "$source"},
+            "duplicates": {"$push": {"_id": "$_id", "source": "$source",
+                                     "circular_no": "$circular_no"}},
+            "count": {"$sum": 1},
+        }},
+        {"$match": {"count": {"$gt": 1}}},
+    ]
+
+    dup_groups = 0
+    dup_docs = 0
+    dup_chunks_est = 0
+    deleted_circulars = 0
+    deleted_chunks = 0
+
+    for grp in db.compliance_circulars.aggregate(pipeline, allowDiskUse=True):
+        dup_groups += 1
+        extras = [d for d in grp["duplicates"] if d["_id"] != grp["keeper_id"]]
+        dup_docs += len(extras)
+
+        # estimate chunk rows that would be deleted
+        for d in extras:
+            dup_chunks_est += db.compliance_chunks.count_documents({
+                "source": d["source"], "circular_no": d["circular_no"],
+            })
+
+        if not req.dry_run:
+            extra_ids = [d["_id"] for d in extras]
+            # Delete extra circulars
+            r1 = db.compliance_circulars.delete_many({"_id": {"$in": extra_ids}})
+            deleted_circulars += r1.deleted_count
+            # Delete orphaned chunks — only those matching an extra (source, circular_no)
+            # whose keeper does NOT share the same circular_no.
+            for d in extras:
+                if d["circular_no"] == grp["keeper_circno"] and d["source"] == grp["keeper_source"]:
+                    continue  # same circ_no as keeper → chunks already de-facto shared
+                r2 = db.compliance_chunks.delete_many({
+                    "source": d["source"], "circular_no": d["circular_no"],
+                })
+                deleted_chunks += r2.deleted_count
+
+    # If we actually deleted anything, rebuild TF-IDF stores for affected sources
+    rebuilt_sources: List[str] = []
+    if not req.dry_run and deleted_circulars > 0:
+        from daemons.compliance_ingestion import _rebuild_store
+        targets = [req.source] if req.source else list(ALLOWED_SOURCES)
+        for src in targets:
+            try:
+                _rebuild_store(db, src)
+                rebuilt_sources.append(src)
+            except Exception as e:
+                logger.warning(f"Dedupe rebuild {src} failed: {e}")
+
+    client.close()
+    return {
+        "status": "dry_run" if req.dry_run else "executed",
+        "match_on": req.match_on,
+        "source": req.source or "all",
+        "duplicate_groups": dup_groups,
+        "duplicate_extra_docs": dup_docs,
+        "duplicate_chunk_rows_estimate": dup_chunks_est,
+        "deleted_circulars": deleted_circulars,
+        "deleted_chunks": deleted_chunks,
+        "rebuilt_sources": rebuilt_sources,
+    }
 
 
 class ResetSourceRequest(BaseModel):

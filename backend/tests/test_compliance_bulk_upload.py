@@ -7,7 +7,7 @@ import zipfile
 import pytest
 import requests
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://compliance-rag-agent.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://equity-commodity-hub.preview.emergentagent.com").rstrip("/")
 
 
 def _minimal_pdf_bytes(text: str = "Test Circular") -> bytes:

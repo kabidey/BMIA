@@ -1,0 +1,46 @@
+{
+  "summary": "Iteration 33 — BMIA Compliance GraphRAG + 3D viz + dedupe endpoint. Backend: 7/8 pytest cases pass (1 skipped: SEBI has 0 duplicates; all 7 dup groups are on NSE source, contrary to brief). Dedupe dry_run works for match_on='url' and 'source_circno'. /api/compliance/graph/stats returns total_circulars=2532. /api/compliance/graph/query with enrich=false returns non-empty subgraph with seed=true nodes (lowercase source IDs confirmed — casing fix verified). enrich=true returns entity nodes (types REGULATION/COMPANY/etc.) and caches correctly (first ~60s, cached ~8s). /api/compliance/graph/subgraph?source=sebi returns only sebi-source nodes. Frontend: login OK (OrgLens 2-step), compliance panel loads, all regression selectors (filters, year, sources, question input, send, bulk upload) intact. Ask flow works — assistant message renders with citations + sources list + 'View 3D Graph' button alongside 'Cite in report'. Clicking View 3D Graph opens ComplianceGraph3D modal with source-filter chips, legend, 'Building knowledge graph...' spinner, expand, and close button. Close dismisses modal. Bulk upload modal still opens. One intermittent FE error observed: first ask occasionally fails with 'Failed to execute json on Response: body stream already read' (reproduced once in 3 attempts — clears after retry).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/compliance/dedupe", "issue": "Brief expected SEBI duplicates; DB actually has all 7 dup groups on NSE (SEBI=0, BSE=0). Either brief is stale or SEBI was deduped earlier. Execute path on SEBI could not be exercised (skipped test). Endpoint itself is correct."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "ComplianceResearchPanel.ask", "issue": "Intermittent 'Failed to execute json on Response: body stream already read' on the FIRST ask after page load (reproduced 1/3 times). Retry succeeds. No service worker registered and code calls res.json() once — likely a transient race with concurrent ingestion sync or network edge. Not blocking, but worth investigating the global fetch interceptor in App.js.", "affected_selectors": ["[data-testid^='msg-assistant-']"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration33_compliance_graph_dedupe.py",
+    "/app/test_reports/pytest/iteration_33_results.xml"
+  ],
+  "action_items": [
+    "Investigate intermittent 'body stream already read' error on the first /api/compliance/research fetch — check App.js fetch interceptor for accidental response consumption on retry paths, or consider adding retry-on-stream-error in ComplianceResearchPanel.ask().",
+    "Confirm dedupe brief: SEBI has 0 duplicates already; the 7 duplicate groups reported by /api/compliance/dedupe (match_on=url, source=null) are all on NSE. Decide whether to run dedupe on NSE too (not requested).",
+    "Optional: the 3D graph's first load for a given question takes ~60s (enrich=true path) — consider showing estimated time or partial structural graph first, then layering entities async."
+  ],
+  "critical_code_review_comments": [
+    "routes/compliance.py /graph/query correctly lowercases citation source when building seed_ids — matches node id format source:circular_no as used by services/compliance_graph.build_subgraph. Verified seed nodes appear in response.",
+    "routes/compliance.py /dedupe opens a synchronous pymongo client and performs aggregation + delete_many in an async FastAPI handler. For large corpora this blocks the event loop (though current volumes are fine). Consider dispatching to a thread via `await run_in_threadpool` or using motor consistently.",
+    "ComplianceResearchPanel.js openGraphForMessage() re-POSTs to /api/compliance/graph/query with the SAME question. Since /compliance/research was already called for the message, the graph endpoint duplicates retrieval work. Could pass citations/seed_ids directly to the graph endpoint to avoid redundant TF-IDF retrieval.",
+    "ComplianceGraph3D.js edge source/target string-id normalisation after react-force-graph mutation is the correct fix — edges were previously broken after the lib replaced string IDs with node objects in-place.",
+    "App.js global fetch interceptor overrides window.fetch in useEffect; React.StrictMode in index.js will double-invoke in dev but production builds are unaffected. No immediate bug.",
+    "test_credentials.md is the source of truth (somnath.dey@smifs.com / admin123 on Preview). Login uses OrgLens 2-step (email → Continue → password → Sign In) — not a single-form submit."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration33_compliance_graph_dedupe.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (7 passed, 1 legitimately skipped)",
+    "frontend": "95% — core flow works; one transient first-request error"
+  },
+  "test_credentials": "somnath.dey@smifs.com / admin123 (Preview, OrgLens 2-step). Session JWT stored in localStorage under 'bmia_session_token'.",
+  "seed_data_creation": "None. Backend tests only read; the SEBI execute path was gated by pytest.skip because no SEBI duplicates exist.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Re-run: `REACT_APP_BACKEND_URL=https://equity-commodity-hub.preview.emergentagent.com pytest /app/backend/tests/test_iteration33_compliance_graph_dedupe.py -v` — takes ~2min with LLM enrichment. If you need to exercise the dedupe delete path: the 7 duplicate groups sit on NSE, invoke with {source:'nse', dry_run:false, match_on:'url'} (destructive — will delete ~7 circulars + ~1274 chunks + rebuild NSE TF-IDF store). Login flow is 2-step: email → Continue → password → Sign In. The new feature selectors: [data-testid='view-graph-{i}'], [data-testid='compliance-graph-3d'], [data-testid='graph-close-btn'], [data-testid='graph-filter-{src}'], [data-testid='graph-zoom-fit'], [data-testid='graph-selected-panel'], [data-testid='graph-open-pdf']. First question per session may need a retry due to transient 'body stream already read'.",
+  "rca of the issue": "For the 1/3 frontend ask failure ('body stream already read'): code reads res.json() exactly once; no service worker; no double clone. Most likely cause is the ingestion backfill daemon concurrently mutating compliance_ingestion_state rows plus a network-edge behaviour where the response's transfer-encoding causes the browser fetch to buffer+early-consume under load. Non-blocking workaround: wrap `await res.json()` in try/catch and use `const data = await res.clone().json()` as fallback, OR serialize with response.text() then JSON.parse(). Main agent to decide."
+}

@@ -20,7 +20,7 @@ sys.path.insert(0, "/app/backend")
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
 if not BASE_URL:
-    BASE_URL = "https://compliance-rag-agent.preview.emergentagent.com"
+    BASE_URL = "https://equity-commodity-hub.preview.emergentagent.com"
 
 
 class TestPortfolioStrategiesConfig:

@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Send, Loader2, Scale, Filter, BookOpen, ExternalLink, Sparkles, RefreshCw, Search, Copy, Check, Upload } from 'lucide-react';
+import { Send, Loader2, Scale, Filter, BookOpen, ExternalLink, Sparkles, RefreshCw, Search, Copy, Check, Upload, Network } from 'lucide-react';
 import { Badge } from './ui/badge';
 import { ScrollArea } from './ui/scroll-area';
 import { toast } from 'sonner';
 import ComplianceBulkUploadModal from './ComplianceBulkUploadModal';
+import ComplianceGraph3D from './ComplianceGraph3D';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const SOURCES = [
@@ -314,6 +315,42 @@ export default function ComplianceResearchPanel({ compact = false }) {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [bulkUploadOpen, setBulkUploadOpen] = useState(false);
 
+  // ── GraphRAG 3D viewer state ──
+  const [graphOpen, setGraphOpen] = useState(false);
+  const [graphLoading, setGraphLoading] = useState(false);
+  const [graphData, setGraphData] = useState(null);
+  const [graphTitle, setGraphTitle] = useState('3D Compliance Graph');
+
+  const openGraphForMessage = async (msgIdx) => {
+    const msg = messages[msgIdx];
+    const userQ = messages[msgIdx - 1]?.content || '';
+    if (!msg || !userQ) return;
+    setGraphTitle(userQ.length > 80 ? userQ.slice(0, 80) + '…' : userQ);
+    setGraphData(null);
+    setGraphLoading(true);
+    setGraphOpen(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/compliance/graph/query`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question: userQ,
+          sources: selectedSources,
+          top_k: 12,
+          enrich: true,
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setGraphData(data.subgraph || { nodes: [], edges: [] });
+    } catch (e) {
+      toast.error('Could not build graph', { description: String(e?.message || e) });
+      setGraphData({ nodes: [], edges: [] });
+    } finally {
+      setGraphLoading(false);
+    }
+  };
+
   return (
     <div className={`flex flex-col sm:flex-row ${compact ? 'h-full' : 'h-[calc(100vh-3.5rem)] sm:h-[calc(100vh-3.5rem)]'} bg-[hsl(var(--background))]`} data-testid="compliance-panel">
       {/* Mobile: filters toggle bar */}
@@ -555,12 +592,24 @@ export default function ComplianceResearchPanel({ compact = false }) {
                         </span>
                       )}
                       {m.citations?.length > 0 && !m.error && (
-                        <CopyReportButton
-                          question={messages[i - 1]?.content || ''}
-                          answer={m.content}
-                          citations={m.citations || []}
-                          testId={`copy-report-${i}`}
-                        />
+                        <>
+                          <button
+                            onClick={() => openGraphForMessage(i)}
+                            data-testid={`view-graph-${i}`}
+                            title="Visualise the citations and their related regulations in a 3D knowledge graph"
+                            className="ml-auto flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-[hsl(var(--primary))]/15 hover:bg-[hsl(var(--primary))]/25 text-[hsl(var(--primary))] border border-[hsl(var(--primary))]/30"
+                            style={{ transition: 'background-color 0.15s ease' }}
+                          >
+                            <Network className="w-3 h-3" />
+                            View 3D Graph
+                          </button>
+                          <CopyReportButton
+                            question={messages[i - 1]?.content || ''}
+                            answer={m.content}
+                            citations={m.citations || []}
+                            testId={`copy-report-${i}`}
+                          />
+                        </>
                       )}
                     </div>
                     <div className="prose prose-invert prose-sm max-w-none text-[hsl(var(--foreground))]">
@@ -649,6 +698,14 @@ export default function ComplianceResearchPanel({ compact = false }) {
         open={bulkUploadOpen}
         onClose={() => setBulkUploadOpen(false)}
         onCompleted={loadStats}
+      />
+
+      <ComplianceGraph3D
+        open={graphOpen}
+        onClose={() => setGraphOpen(false)}
+        subgraph={graphData}
+        loading={graphLoading}
+        title={graphTitle}
       />
     </div>
   );
