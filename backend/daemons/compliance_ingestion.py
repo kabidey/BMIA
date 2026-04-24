@@ -275,8 +275,19 @@ def _fetch_nse(from_date: datetime, to_date: datetime, limit: int = BATCH_SIZE) 
         )
         r = session.get(api_url, timeout=(5, 15))
         if r.status_code != 200:
-            return []
-        data = r.json()
+            # Surface Akamai / bot-block explicitly so the UI shows it (instead
+            # of silently counting as 0 items which gets muddled with "no new").
+            snippet = (r.text or "")[:200].replace("\n", " ")
+            raise RuntimeError(
+                f"NSE upstream blocked (HTTP {r.status_code}) — likely Akamai edge "
+                f"bot-detection on cloud IP. Snippet: {snippet}"
+            )
+        try:
+            data = r.json()
+        except ValueError:
+            raise RuntimeError(
+                "NSE upstream returned non-JSON (HTML bot-guard page) — cloud-IP block."
+            )
         rows = data.get("data", data if isinstance(data, list) else [])[:limit]
         results = []
         for row in rows:
@@ -304,9 +315,6 @@ def _fetch_nse(from_date: datetime, to_date: datetime, limit: int = BATCH_SIZE) 
                 "category": row.get("circCategory") or row.get("cirDepartment") or "General",
             })
         return results
-    except Exception as e:
-        logger.error(f"NSE fetch failed: {e}")
-        return []
     finally:
         try:
             session.close()
@@ -321,14 +329,20 @@ FETCHERS = {"sebi": _fetch_sebi, "nse": _fetch_nse, "bse": _fetch_bse}
 def _parse_date(date_str: str) -> Optional[datetime]:
     if not date_str:
         return None
+    s = date_str.strip().replace(",", "")
     for fmt in ("%d %b %Y", "%d %B %Y", "%d-%b-%Y", "%d-%m-%Y",
                 "%Y-%m-%d", "%d/%m/%Y", "%Y%m%d", "%d-%b-%y",
-                "%B %d, %Y", "%b %d, %Y", "%B %d %Y", "%b %d %Y"):
+                "%B %d %Y", "%b %d %Y"):
         try:
-            return datetime.strptime(date_str.strip().replace(",", ""), fmt)
+            return datetime.strptime(s, fmt)
         except Exception:
             continue
-    return None
+    # RFC822 fallback (BSE RSS: "Thu, 23 Apr 2026 17:47:39 GMT")
+    try:
+        from email.utils import parsedate_to_datetime
+        return parsedate_to_datetime(date_str).replace(tzinfo=None)
+    except Exception:
+        return None
 
 
 def _get_state(db_sync, source: str) -> dict:
