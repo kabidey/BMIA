@@ -5,6 +5,16 @@ Build a Tier-1 Quant Analyst for Indian Equity and Commodity markets.
 
 ## What's Implemented (Latest: Apr 2026)
 
+### Compliance GraphRAG + 3D Visualization (NEW, Apr 24 2026)
+- GraphRAG layer (`services/compliance_graph.py`): structural graph (circular ↔ circular via shared regulation keywords & same source-year clusters) + optional on-demand Claude Sonnet 4.5 entity/relation enrichment (REGULATION, COMPANY, CONCEPT, PERSON, DATE, EVENT), cached in `compliance_graph_entities` to avoid re-extraction.
+- Endpoints: `POST /api/compliance/graph/query` (TF-IDF → citations → subgraph, `enrich` flag), `GET /api/compliance/graph/subgraph` (structural-only), `GET /api/compliance/graph/stats`. Source-id casing fix — citation `source` is now lowercased when building seed IDs (`source:circular_no`) to match node keys.
+- Frontend (`ComplianceGraph3D.js`, `ComplianceResearchPanel.js`): every assistant answer with citations now shows a **"View 3D Graph"** button alongside "Cite in report". Clicking opens an immersive WebGL 3D force-graph (react-force-graph-3d) with per-source color coding, per-source filter chips, zoom-to-fit, node hover tooltips, click-to-focus cameraPosition, and a selected-node panel with a direct "Open original document" link. Edge source/target ids are normalised after force-graph mutation so filter toggles don't drop edges.
+
+### Compliance Duplicate Cleanup (NEW, Apr 24 2026)
+- `POST /api/compliance/dedupe` admin endpoint — group-by `url` (default) or `(source, circular_no)`, keep first doc per group, delete extras + their chunks. `dry_run` flag for preview. After delete, rebuilds TF-IDF for affected sources. Current DB: 7 duplicate groups detected (all on NSE, not SEBI as previously assumed).
+
+## What's Implemented (Earlier)
+
 ### Compliance — NotebookLM-style RAG over NSE/BSE/SEBI circulars (NEW, Apr 2026)
 - Full page at `/compliance` + global quick-launch modal (sidebar button / `Ctrl+Shift+C`)
 - 3 independent TF-IDF stores (one per source: NSE, BSE, SEBI) with adaptive `max_df` for small/large corpora

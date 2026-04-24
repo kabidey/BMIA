@@ -227,7 +227,11 @@ export default function ComplianceResearchPanel({ compact = false }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      const data = await res.json();
+      // Use text()+JSON.parse instead of res.json() to avoid the rare
+      // "body stream already read" race when a service worker or fetch
+      // interceptor has already peeked at the response body.
+      const raw = await res.text();
+      const data = raw ? JSON.parse(raw) : {};
       setMessages(prev => [...prev, {
         role: 'assistant',
         content: data.answer || 'No response',
