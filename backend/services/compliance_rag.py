@@ -14,6 +14,7 @@ Chunking:
 """
 import logging
 import re
+import threading
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
@@ -60,19 +61,25 @@ class ComplianceStore:
         return self.vectorizer is not None and self.matrix is not None and bool(self.chunks)
 
     async def build(self, db):
-        """Load all chunks for this source from MongoDB and build the index."""
+        """Load all chunks for this source from MongoDB and build the index.
+        Builds into local vars first, then swaps all three attributes together
+        under a lock so a concurrent search() never observes a half-initialised
+        vectorizer (which would raise sklearn NotFittedError)."""
         import asyncio
+        if not hasattr(self, "_swap_lock") or self._swap_lock is None:
+            self._swap_lock = threading.Lock()
+
         cursor = db.compliance_chunks.find({"source": self.source}, {"_id": 0})
         chunks = await cursor.to_list(length=None)
         if not chunks:
             logger.warning(f"COMPLIANCE RAG [{self.source}]: no chunks — skipping build")
-            self.chunks = []
+            with self._swap_lock:
+                self.chunks = []
             return
 
         texts = [c["text_chunk"] for c in chunks]
-        # max_df auto-adjusts: relaxed for small corpora, tighter for large
         max_df = 0.95 if len(texts) >= 10 else 1.0
-        self.vectorizer = TfidfVectorizer(
+        new_vec = TfidfVectorizer(
             max_features=50000, ngram_range=(1, 2),
             stop_words="english", lowercase=True,
             min_df=1, max_df=max_df,
@@ -80,23 +87,39 @@ class ComplianceStore:
         # fit_transform is CPU-bound — run in a worker thread so we don't block
         # the FastAPI event loop (critical for deploy health-probes to succeed
         # while the index is being built on startup).
-        self.matrix = await asyncio.to_thread(self.vectorizer.fit_transform, texts)
-        self.chunks = chunks
-        self.built_at = datetime.utcnow()
-        logger.info(f"COMPLIANCE RAG [{self.source}]: built — {len(chunks)} chunks, vocab={len(self.vectorizer.vocabulary_)}")
+        new_matrix = await asyncio.to_thread(new_vec.fit_transform, texts)
+
+        with self._swap_lock:
+            self.vectorizer = new_vec
+            self.matrix = new_matrix
+            self.chunks = chunks
+            self.built_at = datetime.utcnow()
+        logger.info(f"COMPLIANCE RAG [{self.source}]: built — {len(chunks)} chunks, vocab={len(new_vec.vocabulary_)}")
 
     def search(self, query: str, top_k: int = 10, year_filter: Optional[int] = None) -> List[dict]:
-        if not self.is_ready():
+        # Snapshot the (vectorizer, matrix, chunks) triple under the same lock
+        # used by build(), so we transform & score against a consistent view.
+        lock = getattr(self, "_swap_lock", None)
+        if lock is not None:
+            with lock:
+                vec, mat, chunks = self.vectorizer, self.matrix, self.chunks
+        else:
+            vec, mat, chunks = self.vectorizer, self.matrix, self.chunks
+        if vec is None or mat is None or not chunks:
             return []
-        q_vec = self.vectorizer.transform([query])
-        sims = cosine_similarity(q_vec, self.matrix).flatten()
+        try:
+            q_vec = vec.transform([query])
+        except Exception as e:
+            logger.warning(f"COMPLIANCE RAG [{self.source}]: search transform failed ({e}) — returning empty")
+            return []
+        sims = cosine_similarity(q_vec, mat).flatten()
         # Get top-k indices
         top_indices = np.argsort(sims)[::-1][: top_k * 3]  # over-fetch for filtering
         results = []
         for idx in top_indices:
             if sims[idx] <= 0:
                 continue
-            c = self.chunks[idx]
+            c = chunks[idx]
             if year_filter and c.get("year") and c["year"] != year_filter:
                 continue
             results.append({

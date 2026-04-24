@@ -5,13 +5,25 @@ Build a Tier-1 Quant Analyst for Indian Equity and Commodity markets.
 
 ## What's Implemented (Latest: Apr 2026)
 
-### Compliance GraphRAG + 3D Visualization (NEW, Apr 24 2026)
-- GraphRAG layer (`services/compliance_graph.py`): structural graph (circular ↔ circular via shared regulation keywords & same source-year clusters) + optional on-demand Claude Sonnet 4.5 entity/relation enrichment (REGULATION, COMPANY, CONCEPT, PERSON, DATE, EVENT), cached in `compliance_graph_entities` to avoid re-extraction.
-- Endpoints: `POST /api/compliance/graph/query` (TF-IDF → citations → subgraph, `enrich` flag), `GET /api/compliance/graph/subgraph` (structural-only), `GET /api/compliance/graph/stats`. Source-id casing fix — citation `source` is now lowercased when building seed IDs (`source:circular_no`) to match node keys.
-- Frontend (`ComplianceGraph3D.js`, `ComplianceResearchPanel.js`): every assistant answer with citations now shows a **"View 3D Graph"** button alongside "Cite in report". Clicking opens an immersive WebGL 3D force-graph (react-force-graph-3d) with per-source color coding, per-source filter chips, zoom-to-fit, node hover tooltips, click-to-focus cameraPosition, and a selected-node panel with a direct "Open original document" link. Edge source/target ids are normalised after force-graph mutation so filter toggles don't drop edges.
+### Compliance Smart Query Router (NEW, Apr 24 2026)
+- **Problem**: Flat RAG and GraphRAG each shine for different query types — using one for everything wastes latency/budget on the "wrong" questions.
+- **Solution**: `services/compliance_query_router.py` — Claude Sonnet 4.5 classifier with regex heuristic fallback. Classifies each question into one of:
+  - `narrow`    → flat RAG (top_k=10, no graph) — single factual lookups
+  - `multihop`  → flat RAG + structural GraphRAG overlay (top_k=12, subgraph in response) — relational questions
+  - `thematic`  → flat RAG + wider GraphRAG overlay (top_k=14, subgraph) — evolution/synthesis questions
+- **Endpoint**: `POST /api/compliance/smart-research` — one-call experience; returns `{mode, classifier, answer, citations, subgraph?}`. Frontend POSTs here by default and renders a mode badge (sky=narrow, fuchsia=multihop, amber=thematic) beside each answer so the user can tell which path powered it.
+- **force_mode** param lets the user override the classifier (useful for retries & debugging).
+- **Latency**: all three modes complete in <30s under warm TF-IDF store. LLM entity enrichment is deferred to `POST /api/compliance/graph/query` (triggered by the "View 3D Graph" button) so the main research call never approaches the k8s 60s ingress timeout.
+- **`ComplianceResearchPanel` graph reuse**: multi-hop/thematic answers embed the structural subgraph, so clicking "View 3D Graph" opens instantly (no loading spinner) with a ready-to-render 3D network. Narrow answers fall back to the lazy `/graph/query` path.
 
-### Compliance Duplicate Cleanup (NEW, Apr 24 2026)
-- `POST /api/compliance/dedupe` admin endpoint — group-by `url` (default) or `(source, circular_no)`, keep first doc per group, delete extras + their chunks. `dry_run` flag for preview. After delete, rebuilds TF-IDF for affected sources. Current DB: 7 duplicate groups detected (all on NSE, not SEBI as previously assumed).
+### Compliance GraphRAG + 3D Visualization (Apr 24 2026)
+- GraphRAG layer (`services/compliance_graph.py`): structural graph (circular ↔ circular via shared regulation keywords & same source-year clusters) + optional on-demand Claude Sonnet 4.5 entity/relation enrichment (REGULATION, COMPANY, CONCEPT, PERSON, DATE, EVENT). **Parallelised** with `asyncio.gather` so 8-10 enrichments finish in ~one LLM round-trip. Cached in `compliance_graph_entities` to avoid re-extraction. **Bug fix**: enrichment now reads the correct chunk field `text_chunk` (was `text` — returned empty context).
+- **TF-IDF thread-safety**: `services/compliance_rag.py` rebuild now builds the new vectorizer+matrix in local vars, then swaps all three attributes together under a `threading.Lock`, so concurrent `search()` calls never observe a half-fitted vectorizer (previously caused intermittent sklearn `NotFittedError` 500s during background ingestion cycles).
+- Endpoints: `POST /api/compliance/graph/query`, `GET /api/compliance/graph/subgraph`, `GET /api/compliance/graph/stats`.
+- Frontend (`ComplianceGraph3D.js`, `ComplianceResearchPanel.js`): every assistant answer with citations shows a **"View 3D Graph"** button. Clicking opens an immersive WebGL 3D force-graph with per-source colour coding, filter chips, zoom-to-fit, node hover tooltips, click-to-focus, and a selected-node panel with "Open original document" link.
+
+### Compliance Duplicate Cleanup (Apr 24 2026)
+- `POST /api/compliance/dedupe` admin endpoint — group-by `url` (default) or `(source, circular_no)`, keep first doc per group, delete extras + their chunks. `dry_run` flag for preview. After delete, rebuilds TF-IDF for affected sources. Current DB: 7 duplicate groups detected (all on NSE).
 
 ## What's Implemented (Earlier)
 
