@@ -1,4 +1,11 @@
 import React from 'react';
+// BMIA frontend build marker: 2026-04-25-graphrag-deploy-fix
+// (changing this comment forces a fresh chunked bundle hash on every redeploy
+// so we never serve a stale frontend with the wrong REACT_APP_BACKEND_URL.)
+const __BMIA_BUILD_ID__ = process.env.REACT_APP_BACKEND_URL || 'unknown';
+if (typeof window !== 'undefined') {
+  window.__BMIA_BUILD_ID__ = __BMIA_BUILD_ID__;
+}
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import './App.css';
 import TOTPGate from './components/TOTPGate';
