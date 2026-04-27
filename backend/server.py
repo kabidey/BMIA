@@ -311,6 +311,13 @@ async def lifespan(app: FastAPI):
                 #    Idempotent — skips already-rechunked or small circulars.
                 from daemons.rechunk import start_rechunk_daemon
                 start_rechunk_daemon(MONGO_URL, DB_NAME)
+
+                # 5) Warm up the sentence-transformer embedding model in the
+                #    background so the first compliance query doesn't pay the
+                #    3s model-load cost. Runs in a worker thread; no-op if the
+                #    package isn't installed.
+                from services.compliance_embed import warmup_async
+                asyncio.ensure_future(warmup_async())
             except Exception as e:
                 logger.error(f"Compliance init failed (non-fatal): {e}")
 

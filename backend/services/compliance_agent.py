@@ -64,6 +64,7 @@ def _format_context(chunks: List[dict]) -> tuple[str, List[dict]]:
             "category": category,
             "url": chunk.get("url", ""),
             "score": round(chunk.get("score", 0), 3),
+            "score_semantic": round(chunk["score_semantic"], 3) if "score_semantic" in chunk else None,
         })
     return "\n---\n".join(ctx_parts), citations
 

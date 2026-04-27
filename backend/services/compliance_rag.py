@@ -141,17 +141,20 @@ class ComplianceStore:
             self.built_at = datetime.utcnow()
         logger.info(f"COMPLIANCE RAG [{self.source}]: built — {len(chunks)} chunks, n_features={n_features}")
 
-    def search(self, query: str, top_k: int = 10, year_filter: Optional[int] = None) -> List[dict]:
-        """Two-stage retrieval:
+    def search(self, query: str, top_k: int = 10, year_filter: Optional[int] = None,
+               use_embeddings: bool = False) -> List[dict]:
+        """Two-stage retrieval (per-store):
           1) HashingTF-IDF cosine similarity — fast first-pass over all chunks.
           2) Feature-engineered reranker that boosts:
-             • Title-token overlap with the query (titles are the highest
-               signal-to-noise text in compliance circulars).
-             • Recency — recent circulars are more relevant to "current rule"
-               questions (decay over 4 years).
-             • Source diversity — penalises a 5th hit from the same regulator
-               in a row so callers see a balanced multi-source list.
-        Returns reranked top_k chunks."""
+             • Title-token overlap with the query.
+             • Recency (4-year decay).
+             • Source diversity (post-rerank within this single source).
+        The semantic embedding rerank (stage 3) is NOT done here — the
+        ComplianceRouter does it AFTER merging across all sources, so the
+        cross-source cosine ordering is consistent.
+
+        `use_embeddings` is kept as a back-compat flag for direct callers, but
+        defaults False because the router now owns this stage."""
         # Snapshot the (vectorizer, matrix, chunks) triple under the same lock
         # used by build(), so we transform & score against a consistent view.
         lock = getattr(self, "_swap_lock", None)
@@ -229,11 +232,11 @@ class ComplianceStore:
             per_source_seen[src] += 1
         diverse.sort(key=lambda x: x[1], reverse=True)
 
-        # Build the final result objects
-        results = []
-        for idx, final_score, base, tb, rb, pen in diverse[: top_k]:
+        # Build the intermediate result objects (stage-2 ranked)
+        stage2: List[dict] = []
+        for idx, final_score, base, tb, rb, pen in diverse[: max(top_k, 50)]:
             c = chunks[idx]
-            results.append({
+            stage2.append({
                 **c,
                 "score": final_score,
                 "score_base": base,
@@ -241,7 +244,18 @@ class ComplianceStore:
                 "score_recency_boost": rb,
                 "score_diversity_penalty": pen,
             })
-        return results
+
+        # ── Stage 3: semantic embedding rerank (optional) ──
+        if use_embeddings and len(stage2) > 1:
+            try:
+                from services.compliance_embed import rerank as embed_rerank
+                stage2 = embed_rerank(query, stage2, top_k=top_k, weight=0.6)
+            except Exception as e:
+                logger.warning(f"COMPLIANCE RAG [{self.source}]: embed rerank skipped ({e})")
+                stage2 = stage2[:top_k]
+        else:
+            stage2 = stage2[:top_k]
+        return stage2
 
 
 class ComplianceRouter:
@@ -270,28 +284,45 @@ class ComplianceRouter:
         sources: Optional[List[str]] = None,
         year_filter: Optional[int] = None,
         top_k: int = 10,
+        use_embeddings: bool = True,
     ) -> List[dict]:
-        """Search across selected sources and merge by score."""
+        """Search across selected sources, merge, then run a single
+        cross-source semantic embedding rerank as the final stage. This makes
+        the cosine ordering consistent — a SEBI chunk with sem=0.6 will beat
+        a BSE chunk with sem=0.3 regardless of how the per-source lex scores
+        were normalised."""
         sources = sources or ["nse", "bse", "sebi"]
+        # Over-fetch from each source so the global rerank has real choice
+        per_source_k = max(top_k * 2, 20)
         merged = []
         for src in sources:
             store = self.stores.get(src.lower())
             if store and store.is_ready():
-                results = store.search(query, top_k=top_k, year_filter=year_filter)
+                results = store.search(
+                    query, top_k=per_source_k, year_filter=year_filter,
+                    use_embeddings=False,  # rerank globally below
+                )
                 merged.extend(results)
-        # Dedupe by (source, circular_no, chunk_idx) and keep highest score
+
+        # Dedupe by (source, circular_no, chunk_idx)
         dedupe = {}
         for r in merged:
             key = (r.get("source"), r.get("circular_no"), r.get("chunk_idx", 0))
             if key not in dedupe or r["score"] > dedupe[key]["score"]:
                 dedupe[key] = r
-        # Sort by score then recency
-        sorted_results = sorted(
-            dedupe.values(),
-            key=lambda x: (x["score"], x.get("date_iso", "")),
-            reverse=True,
-        )
-        return sorted_results[:top_k]
+        candidates = list(dedupe.values())
+        # First-pass sort by lexical+features score (stable ordering)
+        candidates.sort(key=lambda x: (x.get("score", 0), x.get("date_iso", "")), reverse=True)
+
+        if use_embeddings and len(candidates) > 1:
+            try:
+                from services.compliance_embed import rerank as embed_rerank
+                # Pass the top 60 to the embedder (sweet spot for quality vs
+                # latency). Returns the final top_k blended-and-sorted.
+                return embed_rerank(query, candidates[:60], top_k=top_k, weight=0.65)
+            except Exception as e:
+                logger.warning(f"COMPLIANCE ROUTER: embed rerank skipped ({e})")
+        return candidates[:top_k]
 
     def stats(self) -> dict:
         return {

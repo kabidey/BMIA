@@ -5,6 +5,19 @@ Build a Tier-1 Quant Analyst for Indian Equity and Commodity markets.
 
 ## What's Implemented (Latest: Apr 2026)
 
+### Semantic Embedding Reranker (NEW, Apr 27 2026)
+- **`services/compliance_embed.py`** — singleton `sentence-transformers/all-MiniLM-L6-v2` (384-dim, 80MB on disk, ~200MB RAM resident). Lazy-loaded on first use; warmed up by lifespan in a worker thread. ~200ms to encode 50 candidate texts on CPU.
+- **Three-stage retrieval pipeline**:
+  1. HashingTF-IDF first-pass (per-source) → top 20–60 candidates per source.
+  2. Feature-engineered rerank (per-source): `base × title_boost × recency_boost`, then source-diversity penalty.
+  3. **Global semantic embedding rerank** (cross-source, in `ComplianceRouter.search()`) — blends `0.35 × lex_norm + 0.65 × cosine_sem` on the merged top-60 to produce the final top-K.
+- **Verified quality jump on preview**:
+  - ESG → "Industry Standards on Reporting of BRSR Core" + "BRSR Core - Framework for assurance" (was: bank-guarantee/demat-account noise)
+  - Insider-trading paraphrase ("how quickly must directors disclose…") → SEBI Order + proprietary trading disclosure (was: random)
+  - Algo trading → "System Audit of Trading Members" + "Broad guidelines on Algorithmic Trading" (was: generic)
+- **Citation API** now exposes `score` (blended) and `score_semantic` (raw cosine) so the UI can show users *why* each citation ranked where it did.
+- **`requirements.txt`** updated with `sentence-transformers==5.4.1`, `transformers==5.6.2`, `safetensors==0.7.0`. Pod must have ≥2GB RAM (preview is on a 31GB machine post-OOM-incident).
+
 ### Compliance Re-Chunking + Reranker (NEW, Apr 27 2026)
 - **Re-chunk daemon (`daemons/rechunk.py`)**: walks every circular with > 30 chunks, stitches existing chunks together (overlap-aware), splits with the new `CHUNK_SIZE=1600 / OVERLAP=200`, replaces atomically. Idempotent — skips already-rechunked or already-small circulars. Auto-starts via lifespan after the TF-IDF build. Live preview: 501,018 → 229,825 chunks (54% reduction) in ~minutes; avg chunks/circular dropped from 105.8 → 48.5.
 - **`CHUNK_SIZE=1600 / OVERLAP=200`** new defaults (was 800/200) — controlled via env so future ingests produce larger semantic units (whole sections instead of half-paragraphs). Set in `services/compliance_rag.py`.
