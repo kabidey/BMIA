@@ -53,15 +53,26 @@ def _patch_state(db, **fields):
 
 
 def _find_pending(db, limit: int) -> List[dict]:
-    """Find circulars that don't yet have an entry in compliance_graph_entities."""
+    """Find regulator-issued circulars that don't yet have an entry in
+    compliance_graph_entities. Company filings (BSE corporate announcements,
+    AGM/EGM, Corp Action) are skipped — extracting entities from them would
+    burn LLM budget on noise."""
+    from services.compliance_filters import regulatory_categories
+
     # Build the set of already-extracted IDs (fast single distinct query)
     done_ids = set(db.compliance_graph_entities.distinct("circular_id"))
     pending: List[dict] = []
     # Sort newest-first so recent circulars get their entities extracted before
     # older history — matches how users tend to query.
+    or_clauses = []
+    for src in ("nse", "bse", "sebi"):
+        cats = regulatory_categories(src)
+        if cats:
+            or_clauses.append({"source": src, "category": {"$in": cats}})
+    or_clauses.append({"category": {"$regex": "^bulk_upload"}})
     cursor = (
         db.compliance_circulars
-        .find({}, {"_id": 0, "source": 1, "circular_no": 1, "title": 1})
+        .find({"$or": or_clauses}, {"_id": 0, "source": 1, "circular_no": 1, "title": 1})
         .sort("date_iso", -1)
     )
     for doc in cursor:

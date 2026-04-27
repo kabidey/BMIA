@@ -21,7 +21,7 @@ from datetime import datetime
 from typing import List, Optional
 
 import numpy as np
-from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.feature_extraction.text import HashingVectorizer, TfidfTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 
 logger = logging.getLogger(__name__)
@@ -50,9 +50,13 @@ def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVE
 
 @dataclass
 class ComplianceStore:
-    """TF-IDF store for one compliance source (NSE / BSE / SEBI)."""
+    """Hashing-TF-IDF store for one compliance source (NSE / BSE / SEBI).
+
+    Uses HashingVectorizer + TfidfTransformer so memory is constant regardless
+    of corpus size — critical because NSE alone has 490k+ chunks and a
+    growing-vocab TfidfVectorizer was OOM-killing the 1GB pod during fit."""
     source: str
-    vectorizer: Optional[TfidfVectorizer] = None
+    vectorizer: Optional[object] = None       # the Hashing+Tfidf pipeline
     matrix: Optional[np.ndarray] = None
     chunks: List[dict] = None
     built_at: Optional[datetime] = None
@@ -64,37 +68,76 @@ class ComplianceStore:
         """Load all chunks for this source from MongoDB and build the index.
         Builds into local vars first, then swaps all three attributes together
         under a lock so a concurrent search() never observes a half-initialised
-        vectorizer (which would raise sklearn NotFittedError)."""
+        store (which would raise sklearn NotFittedError).
+
+        Only loads chunks belonging to REGULATOR-ISSUED circulars. Company
+        filings (BSE Announcements, AGM/EGM, Corp Action…) are excluded so the
+        index isn't polluted with company-specific noise that drowns out
+        genuine regulatory language."""
         import asyncio
+        from services.compliance_filters import regulatory_categories
+
         if not hasattr(self, "_swap_lock") or self._swap_lock is None:
             self._swap_lock = threading.Lock()
 
-        cursor = db.compliance_chunks.find({"source": self.source}, {"_id": 0})
+        cats = regulatory_categories(self.source)
+        query: dict = {"source": self.source}
+        if cats:
+            query["$or"] = [
+                {"category": {"$in": cats}},
+                {"category": {"$regex": "^bulk_upload"}},
+            ]
+
+        cursor = db.compliance_chunks.find(query, {"_id": 0})
         chunks = await cursor.to_list(length=None)
         if not chunks:
-            logger.warning(f"COMPLIANCE RAG [{self.source}]: no chunks — skipping build")
+            logger.warning(f"COMPLIANCE RAG [{self.source}]: no regulatory chunks — skipping build")
             with self._swap_lock:
                 self.chunks = []
             return
 
         texts = [c["text_chunk"] for c in chunks]
-        max_df = 0.95 if len(texts) >= 10 else 1.0
-        new_vec = TfidfVectorizer(
-            max_features=50000, ngram_range=(1, 2),
-            stop_words="english", lowercase=True,
-            min_df=1, max_df=max_df,
+        # Hashing-TF-IDF pipeline:
+        #  • HashingVectorizer hashes tokens directly into 2^18 = 262,144 buckets
+        #    → constant memory, no growing vocab dict (the previous OOM cause).
+        #  • Bigrams included; trigrams skipped to keep transform CPU low.
+        #  • TfidfTransformer applies BM25-style sublinear_tf weighting on top.
+        #  • Stop-words are sklearn's English list; lowercase=True; binary=False.
+        n_features = 1 << 18  # 262,144
+        hv = HashingVectorizer(
+            n_features=n_features,
+            ngram_range=(1, 2),
+            stop_words="english",
+            lowercase=True,
+            alternate_sign=False,   # always non-negative (TF-IDF expects this)
+            norm=None,              # let TfidfTransformer normalise
         )
-        # fit_transform is CPU-bound — run in a worker thread so we don't block
-        # the FastAPI event loop (critical for deploy health-probes to succeed
-        # while the index is being built on startup).
-        new_matrix = await asyncio.to_thread(new_vec.fit_transform, texts)
+        tfidf = TfidfTransformer(sublinear_tf=True, norm="l2")
+
+        # Build in a worker thread so we don't block the FastAPI event loop.
+        def _fit() -> tuple:
+            counts = hv.transform(texts)            # streaming, memory-bounded
+            tfidf.fit(counts)
+            mat = tfidf.transform(counts)
+            return mat, hv, tfidf
+
+        new_matrix, hv, tfidf = await asyncio.to_thread(_fit)
+        # Wrap as a tiny pipeline object exposing .transform() the same way
+        # downstream code expected from TfidfVectorizer.
+        class _HashingTfidfPipeline:
+            def __init__(self, hv, tfidf):
+                self.hv = hv
+                self.tfidf = tfidf
+            def transform(self, raw_docs):
+                return self.tfidf.transform(self.hv.transform(raw_docs))
+        new_vec = _HashingTfidfPipeline(hv, tfidf)
 
         with self._swap_lock:
             self.vectorizer = new_vec
             self.matrix = new_matrix
             self.chunks = chunks
             self.built_at = datetime.utcnow()
-        logger.info(f"COMPLIANCE RAG [{self.source}]: built — {len(chunks)} chunks, vocab={len(new_vec.vocabulary_)}")
+        logger.info(f"COMPLIANCE RAG [{self.source}]: built — {len(chunks)} chunks, n_features={n_features}")
 
     def search(self, query: str, top_k: int = 10, year_filter: Optional[int] = None) -> List[dict]:
         # Snapshot the (vectorizer, matrix, chunks) triple under the same lock

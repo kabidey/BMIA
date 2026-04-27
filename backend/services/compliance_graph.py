@@ -89,10 +89,25 @@ def _extract_regulation_tags(text: str) -> Set[str]:
 def build_structural_graph(db: Database, source_filter: Optional[List[str]] = None,
                            max_nodes: int = 5000) -> Dict:
     """Build a structural graph over the circular corpus. Stored in-memory,
-    re-built on demand (few seconds for 5k nodes)."""
-    query = {}
+    re-built on demand (few seconds for 5k nodes). Filters to regulatory-issued
+    circulars only — company filings would drown the graph in single-use
+    nodes with no connective structure."""
+    from services.compliance_filters import regulatory_categories
+
+    query: dict = {}
     if source_filter:
         query["source"] = {"$in": source_filter}
+
+    # Regulatory-only filter: per-source category allow-list union with
+    # bulk_upload escape hatch.
+    sources_in_play = source_filter or ["nse", "bse", "sebi"]
+    or_clauses = []
+    for src in sources_in_play:
+        cats = regulatory_categories(src)
+        if cats:
+            or_clauses.append({"source": src, "category": {"$in": cats}})
+    or_clauses.append({"category": {"$regex": "^bulk_upload"}})
+    query["$or"] = or_clauses
 
     circulars = list(db.compliance_circulars.find(
         query,
