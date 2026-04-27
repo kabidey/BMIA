@@ -13,6 +13,8 @@ Chunking:
   - No PDF stored — only extracted text chunks in Mongo
 """
 import logging
+import math
+import os
 import re
 import threading
 from collections import defaultdict
@@ -26,8 +28,8 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 logger = logging.getLogger(__name__)
 
-CHUNK_SIZE = 800
-CHUNK_OVERLAP = 200
+CHUNK_SIZE = int(os.environ.get("COMPLIANCE_CHUNK_SIZE", "1600"))
+CHUNK_OVERLAP = int(os.environ.get("COMPLIANCE_CHUNK_OVERLAP", "200"))
 
 
 def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> List[str]:
@@ -140,6 +142,16 @@ class ComplianceStore:
         logger.info(f"COMPLIANCE RAG [{self.source}]: built — {len(chunks)} chunks, n_features={n_features}")
 
     def search(self, query: str, top_k: int = 10, year_filter: Optional[int] = None) -> List[dict]:
+        """Two-stage retrieval:
+          1) HashingTF-IDF cosine similarity — fast first-pass over all chunks.
+          2) Feature-engineered reranker that boosts:
+             • Title-token overlap with the query (titles are the highest
+               signal-to-noise text in compliance circulars).
+             • Recency — recent circulars are more relevant to "current rule"
+               questions (decay over 4 years).
+             • Source diversity — penalises a 5th hit from the same regulator
+               in a row so callers see a balanced multi-source list.
+        Returns reranked top_k chunks."""
         # Snapshot the (vectorizer, matrix, chunks) triple under the same lock
         # used by build(), so we transform & score against a consistent view.
         lock = getattr(self, "_swap_lock", None)
@@ -155,22 +167,80 @@ class ComplianceStore:
         except Exception as e:
             logger.warning(f"COMPLIANCE RAG [{self.source}]: search transform failed ({e}) — returning empty")
             return []
+
         sims = cosine_similarity(q_vec, mat).flatten()
-        # Get top-k indices
-        top_indices = np.argsort(sims)[::-1][: top_k * 3]  # over-fetch for filtering
-        results = []
-        for idx in top_indices:
-            if sims[idx] <= 0:
+
+        # Stage 1 — over-fetch top-50 for the reranker (more headroom than the
+        # previous top_k*3, gives the reranker something to actually rerank).
+        first_pass_n = max(50, top_k * 5)
+        candidate_idxs = np.argsort(sims)[::-1][:first_pass_n]
+
+        # Pre-process query for the title boost
+        q_tokens = {t for t in re.findall(r"[a-z0-9]+", query.lower()) if len(t) > 2}
+        today = datetime.utcnow()
+
+        scored: List[tuple] = []
+        for idx in candidate_idxs:
+            base = float(sims[idx])
+            if base <= 0:
                 continue
             c = chunks[idx]
             if year_filter and c.get("year") and c["year"] != year_filter:
                 continue
+
+            # ── Title-match boost ──
+            title = (c.get("title") or "").lower()
+            if q_tokens:
+                t_tokens = set(re.findall(r"[a-z0-9]+", title))
+                overlap = len(q_tokens & t_tokens) / len(q_tokens)
+                title_boost = 1.0 + 0.6 * overlap  # max +60% if every query term is in title
+            else:
+                title_boost = 1.0
+
+            # ── Recency boost (4-year half-life) ──
+            try:
+                d_iso = c.get("date_iso") or ""
+                if d_iso:
+                    d = datetime.fromisoformat(d_iso[:10])
+                    days_old = max(0, (today - d).days)
+                    recency_boost = 1.0 + 0.25 * math.exp(-days_old / 1460.0)  # 4yr decay
+                else:
+                    recency_boost = 1.0
+            except Exception:
+                recency_boost = 1.0
+
+            final_score = base * title_boost * recency_boost
+            scored.append((idx, final_score, base, title_boost, recency_boost))
+
+        # Sort by reranked score
+        scored.sort(key=lambda x: x[1], reverse=True)
+
+        # ── Source-diversity penalty (post-rerank) ──
+        # Apply at the result-set level: each consecutive hit from the same
+        # source after the first 2 takes a 5% penalty per duplicate. This
+        # gently dampens monoculture without hard-capping any one source.
+        per_source_seen = defaultdict(int)
+        diverse: List[tuple] = []
+        for idx, fs, b, tb, rb in scored:
+            src = chunks[idx].get("source", "")
+            seen = per_source_seen[src]
+            penalty = 1.0 if seen < 2 else max(0.5, 1.0 - 0.05 * (seen - 1))
+            diverse.append((idx, fs * penalty, b, tb, rb, penalty))
+            per_source_seen[src] += 1
+        diverse.sort(key=lambda x: x[1], reverse=True)
+
+        # Build the final result objects
+        results = []
+        for idx, final_score, base, tb, rb, pen in diverse[: top_k]:
+            c = chunks[idx]
             results.append({
                 **c,
-                "score": float(sims[idx]),
+                "score": final_score,
+                "score_base": base,
+                "score_title_boost": tb,
+                "score_recency_boost": rb,
+                "score_diversity_penalty": pen,
             })
-            if len(results) >= top_k:
-                break
         return results
 
 

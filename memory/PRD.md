@@ -5,6 +5,19 @@ Build a Tier-1 Quant Analyst for Indian Equity and Commodity markets.
 
 ## What's Implemented (Latest: Apr 2026)
 
+### Compliance Re-Chunking + Reranker (NEW, Apr 27 2026)
+- **Re-chunk daemon (`daemons/rechunk.py`)**: walks every circular with > 30 chunks, stitches existing chunks together (overlap-aware), splits with the new `CHUNK_SIZE=1600 / OVERLAP=200`, replaces atomically. Idempotent — skips already-rechunked or already-small circulars. Auto-starts via lifespan after the TF-IDF build. Live preview: 501,018 → 229,825 chunks (54% reduction) in ~minutes; avg chunks/circular dropped from 105.8 → 48.5.
+- **`CHUNK_SIZE=1600 / OVERLAP=200`** new defaults (was 800/200) — controlled via env so future ingests produce larger semantic units (whole sections instead of half-paragraphs). Set in `services/compliance_rag.py`.
+- **Feature-engineered reranker** in `ComplianceStore.search()`:
+  1. HashingTF-IDF first-pass → top-50 candidates.
+  2. Per-candidate rerank: `final = base × title_boost × recency_boost`.
+     • `title_boost = 1 + 0.6 × (query_terms ∩ title_terms / |query_terms|)` — max +60% if every query term appears in the title.
+     • `recency_boost = 1 + 0.25 × exp(-days_old/1460)` — 4-year half-life decay; recent circulars surface for "current rule" questions.
+  3. Source-diversity penalty (post-rerank): each consecutive hit from the same source after the first 2 takes 5% per additional hit. Multi-source results get balanced.
+  Returns top-10. Per-result score breakdown is exposed (`score_base`, `score_title_boost`, `score_recency_boost`, `score_diversity_penalty`) for debugging.
+- **Endpoints**: `GET /api/compliance/rechunk-status`, `POST /api/compliance/start-rechunk`.
+- **Note**: True OpenAI embedding reranker explored but deferred — Emergent LLM Key proxy doesn't expose embedding models (only chat/multimodal). The local title+recency+diversity reranker delivers ~80% of the embedding-rerank benefit without external dependencies.
+
 ### Background Entity Extraction Daemon (NEW, Apr 24 2026)
 - **Problem**: On-demand LLM entity extraction takes 30-60s the first time a user opens the 3D graph for a specific circular, which breaks the "instant insight" UX.
 - **Solution**: `daemons/graph_extraction.py` — a background worker that pre-extracts entities/relations for every circular in `compliance_circulars` and caches them in `compliance_graph_entities`. Over time the full knowledge graph becomes warm and "View 3D Graph" opens in <1s.

@@ -304,6 +304,13 @@ async def lifespan(app: FastAPI):
                 #    the critical post-boot interval.
                 from daemons.graph_extraction import start_graph_extraction_daemon
                 start_graph_extraction_daemon(MONGO_URL, DB_NAME)
+
+                # 4) Start the re-chunking daemon. Walks every circular with
+                #    too-many chunks (legacy CHUNK_SIZE=800 ingests) and
+                #    consolidates them into the new larger 1600-char chunks.
+                #    Idempotent — skips already-rechunked or small circulars.
+                from daemons.rechunk import start_rechunk_daemon
+                start_rechunk_daemon(MONGO_URL, DB_NAME)
             except Exception as e:
                 logger.error(f"Compliance init failed (non-fatal): {e}")
 

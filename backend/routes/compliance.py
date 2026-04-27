@@ -298,6 +298,32 @@ async def graph_start_extraction():
         raise HTTPException(500, f"Could not start extraction daemon: {e}")
 
 
+@router.get("/rechunk-status")
+async def rechunk_status(request: Request):
+    """Progress for the background re-chunking daemon."""
+    db = request.app.db
+    state = await db.compliance_rechunk_state.find_one(
+        {"_id": "rechunk"}, {"_id": 0},
+    ) or {"phase": "not_started"}
+    chunks_total = await db.compliance_chunks.count_documents({})
+    circulars_total = await db.compliance_circulars.count_documents({})
+    avg = round(chunks_total / circulars_total, 1) if circulars_total else 0
+    return {
+        **state,
+        "chunks_total": chunks_total,
+        "circulars_total": circulars_total,
+        "avg_chunks_per_circular": avg,
+    }
+
+
+@router.post("/start-rechunk")
+async def start_rechunk():
+    """Manually kick off the re-chunk daemon. Idempotent."""
+    from daemons.rechunk import start_rechunk_daemon
+    start_rechunk_daemon(os.environ["MONGO_URL"], os.environ["DB_NAME"])
+    return {"status": "started"}
+
+
 @router.get("/graph/stats")
 async def graph_stats_ep(request: Request):
     """Summary stats for the GraphRAG layer."""
