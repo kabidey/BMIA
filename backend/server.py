@@ -150,6 +150,61 @@ async def _run_auto_migrations():
                 f"AUTO-MIGRATION: 2026-04-scraper-v1 complete "
                 f"(fixed {fixed} rows, reset sebi+bse workers)"
             )
+
+        # ── 2026-04-regulatory-purge ─────────────────────────────────
+        # Removes company-filing pollution from the corpus so compliance
+        # research only surfaces material ISSUED BY NSE/BSE/SEBI, never
+        # filings RECEIVED FROM listed companies. Also rebuilds the
+        # TF-IDF stores so the cleaned corpus is searchable immediately.
+        if "2026-04-regulatory-purge" not in done:
+            logger.info("AUTO-MIGRATION: 2026-04-regulatory-purge running")
+            bse_noise_cats = [
+                "Company Update", "Insider Trading / SAST",
+                "AGM/EGM", "Corp. Action", "Corp Action",
+            ]
+            # Snapshot the (source, circular_no) pairs we're about to delete
+            # so we can also remove their chunks.
+            bse_targets = list(sync_db.compliance_circulars.find(
+                {"source": "bse", "category": {"$in": bse_noise_cats}},
+                {"_id": 0, "circular_no": 1},
+            ))
+            sebi_targets = list(sync_db.compliance_circulars.find(
+                {"source": "sebi", "category": {"$regex": r"^intmid="}},
+                {"_id": 0, "circular_no": 1},
+            ))
+
+            r1 = sync_db.compliance_circulars.delete_many(
+                {"source": "bse", "category": {"$in": bse_noise_cats}},
+            )
+            r2 = sync_db.compliance_circulars.delete_many(
+                {"source": "sebi", "category": {"$regex": r"^intmid="}},
+            )
+            chunk_del = 0
+            if bse_targets:
+                cnos = [t["circular_no"] for t in bse_targets]
+                rc = sync_db.compliance_chunks.delete_many(
+                    {"source": "bse", "circular_no": {"$in": cnos}},
+                )
+                chunk_del += rc.deleted_count
+            if sebi_targets:
+                cnos = [t["circular_no"] for t in sebi_targets]
+                rc = sync_db.compliance_chunks.delete_many(
+                    {"source": "sebi", "circular_no": {"$in": cnos}},
+                )
+                chunk_del += rc.deleted_count
+
+            sync_db.compliance_migrations.insert_one({
+                "name": "2026-04-regulatory-purge",
+                "ran_at": datetime.utcnow().isoformat(),
+                "deleted_bse": r1.deleted_count,
+                "deleted_sebi": r2.deleted_count,
+                "deleted_chunks": chunk_del,
+            })
+            logger.info(
+                "AUTO-MIGRATION: 2026-04-regulatory-purge complete "
+                f"(bse={r1.deleted_count} sebi={r2.deleted_count} chunks={chunk_del}). "
+                "Schedule a TF-IDF rebuild — handled by the deferred init."
+            )
         client.close()
     except Exception as e:
         logger.error(f"AUTO-MIGRATION failed (non-fatal): {e}")
