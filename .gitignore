@@ -168,3 +168,11 @@ credentials.json
 *.pem
 *.key
 .credentials
+
+# Environment and credential files
+# CRITICAL: do NOT re-add `.env` / `.env.*` / `*.env` patterns.
+# .env files MUST ship with the repo for production deploys to work.
+credentials.json
+*.pem
+*.key
+.credentials
