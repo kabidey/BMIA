@@ -31,20 +31,34 @@ _MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 
 def get_embedder():
     """Returns the singleton SentenceTransformer model. Lazy-loaded under a
-    lock so concurrent first-callers don't race."""
+    lock so concurrent first-callers don't race.
+
+    Returns False (cached) if sentence-transformers is not installed (e.g.
+    on the resource-constrained production pod where the package is omitted
+    from requirements.txt). Callers must treat None/False as 'reranker
+    unavailable, fall back to lexical ranking'."""
     global _MODEL
     if _MODEL is not None:
         return _MODEL
     with _MODEL_LOCK:
         if _MODEL is None:
             try:
-                from sentence_transformers import SentenceTransformer
+                # Local import — sentence-transformers is an OPTIONAL runtime
+                # dependency. On 250m CPU / 1Gi pods we don't ship it; the
+                # reranker silently degrades to lex-only ordering.
+                from sentence_transformers import SentenceTransformer  # noqa: WPS433
                 logger.info(f"COMPLIANCE EMBED: loading {_MODEL_NAME} (first use)")
                 _MODEL = SentenceTransformer(_MODEL_NAME)
                 logger.info("COMPLIANCE EMBED: model ready")
+            except ImportError:
+                logger.info(
+                    "COMPLIANCE EMBED: sentence-transformers not installed — "
+                    "embedding reranker disabled, falling back to lexical ranking"
+                )
+                _MODEL = False  # cache the absence
             except Exception as e:
                 logger.error(f"COMPLIANCE EMBED: model load failed — {e}")
-                _MODEL = False  # cache the failure so we don't retry every call
+                _MODEL = False
     return _MODEL
 
 
