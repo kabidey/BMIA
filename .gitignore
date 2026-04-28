@@ -176,11 +176,8 @@ credentials.json
 *.pem
 *.key
 .credentials
--e 
-# Environment and credential files
-.env
-.env.*
-*.env
+
+# Environment and credential files — do NOT re-add .env patterns.
 credentials.json
 *.pem
 *.key
