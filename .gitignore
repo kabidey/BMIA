@@ -149,11 +149,12 @@ credentials.json
 *.pem
 *.key
 .credentials
--e 
+
 # Environment and credential files
-.env
-.env.*
-*.env
+# IMPORTANT: do NOT add `.env` / `.env.*` / `*.env` patterns here — those
+# files are required to ship with the repo so the platform can inject prod
+# values at deploy time. The pytest sanity-check `test_gitignore_sanity.py`
+# guards against accidental re-adds.
 credentials.json
 *.pem
 *.key
