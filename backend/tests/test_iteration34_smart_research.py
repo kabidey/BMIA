@@ -4,7 +4,7 @@ import time
 import pytest
 import requests
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://equity-commodity-hub.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://bharat-quant-lab.preview.emergentagent.com").rstrip("/")
 
 HEADERS = {"Content-Type": "application/json"}
 

@@ -1,144 +1,161 @@
-<analysis>Here is the handover summary based on the provided LLM message history:
-
-**original_problem_statement**: 
+<analysis>**original_problem_statement**: 
 Build the Bharat Market Intel Agent (BMIA), a Tier-1 Quant Analyst specializing in Indian Equity and Commodity markets. 
-*PRODUCT REQUIREMENTS*: 
+PRODUCT REQUIREMENTS: 
 - Build a professional-grade simulation tool (4-Model ML Ensemble + Monte Carlo) for portfolio forecasting.
 - Create a Make Your Own custom portfolio feature with manual rebalancing and persistence.
 - Implement OrgLens API for employee verification and JWT-based authentication.
-- Create a comprehensive Big Market terminal dashboard.
-- *NEW*: Create a Compliance Menu with a NotebookLM-style RAG AI Agent using Claude Sonnet 4.5. It must consume and vectorize all NSE, BSE, and SEBI circulars from 2010 to date, allowing users to research massive data accurately without persistent PDF storage.
+- Create a comprehensive Big Market terminal dashboard with Intel features.
+- Create a Compliance Menu with a NotebookLM-style RAG AI Agent using Claude Sonnet 4.5 over NSE, BSE, and SEBI circulars.
+- NEW: Build a Fund Management menu adapting the  multi-agent LLM framework for the Indian market (3,400 NSE/BSE stocks) with a read-only research panel and SSE streaming agent interactions.
 
 **User's preferred language**: English (INSTRUCT next agent to respond in English only)
 
 **what currently exists?** 
-A mature, modular AI Market Scanner and fully autonomous Portfolio Manager. It features AI-managed portfolios backed by an optimized 4-Model ML Ensemble. The system enforces strict PMS accounting (immediate auto-reinvestment on stop-loss, honest P&L vs initial capital). It includes comprehensive audit logging, Guidance AI, Screener.in-style stock views, and a Koyfin-style Big Market terminal. Write operations are guarded strictly by IST Market Hours logic.
+A mature, modular AI Market Scanner, fully autonomous Portfolio Manager, Big Market terminal, and a heavily optimized Compliance RAG Agent. The Compliance RAG now includes a smart query router (narrow/multihop/thematic), GraphRAG 3D visualization, background entity extraction, and a 3-stage retrieval pipeline (Hashing TF-IDF + local  semantic reranker). The backend features idempotent auto-migrations for DB cleanup.
 
 **Last working item**: 
-    - Last item agent was working: Building the Compliance Menu feature (NotebookLM-style RAG Agent for NSE/BSE/SEBI circulars). The agent initialized the required blank files (, , ) and fetched the Emergent LLM key integration playbook for Claude Sonnet 4.5.
+    - Last item agent was working: Building the Fund Management feature based on the  multi-agent hierarchical pipeline (Analysts -> Researchers -> Trader -> Risk Manager -> Fund Manager). The agent just finished creating the core backend files (, ,  routes).
     - Status: IN PROGRESS
     - Agent Testing Done: N
-    - Which testing method agent to use? backend testing agent
+    - Which testing method agent to use? both
     - User Testing Done: N
 
 **All Pending/In progress Issue list**: 
-  None explicitly pending. All reported bugs regarding P&L math, UI deployment errors (NaN/Inf JSON issues), and missing reinvestments were resolved and tested comprehensively.
+  Issue 1: Monitor Memory Usage / OOM Kills
+     - Attempted fixes: The pod previously suffered repeated OOM kills during TF-IDF rebuilds, causing the container to reinitialize and revert local files (like ). Switched to  and the platform upgraded the pod to 16-core/64GB. 
+     - Next debug checklist: Be mindful of memory consumption when loading  and processing 3,400 stocks in the new Fund Management multi-agent workflow.
+     - Why fix this issue and what will be achieved with the fix? Prevents the pod from crashing and losing uncommitted work.
+     - Status: RESOLVED (User successfully pushed to GitHub, making codebase state durable, but needs monitoring).
+     - Is recurring issue? Y
+     - Should Test frontend/backend/both after fix? backend
+     - Blocked on other issue: None
 
 **In progress Task List**: 
-  Task 1: Compliance Menu & Circulars RAG Agent
-     - Where to resume: Implement background ingestion of circulars in , build the vectorization/chunking logic in , and set up the Claude Sonnet 4.5 chat agent in . Finally, build the frontend UI (similar to Guidance modal) and wire up backend routes.
-     - What will be achieved with this? A bulletproof NotebookLM-style RAG interface for regulatory research across decades of market circulars.
+  Task 1: Fund Management (TradingAgents) Implementation
+     - Where to resume: Backend files (, , ) were just generated. You need to wire the new router into , then build the frontend UI (a read-only research panel allowing users to input a stock/query, which streams the 6-agent debate/pipeline via SSE). Finally, add Fund Management to the main app navigation.
+     - What will be achieved with this? Adds an autonomous multi-agent financial research simulator to the platform.
      - Status: IN PROGRESS
-     - Should Test frontend/backend/both after fix? Both
-     - Blocked on something: No. Base files and integration playbook are ready.
+     - Should Test frontend/backend/both after fix? both
+     - Blocked on something: None
 
 **Upcoming and Future Tasks**
     Upcoming Tasks:
-    - P1: Enhance Big Market Dashboard: Add Market Movers scatter, FII/DII flows, Earnings Calendar, Put-Call Ratio, Analyst Estimates, News.
-    - P2: Implement CSV/PDF export functionality for portfolio reports.
-    - P2: Add WebSocket/SSE for true real-time streaming of the Market Cockpit instead of polling.
+    - P1: Complete frontend and integration for Fund Management (TradingAgents).
+    - P2: Why this answer? UI debug toggle in the Compliance UI to expose citation scoring to users.
     
     Future Tasks:
-    - Add portfolio alerts: Push notifications when the daemon executes a rebalance swap or crosses a P&L threshold.
+    - Add portfolio alerts: Push notifications for rebalance/P&L.
     - Benchmark comparison dashboard.
+    - CSV/PDF export functionality for portfolio reports.
+    - Add WebSocket/SSE for true real-time streaming of the Market Cockpit instead of polling.
+    - Compliance Save research + Monday digest email.
+    - Full Microsoft GraphRAG (Leiden clustering + community summaries).
 
 **Completed work in this session**
-- PMS Accounting Overhaul: P&L calculated against immutable initial capital instead of shrunken invested amounts (DONE).
-- Strategy-Aware Auto Reinvest: Replaced idle cash holding with immediate, strategy-specific NIFTY-500 stock reinvestment on stop-out (DONE).
-- Reconciled Damaged Portfolios: Fixed 3 broken portfolios by redeploying phantom cash into thesis-appropriate picks (POWERGRID, ONGC, WIPRO) (DONE).
-- Deployment Blocker Fix (): Implemented global  to catch NaN/Inf pandas returns (DONE).
-- Capital Trail / Exit History UI: Frontend component to show exact entry/exit data and realized P&L per trade (DONE).
-- Market Hours Guard: Enforced strictly Mon-Fri 09:30-15:15 IST (excluding NSE holidays) for all construct/rebalance/trade endpoints (DONE).
+- Duplicate Cleanup &  fixes: Ran MongoDB deduplication and fixed  blocking  files, allowing production deploy to succeed (DONE)
+- Smart Query Router: Added  to route queries to flat RAG, multihop GraphRAG, or thematic search. (DONE)
+- Background Graph Extraction: Created  to build the knowledge graph in the background and added a 3D UI progress badge. (DONE)
+- Compliance Corpus Quality Overhaul: Created  to strip company filings (noise) from BSE/SEBI, rechunked text to 1600 chars via , and added  auto-migration. (DONE)
+- Semantic Reranker: Added a local  (all-MiniLM-L6-v2) embedding reranker to the compliance search pipeline in . (DONE)
 
 **Earlier issues found/mentioned but not fixed**
 None.
 
 **Known issue recurrence from previous fork**
-  - Issue recurrence in previous fork: Deployment failing due to NaN/Inf values slipping into JSON outputs.
-  - Recurrence count: 1
-  - Status: RESOLVED (Fixed via custom  middleware).
+  - Issue recurrence in previous fork: Pod memory limit exceeded (OOM) leading to container termination. 
+  - Recurrence count: 5+ times this session.
+  - Status: RESOLVED (Mitigated by  and platform pod upgrade to 64GB. The local  revert loop was broken by a successful GitHub push).
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
-- Frontend: React, Tailwind, Recharts
-- Backend: FastAPI, PyTorch, Scikit-learn (TF-IDF Vector Store), MongoDB
-- Agent/Integration: Claude Sonnet 4.5 via Emergent LLM Key (used for Compliance RAG)
-- strict PMS Accounting: Rebalance proceeds must never sit idle; they must be auto-reinvested to maintain NAV.
-- Market Hours Guard: Trading actions gated to active NSE market hours.
+- Frontend: React, Tailwind, Server-Sent Events (SSE) for agent streaming, WebGL (GraphRAG 3D).
+- Backend: FastAPI, , Scikit-learn, , Claude Sonnet 4.5 (via Emergent LLM Key).
+- Multi-Agent Pipeline: Hierarchical structure mimicking a trading firm (Data -> Analysts -> Debate -> Trader -> Fund Manager).
 
 **key DB schema**
   - : 
-  - *Expected*: : 
+  - : text chunks for RAG
+  - : tracks executed DB cleanup scripts
 
 **changes in tech stack**
-  - Added global  utility in FastAPI to sanitize float values.
-  - Added Claude Sonnet 4.5 via emergentintegrations for the Compliance Agent.
+  - Added , , and  to  for local embeddings.
 
 **All files of reference** 
-  -  (Created: Handles strategy-aware NIFTY-500 reinvestments)
-  -  (Created: Fast API response sanitization for NaN/Inf)
-  -  (Created: Time/holiday validation guard)
-  -  (Modified: PMS math fix)
-  -  (Created: Empty stub for new task)
-  -  (Created: Empty stub for new task)
-  -  (Created: Empty stub for new task)
+  -  (Created: multi-agent LLM pipeline)
+  -  (Created: NSE/BSE data fetching for agents)
+  -  (Created: SSE endpoints for the agent UI)
+  -  (Created)
+  -  (Created)
+  -  (Created)
+  -  (Created)
+  -  (Created)
+  -  (Updated: Wired new daemons and migrations)
+  -  (Updated: Enforced  file inclusion)
 
 **Areas that need refactoring**: 
-- Rename  to .
+-  & : These were just scaffolded. Review them to ensure they properly interact with the  (via ) before wiring to the frontend.
 
 **key api endpoints**
-  -  (Aggregated PMS stats)
-  -  (Math updated to base initial capital)
-  - *Pending*:  (To be created)
+  -  (NEW - SSE stream for agent pipeline)
+  -  
+  - 
 
 **Critical Info for New Agent** 
-  - **PMS Accounting Truth**: Rebalance math was entirely rewritten to match proper PMS behavior. No cash stays idle; stop-loss exits trigger immediate  to maintain 100% allocation. .
-  - **Market Hours**: Portfolios and auto-reinvests will *fail with HTTP 400* outside IST 09:30-15:15 Mon-Fri. If building tests, ensure time mocking or bypass logic if needed.
-  - **Compliance Task Context**: The user explicitly requested an architecture similar to Google NotebookLM. The background data ingestion of BSE/NSE/SEBI data can run slowly, but the RAG retrieval must be bulletproof and fast.
-  - **Claude Sonnet 4.5**: You MUST use the  library as per the playbook fetched in the last step to interact with the LLM. 
+  - The codebase state is currently safe as it was successfully pushed to GitHub.
+  - The new Fund Management task relies on Server-Sent Events (SSE) to stream the thought processes of multiple AI agents sequentially to the UI. Ensure the frontend handles SSE correctly.
+  - The LLM integration for the agents must use  with the . Review the scaffolded  to ensure it complies with the library's correct usage.
+  -  is installed. It loads models lazily/in background. Do not remove it from .
 
-**documents and test reports created in this job**
-  -  to  (Passing backend/frontend tests for accounting, auto-reinvest, market hours)
+**documents and test reports created in this job** 
+  - 
+  - 
+  - 
   -  (Updated)
 
 **Last 10 User Messages and any pending HUMAN messages** 
- 1. *User*: portfolio is making wrong calculations, after rebalancing its not recovering capital (Agent fixed base math)
- 2. *User*: Na, check bmia... and see the mess you have created (Agent investigated prod, found NaN issue and initial_capital discrepancy)
- 3. *User*: Use deployment agent to identify the issues... ValueError: Out of range float values (Agent created SafeJSONResponse)
- 4. *User*: Log into bmia... no lazy coding, deep dive and solve (Agent fixed P&L math using initial_capital standard)
- 5. *User*: make a section as where the loss is made... (Agent added Capital Trail/Exit History to UI)
- 6. *User*: Capital removed is cash in hand, is it loss in portfolio? ... No money is to be removed or kept idle (Agent implemented  logic)
- 7. *User*: Agrees to Strategy-Aware auto reinvestment and fixing damaged portfolios.
- 8. *User*: Agrees to expanding to NIFTY-500 universe for replenishment.
- 9. *User*: A hardcoded truth, all profolio creation, rebalancing must be done during market hours (Agent enforced IST market guards)
- 10. *User*: Create a menu Compliance same modal as guidance but here all NSE, BSE and SEBI circulars... stored in multiple RAG... Like notebookLM. (Agent started implementation).
+ 1. *User*: Pushed (Confirmed successful GitHub push to break OOM-reset loop).
+ 2. *User*: Confirmed  choices: 1) NSE/BSE 3400 stocks, 2) Read-only research panel, 3) Streaming agent panels via SSE.
+ 3. *User*: Lets build a spcial menu Fund Management, suite the repo towards Indian market... use whats there in BMIA. https://github.com/TauricResearch/TradingAgents
+ 4. *User*: Alerted agent to pod reinitialization (OOM kill).
+ 5. *User*: Notified agent about deployment logs failing due to missing pod for .
+ 6. *User*: Alerted agent to pod reinitialization (OOM kill).
+ 7. *User*: Alerted agent to pod reinitialization (OOM kill).
+ 8. *User*: What? The pod is a 16 core 64gb one
+ 9. *User*: Sent raw deployment failure logs indicating pip warnings and MANAGE_SECRETS failure.
+ 10. *User*: Ok end chat (Prior to triggering deployment).
 
 **Project Health Check:**
-- Broken: None
-- Mocked: None
+- Broken: None.
+- Mocked: None.
 
 **3rd Party Integrations** 
-  - Emergent LLM Key — Uses Emergent LLM Key (GPT-4.1 / Gemini 2.5 / Claude Sonnet 4.5 for Compliance)
+  - Emergent LLM Key — Uses Emergent LLM Key (Claude Sonnet 4.5 used extensively in RAG and the upcoming Fund Management multi-agent system)
   - OrgLens API — Requires User API Key ()
 
 **Testing status**
   - Testing agent used after significant changes: YES
-  - Troubleshoot agent used after agent stuck in loop: NO (Used deployment agent once)
-  - Test files created: , , , 
-  - Known regressions: None
+  - Troubleshoot agent used after agent stuck in loop: NO (Support agent was used for platform deployment bug)
+  - Test files created: 
+  - Known regressions: None currently.
 
 **Credentials to test flow:**
 OrgLens user:  / Password:  (Verify with )
 
 **What agent forgot to execute**
-None; the agent was in the middle of executing the Compliance RAG feature when the session ended.
+The agent generated the backend files for  but did not yet register the new  router in . This must be done before the frontend can communicate with it.
 
 **Debugging checklist for current issue**
-N/A - the current task is a new feature implementation (Compliance Menu). 
-Next steps:
-- Open  and write web-scraping/API logic for BSE/NSE/SEBI circulars.
-- Open  and write the TF-IDF or vectorization logic (similar to Guidance vector store).
-- Open  and finalize the  Sonnet 4.5 chat wrapper.
-- Expose via FastAPI routes and build the Frontend Modal.</analysis>
+    Issue: Fund Management Implementation incomplete
+    
+    Frontend files to check: 
+    - Create a new component for the Fund Management dashboard (e.g., ) and wire it into  navigation.
+  
+    Backend files to check:
+    -  (Must include )
+    -  (Review LLM call implementations for  compliance).
+
+<TESTING METHOD>
+both
+</TESTING METHOD></analysis>
