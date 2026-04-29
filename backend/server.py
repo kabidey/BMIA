@@ -31,6 +31,7 @@ from routes.daemon_control import router as daemon_control_router
 from routes.audit_log import router as audit_log_router, audit_middleware
 from routes.big_market import router as big_market_router
 from routes.compliance import router as compliance_router_routes
+from routes.fund_management import router as fund_management_router
 
 # Heavy daemon / service imports are deferred to lifespan so the Python module
 # import graph during cold-start is lighter (helps deploy-probe succeed faster).
@@ -471,6 +472,7 @@ app.include_router(daemon_control_router)
 app.include_router(audit_log_router)
 app.include_router(big_market_router)
 app.include_router(compliance_router_routes)
+app.include_router(fund_management_router)
 
 app.middleware("http")(audit_middleware)
 

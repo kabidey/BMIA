@@ -1,0 +1,41 @@
+{
+  "summary": "Backend Fund Management (BMIA) pipeline code is wired correctly, but live pytest against the preview URL hit a CRITICAL blocker: EMERGENT_LLM_KEY budget is exhausted. All new /api/funds/analyze runs now fail to produce analyst/debate/trader/risk/fund_manager outputs and SSE stream times out waiting for stages. In addition, POST /api/funds/analyze takes ~50s to return 200 (should be <1s because pipeline runs in asyncio.create_task) due to event-loop starvation from failing synchronous/LLM calls. Two earlier RELIANCE runs (pre-budget-hit at 21:56 / 22:02) completed cleanly with all 6 stages, final_verdict populated, and _id excluded — proving the pipeline itself works when the LLM key has budget. Frontend page loads, all required data-testids are in place, sidebar link is present.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "EMERGENT_LLM_KEY", "issue": "Budget exhausted — 'litellm.BadRequestError: Budget has been exceeded! Current cost: 968.035 / Max: 968.020'. Every agent call fails, so new runs cannot populate analysts/debate/trader/risk/fund_manager. This blocks the whole feature end-to-end.", "priority": "CRITICAL"},
+      {"endpoint": "POST /api/funds/analyze", "issue": "Returns 200 after ~50s instead of immediately. Pipeline is scheduled via asyncio.create_task so response should come back in <1s. Likely cause: sync pymongo.MongoClient inside _run_pipeline + sync _patch() calls block the event loop before FastAPI finishes flushing the response (esp. under concurrent load). Recommend converting _run_pipeline to use motor (async) or run the whole fn via asyncio.to_thread.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "services/fund_agents.py", "issue": "Several agent outputs end up with `_warning: 'LLM did not return valid JSON'` and truncated rationales (bull/risk in earlier successful RELIANCE run). The extractor regex strips ```json fences but Claude often wraps JSON inside prose — consider using a stricter JSON extractor or response_format=json."},
+      {"endpoint": "GET /api/funds/runs/{id}", "issue": "Responses are very large (huge rationale text). Consider gzip or a trimmed summary endpoint to avoid 60s+ TLS transfers via the preview ingress."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Run Analysis → SSE stream", "issue": "End-to-end cannot be validated because backend LLM budget is exhausted; stage pills beyond data_gathering will never flip to done in current environment.", "affected_selectors": ["[data-testid='stage-pill-analysts']", "[data-testid='fund-manager-card']"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_fund_management.py", "/app/test_reports/pytest/iteration_36_results.xml"],
+  "action_items": [
+    "MUST-FIX: Refill / rotate EMERGENT_LLM_KEY — budget is exhausted (see backend.err.log 22:10:48). Without this, Fund Management cannot complete a single run.",
+    "HIGH: Make POST /api/funds/analyze return immediately. Either (a) replace pymongo.MongoClient with motor inside _run_pipeline, or (b) wrap the first sync _patch call in asyncio.to_thread so the event loop yields before the task runs.",
+    "MED: Harden JSON extraction in _agent_call (fund_agents.py) — several agents are falling into the '_warning: LLM did not return valid JSON' fallback even when Claude succeeds. Consider `response_format={'type':'json_object'}` or a more tolerant extractor.",
+    "Consider gzip compression on /api/funds/runs and /runs/{id} — 60s+ transfers observed."
+  ],
+  "critical_code_review_comments": [
+    "routes/fund_management.py uses a blocking pymongo client inside an async function — _patch() blocks the event loop in ≥10 places per run. Should use motor or asyncio.to_thread.",
+    "fund_agents._agent_call strips ```json fences but doesn't handle JSON embedded within prose; two live agents hit the fallback path in a single run.",
+    "SSE endpoint polls mongo every 1s for up to 600 iterations — fine for now but a change_stream or in-memory pub/sub would scale better.",
+    "All data-testids the review request enumerated are correctly present on the page."
+  ],
+  "updated_files": ["/app/backend/tests/test_fund_management.py"],
+  "success_rate": {"backend": "40% (2 of 5 pytest passed + earlier manual RELIANCE runs pre-budget-exhaustion are complete & well-shaped)", "frontend": "loads + testids verified; full flow not re-verifiable until LLM budget restored"},
+  "test_credentials": "somnath.dey@smifs.com / admin123 (two-step login: email → Continue → password)",
+  "seed_data_creation": "Two historical successful RELIANCE runs (bf1b04c4..., dc9cc2da...) plus ~3 new queued runs remain in fund_runs collection.",
+  "retest_needed": true,
+  "main_agent_can_self_test": false,
+  "context_for_next_testing_agent": "Do NOT re-run pytest against /api/funds/analyze until EMERGENT_LLM_KEY budget is refilled; otherwise TestRunCompletion + TestSseStream will always fail. Once refilled, use timeouts ≥60s per request and ≥180s for run-completion polling. Pre-budget-exhaustion runs in the DB already prove the 6-stage contract.",
+  "rca of the issue": "Backend error log at 22:10:48 shows: 'FUND agent fundamentals call failed: litellm.BadRequestError: OpenAIException - Budget has been exceeded! Current cost: 968.035364980004, Max budget: 968.020499159246'. This is the Emergent LLM key's hard quota — every agent call returns early with {error}, so downstream agents compound the failure and final_verdict is never produced. Fix: top-up/rotate EMERGENT_LLM_KEY in /app/backend/.env (after which pipeline should resume completing in ~100–120s as it did for runs bf1b04c4/dc9cc2da)."
+}

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="3" failures="2" skipped="0" tests="5" time="212.145" timestamp="2026-04-29T22:06:17.990227+00:00" hostname="agent-env-81b6832a-f47a-4297-a7d3-3d5d8dfbab52"><testcase classname="backend.tests.test_fund_management.TestAnalyzeEndpoint" name="test_analyze_returns_run_id" time="60.146"><error message="failed on setup with &quot;requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='bharat-quant-lab.preview.emergentagent.com', port=443): Read timed out. (read timeout=60)&quot;">E   TimeoutError: The read operation timed out
+
+The above exception was the direct cause of the following exception:
+E   urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='bharat-quant-lab.preview.emergentagent.com', port=443): Read timed out. (read timeout=60)
+
+During handling of the above exception, another exception occurred:
+E   requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='bharat-quant-lab.preview.emergentagent.com', port=443): Read timed out. (read timeout=60)</error></testcase><testcase classname="backend.tests.test_fund_management.TestAnalyzeEndpoint" name="test_analyze_rejects_empty_symbol" time="60.125"><failure message="requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='bharat-quant-lab.preview.emergentagent.com', port=443): Read timed out. (read timeout=60)">E   TimeoutError: The read operation timed out
+
+The above exception was the direct cause of the following exception:
+E   urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='bharat-quant-lab.preview.emergentagent.com', port=443): Read timed out. (read timeout=60)
+
+During handling of the above exception, another exception occurred:
+E   requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='bharat-quant-lab.preview.emergentagent.com', port=443): Read timed out. (read timeout=60)</failure></testcase><testcase classname="backend.tests.test_fund_management.TestRunCompletion" name="test_run_eventually_completes" time="0.000"><error message="failed on setup with &quot;requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='bharat-quant-lab.preview.emergentagent.com', port=443): Read timed out. (read timeout=60)&quot;">E   TimeoutError: The read operation timed out
+
+The above exception was the direct cause of the following exception:
+E   urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='bharat-quant-lab.preview.emergentagent.com', port=443): Read timed out. (read timeout=60)
+
+During handling of the above exception, another exception occurred:
+E   requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='bharat-quant-lab.preview.emergentagent.com', port=443): Read timed out. (read timeout=60)</error></testcase><testcase classname="backend.tests.test_fund_management.TestListRuns" name="test_list_runs_no_id_leak" time="0.000"><error message="failed on setup with &quot;requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='bharat-quant-lab.preview.emergentagent.com', port=443): Read timed out. (read timeout=60)&quot;">E   TimeoutError: The read operation timed out
+
+The above exception was the direct cause of the following exception:
+E   urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='bharat-quant-lab.preview.emergentagent.com', port=443): Read timed out. (read timeout=60)
+
+During handling of the above exception, another exception occurred:
+E   requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='bharat-quant-lab.preview.emergentagent.com', port=443): Read timed out. (read timeout=60)</error></testcase><testcase classname="backend.tests.test_fund_management.TestSseStream" name="test_sse_emits_stage_and_done" time="91.784"><failure message="AssertionError: no 'done' event (stages_seen={'data_gathering'})&#10;assert False">E   AssertionError: no 'done' event (stages_seen={'data_gathering'})
+    assert False</failure></testcase></testsuite></testsuites>

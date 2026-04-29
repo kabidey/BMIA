@@ -37,9 +37,11 @@ async def _agent_call(role: str, system: str, user_text: str,
         return {"error": "EMERGENT_LLM_KEY missing", "role": role}
     try:
         from emergentintegrations.llm.chat import LlmChat, UserMessage
+        # Per-agent session_id keeps the 6 agents' histories independent so
+        # parallel analyst calls don't bleed context into each other.
         chat = LlmChat(
             api_key=api_key,
-            session_id=session_id,
+            session_id=f"{session_id}-{role}",
             system_message=system,
         ).with_model(MODEL_PROVIDER, MODEL_NAME)
         resp = await chat.send_message(UserMessage(text=user_text[:8000]))
