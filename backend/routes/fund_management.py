@@ -19,9 +19,9 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-import pymongo
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
+from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel
 
 from services import fund_data_tools as tools
@@ -45,13 +45,18 @@ class AnalyzeRequest(BaseModel):
 # ─── Pipeline orchestrator (runs in background) ────────────────────────────
 async def _run_pipeline(run_id: str, symbol: str, user_email: Optional[str]) -> None:
     """Execute all 6 agents end-to-end, writing each step's output to
-    `fund_runs.{run_id}` so the SSE stream can fetch updates by polling."""
-    client = pymongo.MongoClient(os.environ["MONGO_URL"])
-    db = client[os.environ["DB_NAME"]]
+    `fund_runs.{run_id}` so the SSE stream can fetch updates by polling.
+    Uses motor (async) so we never block the event loop, plus a sync pymongo
+    client passed to the data tools that already expect a sync DB handle."""
+    import pymongo
+    sync_client = pymongo.MongoClient(os.environ["MONGO_URL"])
+    sync_db = sync_client[os.environ["DB_NAME"]]
+    motor_client = AsyncIOMotorClient(os.environ["MONGO_URL"])
+    db = motor_client[os.environ["DB_NAME"]]
     sid = f"fund-{run_id}"
 
-    def _patch(stage: str, **fields):
-        db.fund_runs.update_one(
+    async def _patch(stage: str, **fields):
+        await db.fund_runs.update_one(
             {"run_id": run_id},
             {"$set": {f"stages.{stage}": fields, "current_stage": stage,
                       "updated_at": _now()},
@@ -60,28 +65,26 @@ async def _run_pipeline(run_id: str, symbol: str, user_email: Optional[str]) -> 
 
     try:
         # ── Step 0: gather data in parallel ──
-        _patch("data_gathering", status="running")
-        fund_t, tech_t = (
-            asyncio.to_thread(tools.fetch_fundamentals, symbol),
-            asyncio.to_thread(tools.fetch_technicals, symbol),
-        )
-        sentiment_t = asyncio.to_thread(tools.fetch_sentiment, db)
-        news_t = asyncio.to_thread(tools.fetch_news, db, symbol)
-        portfolio_t = asyncio.to_thread(tools.fetch_portfolio_context, db, user_email)
+        await _patch("data_gathering", status="running")
+        fund_t = asyncio.to_thread(tools.fetch_fundamentals, symbol)
+        tech_t = asyncio.to_thread(tools.fetch_technicals, symbol)
+        sentiment_t = asyncio.to_thread(tools.fetch_sentiment, sync_db)
+        news_t = asyncio.to_thread(tools.fetch_news, sync_db, symbol)
+        portfolio_t = asyncio.to_thread(tools.fetch_portfolio_context, sync_db, user_email)
         compliance_t = tools.fetch_compliance_signal(symbol)
 
         fundamentals, technicals, sentiment, news_items, portfolio, compliance = await asyncio.gather(
             fund_t, tech_t, sentiment_t, news_t, portfolio_t, compliance_t,
         )
-        _patch("data_gathering", status="done",
-               fundamentals_ok=fundamentals.get("ok"),
-               technicals_ok=technicals.get("ok"),
-               sentiment_ok=sentiment.get("ok"),
-               news_count=len(news_items),
-               compliance_hits=compliance.get("n_hits", 0))
+        await _patch("data_gathering", status="done",
+                     fundamentals_ok=fundamentals.get("ok"),
+                     technicals_ok=technicals.get("ok"),
+                     sentiment_ok=sentiment.get("ok"),
+                     news_count=len(news_items),
+                     compliance_hits=compliance.get("n_hits", 0))
 
         # ── Step 1: 4 analysts in parallel ──
-        _patch("analysts", status="running")
+        await _patch("analysts", status="running")
         analyst_outputs = await asyncio.gather(
             agents.analyst_fundamentals(symbol, fundamentals, sid),
             agents.analyst_sentiment(symbol, sentiment, sid),
@@ -95,33 +98,33 @@ async def _run_pipeline(run_id: str, symbol: str, user_email: Optional[str]) -> 
             "news":         _safe(analyst_outputs[2]),
             "technical":    _safe(analyst_outputs[3]),
         }
-        _patch("analysts", status="done", **analysts_dict)
+        await _patch("analysts", status="done", **analysts_dict)
 
         # ── Step 2: bull vs bear debate (parallel) ──
-        _patch("debate", status="running")
+        await _patch("debate", status="running")
         bull, bear = await asyncio.gather(
             agents.researcher_bull(symbol, analysts_dict, sid),
             agents.researcher_bear(symbol, analysts_dict, sid),
             return_exceptions=True,
         )
         debate = {"bull": _safe(bull), "bear": _safe(bear)}
-        _patch("debate", status="done", **debate)
+        await _patch("debate", status="done", **debate)
 
         # ── Step 3: trader ──
-        _patch("trader", status="running")
+        await _patch("trader", status="running")
         last_price = technicals.get("last_close")
         trade_proposal = await agents.trader(symbol, analysts_dict, debate, last_price, sid)
-        _patch("trader", status="done", **_safe(trade_proposal))
+        await _patch("trader", status="done", **_safe(trade_proposal))
 
         # ── Step 4: risk manager ──
-        _patch("risk", status="running")
+        await _patch("risk", status="running")
         risk_review = await agents.risk_manager(
             symbol, trade_proposal, portfolio, compliance, sid,
         )
-        _patch("risk", status="done", **_safe(risk_review))
+        await _patch("risk", status="done", **_safe(risk_review))
 
         # ── Step 5: fund manager (final verdict) ──
-        _patch("fund_manager", status="running")
+        await _patch("fund_manager", status="running")
         all_outputs = {
             "analysts": analysts_dict,
             "debate": debate,
@@ -132,21 +135,25 @@ async def _run_pipeline(run_id: str, symbol: str, user_email: Optional[str]) -> 
                      "portfolio": portfolio},
         }
         verdict = await agents.fund_manager(symbol, all_outputs, sid)
-        _patch("fund_manager", status="done", **_safe(verdict))
+        await _patch("fund_manager", status="done", **_safe(verdict))
 
-        db.fund_runs.update_one(
+        await db.fund_runs.update_one(
             {"run_id": run_id},
             {"$set": {"final_verdict": _safe(verdict), "status": "completed",
                       "completed_at": _now()}},
         )
     except Exception as e:
         logger.exception(f"FUND pipeline {run_id} crashed")
-        db.fund_runs.update_one(
-            {"run_id": run_id},
-            {"$set": {"status": "error", "error": str(e)[:400]}},
-        )
+        try:
+            await db.fund_runs.update_one(
+                {"run_id": run_id},
+                {"$set": {"status": "error", "error": str(e)[:400]}},
+            )
+        except Exception:
+            pass
     finally:
-        client.close()
+        sync_client.close()
+        motor_client.close()
 
 
 def _safe(x: Any) -> Dict:
@@ -199,7 +206,7 @@ async def stream(run_id: str, request: Request):
                 yield f"event: done\ndata: {json.dumps({'status': run.get('status'), 'final_verdict': run.get('final_verdict')}, default=str)}\n\n"
                 return
             await asyncio.sleep(1)
-        yield f"event: timeout\ndata: {{}}\n\n"
+        yield "event: timeout\ndata: {}\n\n"
 
     return StreamingResponse(event_gen(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache",

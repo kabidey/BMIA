@@ -27,6 +27,42 @@ MODEL_PROVIDER = "anthropic"
 MODEL_NAME = "claude-sonnet-4-5-20250929"
 
 
+def _extract_json_object(text: str) -> Optional[Dict[str, Any]]:
+    """Find the first balanced top-level JSON object in `text` and parse it.
+    Tolerates Claude wrapping JSON in prose (a common failure mode)."""
+    if not text:
+        return None
+    start = text.find("{")
+    while start != -1:
+        depth = 0
+        in_str = False
+        esc = False
+        for i in range(start, len(text)):
+            ch = text[i]
+            if in_str:
+                if esc:
+                    esc = False
+                elif ch == "\\":
+                    esc = True
+                elif ch == '"':
+                    in_str = False
+                continue
+            if ch == '"':
+                in_str = True
+            elif ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    candidate = text[start:i + 1]
+                    try:
+                        return json.loads(candidate)
+                    except json.JSONDecodeError:
+                        break
+        start = text.find("{", start + 1)
+    return None
+
+
 # ─── Common LLM helper ─────────────────────────────────────────────────────
 async def _agent_call(role: str, system: str, user_text: str,
                       session_id: str) -> Dict[str, Any]:
@@ -46,10 +82,15 @@ async def _agent_call(role: str, system: str, user_text: str,
         ).with_model(MODEL_PROVIDER, MODEL_NAME)
         resp = await chat.send_message(UserMessage(text=user_text[:8000]))
         raw = (resp or "").strip()
+        # Strip ```json fences if present
         raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw).strip()
         try:
             return json.loads(raw)
         except json.JSONDecodeError:
+            # Tolerant fallback: extract the first balanced JSON object from prose
+            obj = _extract_json_object(raw)
+            if obj is not None:
+                return obj
             return {"role": role, "rationale": raw[:1200], "verdict": "HOLD",
                     "confidence": 0.4, "_warning": "LLM did not return valid JSON"}
     except Exception as e:
