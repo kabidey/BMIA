@@ -83,6 +83,14 @@ credentials.json
 *.key
 .credentials
 
+# ─── FORCE-INCLUDE GUARD (self-healing) ─────────────────────────────────
+# Defense in depth: even if an Auto-generated commit re-appends `.env`
+# patterns below, these negations keep our two critical env files in the
+# deploy artefact. Git applies patterns in order, so negations must come
+# LAST. Do NOT move these above any potential `.env` re-addition.
+!backend/.env
+!frontend/.env
+
 # Test credentials (platform-managed)
 memory/test_credentials.md
 frontend/node_modules/.cache/default-development/5.pack
@@ -90,12 +98,3 @@ frontend/node_modules/.cache/default-development/24.pack
 frontend/node_modules/.cache/default-development/0.pack
 frontend/node_modules/.cache/default-development/11.pack
 frontend/node_modules/.cache/default-development/2.pack
--e 
-# Environment and credential files
-.env
-.env.*
-*.env
-credentials.json
-*.pem
-*.key
-.credentials

@@ -59,7 +59,15 @@ def test_gitignore_does_not_block_env_files_by_pattern():
 def test_gitignore_allows_required_env_files():
     """Use `git check-ignore` to prove that the actual .env files are NOT
     ignored. More robust than pattern-matching since it handles negations,
-    nested .gitignores, etc."""
+    nested .gitignores, etc.
+
+    With `-v`, `git check-ignore` returns:
+      exit 0 + a pattern line  ⇒  path matches some rule; may be ignored OR
+                                   force-included via a negation pattern
+      exit 1 + no output       ⇒  path does not match any rule (not ignored)
+
+    So the safe check is: either exit 1, OR exit 0 with a negation pattern
+    (line starting with `!`) — both mean the file ships."""
     for rel in REQUIRED_ENV_FILES:
         f = REPO_ROOT / rel
         if not f.exists():
@@ -68,8 +76,22 @@ def test_gitignore_allows_required_env_files():
             ["git", "check-ignore", "-v", rel],
             cwd=REPO_ROOT, capture_output=True, text=True,
         )
-        # git check-ignore exits 0 if the path IS ignored, 1 if not ignored.
-        assert res.returncode == 1, (
+        if res.returncode == 1:
+            continue  # plain "not ignored"
+        # exit 0 — must be a negation pattern to still be OK
+        output = (res.stdout or res.stderr).strip()
+        is_negation = (
+            "\t!" in output            # tab-separated: pattern col starts with `!`
+            or output.startswith("!")
+            or ":!" in output           # "file:line:!pattern\tpath"
+            or bool([
+                line for line in output.splitlines()
+                # The pattern field (3rd tab-separated col) starts with `!`
+                if len(line.split("\t")) >= 2
+                and line.split("\t")[0].split(":")[-1].startswith("!")
+            ])
+        )
+        assert is_negation, (
             f"{rel} is being ignored by git! This will break deployment.\n"
-            f"git check-ignore output: {res.stdout or res.stderr}"
+            f"git check-ignore output: {output}"
         )
