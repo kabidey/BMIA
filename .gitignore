@@ -69,8 +69,13 @@ agenthub/agents/youtube/db
 
 # Build caches
 .cache/
+frontend/node_modules/.cache/
 
-# Sensitive files (NOT .env — .env files are required for deployment)
+# Sensitive files (NOT .env — .env files are REQUIRED for deployment)
+# IMPORTANT: do NOT add `.env` / `.env.*` / `*.env` patterns here.
+# .env files MUST ship with the repo so the platform can inject production
+# MONGO_URL, REACT_APP_BACKEND_URL, EMERGENT_LLM_KEY etc. at deploy time.
+# `backend/tests/test_gitignore_sanity.py` guards against accidental re-adds.
 credentials.json
 *token.json*
 *credentials.json*
@@ -80,146 +85,8 @@ credentials.json
 
 # Test credentials (platform-managed)
 memory/test_credentials.md
-
-# Frontend webpack cache
-frontend/node_modules/.cache/
 frontend/node_modules/.cache/default-development/5.pack
 frontend/node_modules/.cache/default-development/24.pack
-frontend/node_modules/.cache/default-development/11.pack
--e 
-# Environment and credential files
-credentials.json
-*.pem
-*.key
-.credentials
-frontend/node_modules/.cache/default-development/6.pack
 frontend/node_modules/.cache/default-development/0.pack
--e 
-# Environment and credential files
-credentials.json
-*.pem
-*.key
-.credentials
--e 
-# Environment and credential files
-credentials.json
-*.pem
-*.key
-.credentials
-frontend/node_modules/.cache/default-development/1.pack
-frontend/node_modules/.cache/default-development/3.pack
--e 
-# Environment and credential files
-credentials.json
-*.pem
-*.key
-.credentials
+frontend/node_modules/.cache/default-development/11.pack
 frontend/node_modules/.cache/default-development/2.pack
--e 
-# Environment and credential files
-credentials.json
-*.pem
-*.key
-.credentials
-frontend/node_modules/.cache/default-development/4.pack
--e 
-# Environment and credential files
-credentials.json
-*.pem
-*.key
-.credentials
--e 
-# Environment and credential files
-credentials.json
-*.pem
-*.key
-.credentials
--e 
-# Environment and credential files
-credentials.json
-*.pem
-*.key
-.credentials
--e 
-# Environment and credential files
-# NOTE: .env files MUST be included in the repo for deployment to work.
-# They are auto-populated at deploy time with production MONGO_URL, API keys etc.
-# Keeping them in git is safe because secrets are managed by the platform.
-credentials.json
-*.pem
-*.key
-.credentials
-
-# Environment and credential files
-# IMPORTANT: do NOT add `.env` / `.env.*` / `*.env` patterns here — those
-# files are required to ship with the repo so the platform can inject prod
-# values at deploy time. The pytest sanity-check `test_gitignore_sanity.py`
-# guards against accidental re-adds.
-credentials.json
-*.pem
-*.key
-.credentials
-
-# Environment and credential files
-# IMPORTANT: do NOT add `.env` / `.env.*` / `*.env` patterns here.
-# .env files MUST ship with the repo so the platform can inject prod values
-# at deploy time. The pytest sanity-check guards against accidental re-adds.
-credentials.json
-*.pem
-*.key
-.credentials
-
-# Environment and credential files
-# CRITICAL: do NOT re-add `.env` / `.env.*` / `*.env` patterns.
-# .env files MUST ship with the repo for production deploys to work.
-credentials.json
-*.pem
-*.key
-.credentials
-
-# Environment and credential files — do NOT re-add .env patterns.
-credentials.json
-*.pem
-*.key
-.credentials
-
-credentials.json
-*.pem
-*.key
-.credentials
--e 
-# Environment and credential files
-.env
-.env.*
-*.env
-credentials.json
-*.pem
-*.key
-.credentials
--e 
-# Environment and credential files
-.env
-.env.*
-*.env
-credentials.json
-*.pem
-*.key
-.credentials
--e 
-# Environment and credential files
-.env
-.env.*
-*.env
-credentials.json
-*.pem
-*.key
-.credentials
--e 
-# Environment and credential files
-.env
-.env.*
-*.env
-credentials.json
-*.pem
-*.key
-.credentials
