@@ -401,7 +401,14 @@ def reinvest_proceeds(db, portfolio_type: str, proceeds: float, source_exit: dic
     }
 
     holdings = p.get("holdings", []) + [new_holding]
-    cash_balance = float(p.get("cash_balance", 0) or 0) + proceeds - replacement["deployed"]
+    # ─── BUG FIX (2026-04): Double-booking guard ────────────────────────────
+    # `_enforce_stops` (and `_execute_rebalance`) ALREADY bank `proceeds` into
+    # `cash_balance` BEFORE calling us. Adding `proceeds` again here was
+    # double-counting — inflating cash, NAV, and total_pnl by exactly the
+    # exit proceeds. Treat the on-disk `cash_balance` as authoritative and
+    # only deduct what we just deployed.
+    current_cash = float(p.get("cash_balance", 0) or 0)
+    cash_balance = current_cash - replacement["deployed"]
 
     db.portfolios.update_one(
         {"type": portfolio_type},
