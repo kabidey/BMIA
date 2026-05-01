@@ -206,6 +206,109 @@ async def _run_auto_migrations():
                 f"(bse={r1.deleted_count} sebi={r2.deleted_count} chunks={chunk_del}). "
                 "Schedule a TF-IDF rebuild — handled by the deferred init."
             )
+
+        # ── 2026-05-portfolio-cash-reconcile ─────────────────────────
+        # `auto_reinvest.reinvest_proceeds` historically double-booked the
+        # exit proceeds: `_enforce_stops` had already credited them to
+        # `cash_balance`, and the reinvest path added them again before
+        # deducting the deployed amount. Every successful stop-out + auto-
+        # reinvest pair therefore inflated `cash_balance`, `current_value`
+        # and `total_pnl` by exactly the exit proceeds. Code is fixed; this
+        # migration cleans up the historical inflation in production using
+        # the invariant
+        #     expected_cash = initial_capital + realized_pnl
+        #                       − Σ(entry_price × qty for h in holdings)
+        # (no external deposits/withdrawals on autonomous strategy
+        # portfolios). Only acts when stored_cash − expected_cash > ₹1
+        # so under-counted portfolios (a different, older issue) are not
+        # touched here.
+        if "2026-05-portfolio-cash-reconcile" not in done:
+            logger.info("AUTO-MIGRATION: 2026-05-portfolio-cash-reconcile running")
+            ran_at = datetime.utcnow().isoformat()
+            fixes = []
+            for p in sync_db.portfolios.find({"status": "active"}):
+                ptype = p["type"]
+                stored_cash = float(p.get("cash_balance", 0) or 0)
+                initial_capital = float(p.get("initial_capital", 0) or 0)
+                realized_pnl = float(p.get("realized_pnl", 0) or 0)
+                holdings = p.get("holdings", []) or []
+                cost_basis = sum(
+                    float(h.get("entry_price", 0) or 0) * (h.get("quantity", 0) or 0)
+                    for h in holdings
+                )
+                expected_cash = initial_capital + realized_pnl - cost_basis
+                delta = stored_cash - expected_cash  # >0 ⇒ inflated by old bug
+
+                if delta <= 1.0:
+                    logger.info(
+                        f"AUTO-MIGRATION: portfolio-cash-reconcile [{ptype}] "
+                        f"cash={stored_cash:,.2f} expected={expected_cash:,.2f} "
+                        f"delta={delta:+,.2f} — skipped"
+                    )
+                    continue
+
+                holdings_value = sum(
+                    float(h.get("current_price", h.get("entry_price", 0)) or 0)
+                    * (h.get("quantity", 0) or 0)
+                    for h in holdings
+                )
+                fixed_cash = max(expected_cash, 0.0)
+                fixed_value = holdings_value + fixed_cash
+                unrealized_pnl = holdings_value - cost_basis
+                total_pnl = fixed_value - initial_capital
+                total_pnl_pct = (total_pnl / initial_capital * 100) if initial_capital > 0 else 0
+
+                sync_db.portfolios.update_one(
+                    {"type": ptype},
+                    {"$set": {
+                        "cash_balance": round(fixed_cash, 2),
+                        "current_value": round(fixed_value, 2),
+                        "holdings_value": round(holdings_value, 2),
+                        "unrealized_pnl": round(unrealized_pnl, 2),
+                        "total_pnl": round(total_pnl, 2),
+                        "total_pnl_pct": round(total_pnl_pct, 2),
+                        "reconciled_at": ran_at,
+                        "reconcile_note": (
+                            f"Removed ₹{delta:,.2f} of double-booked reinvestment "
+                            "proceeds (auto_reinvest pre-fix bug)."
+                        ),
+                    }}
+                )
+                sync_db.portfolio_rebalance_log.insert_one({
+                    "portfolio_type": ptype,
+                    "action": "RECONCILE_INFLATED_REINVEST",
+                    "timestamp": ran_at,
+                    "delta_removed": round(delta, 2),
+                    "old_cash": round(stored_cash, 2),
+                    "new_cash": round(fixed_cash, 2),
+                    "old_current_value": round(holdings_value + stored_cash, 2),
+                    "new_current_value": round(fixed_value, 2),
+                    "note": "Auto-migration 2026-05-portfolio-cash-reconcile",
+                })
+                fixes.append({
+                    "type": ptype,
+                    "delta_removed": round(delta, 2),
+                    "old_cash": round(stored_cash, 2),
+                    "new_cash": round(fixed_cash, 2),
+                })
+                logger.info(
+                    f"AUTO-MIGRATION: portfolio-cash-reconcile [{ptype}] "
+                    f"cash {stored_cash:,.2f} → {fixed_cash:,.2f} "
+                    f"(removed ₹{delta:,.2f} inflation)"
+                )
+
+            sync_db.compliance_migrations.insert_one({
+                "name": "2026-05-portfolio-cash-reconcile",
+                "ran_at": ran_at,
+                "portfolios_fixed": len(fixes),
+                "total_inflation_removed": round(sum(f["delta_removed"] for f in fixes), 2),
+                "fixes": fixes,
+            })
+            logger.info(
+                f"AUTO-MIGRATION: 2026-05-portfolio-cash-reconcile complete "
+                f"({len(fixes)} portfolios fixed, "
+                f"₹{sum(f['delta_removed'] for f in fixes):,.0f} total inflation removed)"
+            )
         client.close()
     except Exception as e:
         logger.error(f"AUTO-MIGRATION failed (non-fatal): {e}")
