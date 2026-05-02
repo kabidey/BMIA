@@ -353,6 +353,7 @@ async def lifespan(app: FastAPI):
         from daemons.evaluation_scheduler import start_evaluation_scheduler
         from daemons.portfolio_daemon import start_portfolio_daemon
         from daemons.compliance_ingestion import start_compliance_daemon
+        from daemons.fund_management_daemon import start_fund_management_daemon
 
         # Light-weight daemons — safe to start immediately
         for name, starter, args in [
@@ -361,6 +362,7 @@ async def lifespan(app: FastAPI):
             ("Guidance scheduler", start_guidance_scheduler, (MONGO_URL, DB_NAME)),
             ("PDF extraction daemon", start_pdf_extraction_daemon, (MONGO_URL, DB_NAME)),
             ("Portfolio daemon", start_portfolio_daemon, (MONGO_URL, DB_NAME)),
+            ("Fund management daemon", start_fund_management_daemon, (MONGO_URL, DB_NAME)),
         ]:
             try:
                 starter(*args)
@@ -392,6 +394,16 @@ async def lifespan(app: FastAPI):
                 # backfill cursor at the full 3,039-item corpus. Idempotent
                 # via `compliance_migrations` marker collection.
                 await _run_auto_migrations()
+
+                # 1.6) Recover any fund_runs that were left in `running`
+                # status when the previous backend died (asyncio.create_task
+                # is killed on restart so the pipeline never wrote a final
+                # state). Marks rows as `orphaned` so the UI shows the truth.
+                try:
+                    from routes.fund_management import recover_orphaned_runs
+                    await recover_orphaned_runs(app.db)
+                except Exception as e:
+                    logger.warning(f"FUND orphan recovery failed (non-fatal): {e}")
 
                 # 2) Defer the heavy TF-IDF vector build further — this loads all
                 #    persisted chunks and fits the vectorizer. If the DB is empty

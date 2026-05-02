@@ -147,3 +147,110 @@ class TestSseStream:
         expected = {"data_gathering", "analysts", "debate", "trader", "risk", "fund_manager"}
         missing = expected - stages_seen
         assert not missing, f"missing SSE stages: {missing} (seen={stages_seen})"
+
+
+
+# ─── 5. GET /api/funds/decisions — flat decision history ─────────────────
+class TestDecisions:
+    def test_decisions_returns_list_no_id_leak(self, api, started_run):
+        # started_run already finished by the time TestRunCompletion ran
+        r = api.get(f"{BASE_URL}/api/funds/decisions?limit=20", timeout=15)
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert "decisions" in body and isinstance(body["decisions"], list)
+        assert len(body["decisions"]) >= 1, "Expected at least one decision"
+        for d in body["decisions"]:
+            assert "_id" not in d, "Mongo _id leaked into decisions"
+            for f in ("symbol", "decision", "final_verdict", "confidence",
+                      "headline", "ts"):
+                assert f in d, f"decision row missing field {f}"
+            assert d["decision"] in ("ACCEPT", "REJECT", "HOLD")
+            assert d["final_verdict"] in (
+                "STRONG_BUY", "BUY", "HOLD", "SELL", "STRONG_SELL"
+            )
+
+    def test_decisions_filter_by_decision(self, api):
+        r = api.get(f"{BASE_URL}/api/funds/decisions?decision=HOLD&limit=10",
+                    timeout=10)
+        assert r.status_code == 200
+        for d in r.json().get("decisions", []):
+            assert d["decision"] == "HOLD"
+
+    def test_decisions_filter_source_daemon(self, api):
+        # Daemon may take ~3 minutes after backend boot to log first decision.
+        deadline = time.time() + 180
+        last = []
+        while time.time() < deadline:
+            r = api.get(f"{BASE_URL}/api/funds/decisions?source=daemon&limit=20",
+                        timeout=10)
+            assert r.status_code == 200
+            last = r.json().get("decisions", [])
+            if last:
+                break
+            time.sleep(15)
+        assert len(last) >= 1, "Expected at least one daemon-produced decision in 3 minutes"
+        for d in last:
+            assert d.get("source") == "daemon"
+
+
+# ─── 6. /api/funds/daemon/* — daemon control & status ────────────────────
+class TestDaemon:
+    def test_daemon_status_shape(self, api):
+        r = api.get(f"{BASE_URL}/api/funds/daemon/status", timeout=10)
+        assert r.status_code == 200
+        body = r.json()
+        for k in ("state", "queued", "decisions_logged"):
+            assert k in body, f"daemon status missing {k}"
+        st = body["state"]
+        for k in ("status", "current_symbol", "accepts", "rejects", "holds",
+                  "cycle_count", "errors"):
+            assert k in st, f"daemon state missing {k}"
+        assert st["status"] in ("running", "paused", "stopped", "sleeping")
+        assert isinstance(st["errors"], list)
+        assert isinstance(body["queued"], int)
+
+    def test_daemon_pause_then_start(self, api):
+        # Pause
+        r = api.post(f"{BASE_URL}/api/funds/daemon/control",
+                     json={"action": "pause"}, timeout=10)
+        assert r.status_code == 200, r.text
+        assert r.json().get("ok") is True
+
+        # Wait up to 60s for daemon thread to read kill switch from DB
+        flipped = False
+        for _ in range(12):
+            time.sleep(5)
+            st = api.get(f"{BASE_URL}/api/funds/daemon/status",
+                         timeout=10).json()["state"]
+            if st["status"] == "paused":
+                flipped = True
+                break
+        assert flipped, "Daemon did not flip to paused within 60s"
+
+        # Resume
+        r2 = api.post(f"{BASE_URL}/api/funds/daemon/control",
+                      json={"action": "start"}, timeout=10)
+        assert r2.status_code == 200
+        body = api.get(f"{BASE_URL}/api/funds/daemon/status", timeout=10).json()
+        assert body["config"].get("paused") is False
+
+    def test_daemon_invalid_action(self, api):
+        r = api.post(f"{BASE_URL}/api/funds/daemon/control",
+                     json={"action": "explode"}, timeout=10)
+        assert r.status_code == 400
+
+
+# ─── 7. recover_orphaned_runs() exists & is wired ────────────────────────
+class TestOrphanRecoveryWiring:
+    def test_recover_orphaned_runs_callable(self):
+        import sys
+        sys.path.insert(0, "/app/backend")
+        from routes.fund_management import recover_orphaned_runs  # noqa: F401
+        assert callable(recover_orphaned_runs)
+
+    def test_recover_orphaned_runs_wired_in_server(self):
+        with open("/app/backend/server.py") as fh:
+            content = fh.read()
+        assert "recover_orphaned_runs" in content, \
+            "recover_orphaned_runs not referenced in server.py"
+        assert "from routes.fund_management import recover_orphaned_runs" in content
